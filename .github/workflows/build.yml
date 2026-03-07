@@ -126,30 +126,60 @@ jobs:
             -X main.gitCommit=${GIT_COMMIT}" \
             -o xkeen-go-keenetic-arm64
 
-      - name: Generate changelog
-        id: changelog
+      - name: Generate release notes
+        id: notes
         run: |
           PREV_TAG="${{ steps.bump.outputs.prev_tag }}"
           CURRENT_TAG="${{ steps.bump.outputs.tag }}"
+          VERSION="${{ steps.bump.outputs.version }}"
+          BUMP_TYPE="${{ steps.bump.outputs.bump_type }}"
 
+          # Generate changelog section
           if [ "$PREV_TAG" = "v0.0.0" ]; then
-            echo "## Initial Release" > /tmp/changelog.md
-            echo "" >> /tmp/changelog.md
-            git log --pretty=format:"- %s (%h)" --no-merges >> /tmp/changelog.md || true
+            CHANGES="## Initial Release\n"
+            CHANGES+="\n"
+            CHANGES+=$(git log --pretty=format:"- %s (%h)" --no-merges 2>/dev/null || echo "")
           else
-            echo "## Changes since ${PREV_TAG}" > /tmp/changelog.md
-            echo "" >> /tmp/changelog.md
-            git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> /tmp/changelog.md || echo "- No changes" >> /tmp/changelog.md
+            CHANGES="## Changes since ${PREV_TAG}\n"
+            CHANGES+="\n"
+            CHANGES+=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges 2>/dev/null || echo "- No changes")
           fi
 
-          cat /tmp/changelog.md
+          # Create full release notes
+          cat > /tmp/release-notes.md << ENDNOTES
+          ## XKEEN-GO ${VERSION}
 
-          # Save to output (multiline support via heredoc)
-          {
-            echo 'content<<EOF'
-            cat /tmp/changelog.md
-            echo 'EOF'
-          } >> $GITHUB_OUTPUT
+          **Bump type:** ${BUMP_TYPE} (${PREV_TAG} → ${CURRENT_TAG})
+
+          ${CHANGES}
+
+          ---
+
+          ### Supported Devices
+          - KN-1010, KN-1011
+          - KN-1810, KN-1910
+          - Other Keenetic routers with ARM64 processor and Entware
+
+          ### Installation
+          \`\`\`sh
+          # Download and make executable
+          chmod +x xkeen-go-keenetic-arm64
+
+          # Install (run as root)
+          ./xkeen-go-keenetic-arm64 install
+
+          # Start service
+          /opt/etc/init.d/xkeen-go start
+          \`\`\`
+
+          ### Default Credentials
+          - Username: \`admin\`
+          - Password: \`admin\`
+          - **Change password immediately after first login!**
+          ENDNOTES
+
+          echo "Release notes:"
+          cat /tmp/release-notes.md
 
       - name: Create tag
         run: |
@@ -164,37 +194,7 @@ jobs:
         with:
           tag_name: ${{ steps.bump.outputs.tag }}
           name: XKEEN-GO ${{ steps.bump.outputs.version }}
-          body: |
-            ## XKEEN-GO ${{ steps.bump.outputs.version }}
-
-            **Bump type:** ${{ steps.bump.outputs.bump_type }} (${{ steps.bump.outputs.prev_tag }} → ${{ steps.bump.outputs.tag }})
-
-            ${{ steps.changelog.outputs.content }}
-
-            ---
-
-            ### Supported Devices
-            - KN-1010, KN-1011
-            - KN-1810, KN-1910
-            - Other Keenetic routers with ARM64 processor and Entware
-
-            ### Installation
-            ```sh
-            # Download and make executable
-            chmod +x xkeen-go-keenetic-arm64
-
-            # Install (run as root)
-            ./xkeen-go-keenetic-arm64 install
-
-            # Start service
-            /opt/etc/init.d/xkeen-go start
-            ```
-
-            ### Default Credentials
-            - Username: `admin`
-            - Password: `admin`
-            - **Change password immediately after first login!**
-
+          body_path: /tmp/release-notes.md
           files: |
             xkeen-go/xkeen-go-keenetic-arm64
           draft: false
