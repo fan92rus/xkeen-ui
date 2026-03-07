@@ -341,13 +341,13 @@
                     <pre x-show="$store.app.modal.error" class="modal-error" x-html="$store.app.modal.error"></pre>
                     <pre id="modal-output" class="modal-output" x-html="$store.app.modal.output"></pre>
                 </div>
-                <div class="modal-input" x-show="canSendInput()">
+                <div class="modal-input" x-show="$store.app.canSendInput()">
                     <input type="text"
-                           x-model="inputValue"
-                           @keydown.enter="sendInput()"
+                           x-model="$store.app.inputValue"
+                           @keydown.enter="$store.app.sendInput()"
                            placeholder="Enter input and press Enter..."
                            class="modal-input-field">
-                    <button class="btn btn-primary" @click="sendInput()">Send</button>
+                    <button class="btn btn-primary" @click="$store.app.sendInput()">Send</button>
                 </div>
                 <div class="modal-footer">
                     <button class="btn" @click="$store.app.copyModalOutput()">Copy Output</button>

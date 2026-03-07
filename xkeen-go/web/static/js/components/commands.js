@@ -9,9 +9,6 @@ function commandsComponent() {
     return {
         // State
         executingCommand: '',
-        commandComplete: false,
-        session: null,  // InteractiveSession instance
-        inputValue: '', // User input for interactive commands
 
         // Categories with commands and descriptions
         categories: [
@@ -74,8 +71,8 @@ function commandsComponent() {
             this.$store.app.modal.output = '';
             this.$store.app.modal.command = command;
             this.$store.app.modal.show = true;
-            this.commandComplete = false;
-            this.inputValue = '';
+            this.$store.app.commandComplete = false;
+            this.$store.app.inputValue = '';
 
             try {
                 await this.executeInteractive(command);
@@ -83,28 +80,30 @@ function commandsComponent() {
                 this.$store.app.modal.error = 'Failed to execute command: ' + err.message;
             } finally {
                 this.executingCommand = '';
-                this.commandComplete = true;
+                this.$store.app.commandComplete = true;
             }
         },
 
         executeInteractive(command) {
             return new Promise((resolve, reject) => {
-                this.session = new InteractiveSession(
+                this.$store.app.interactiveSession = new InteractiveSession(
                     command,
                     (msg) => this.handleStreamMessage(msg),
                     (msg) => {
-                        this.session = null;
+                        this.$store.app.interactiveSession = null;
+                        this.$store.app.commandComplete = true;
                         if (!msg.success && !this.$store.app.modal.error) {
                             this.$store.app.modal.error = `Command failed with exit code ${msg.exitCode}`;
                         }
                         resolve();
                     },
                     (error) => {
-                        this.session = null;
+                        this.$store.app.interactiveSession = null;
+                        this.$store.app.commandComplete = true;
                         reject(new Error('WebSocket connection error'));
                     }
                 );
-                this.session.connect();
+                this.$store.app.interactiveSession.connect();
             });
         },
 
@@ -118,17 +117,10 @@ function commandsComponent() {
                 this.$store.app.modal.error += (this.$store.app.modal.error ? '\n' : '') + html;
                 this.scrollToBottom();
             } else if (msg.type === 'complete') {
-                this.commandComplete = true;
+                this.$store.app.commandComplete = true;
                 if (!msg.success && !this.$store.app.modal.error) {
                     this.$store.app.modal.error = `Command failed with exit code ${msg.exitCode}`;
                 }
-            }
-        },
-
-        sendInput() {
-            if (this.session && this.inputValue) {
-                this.session.send(this.inputValue + '\n');
-                this.inputValue = '';
             }
         },
 
@@ -143,10 +135,6 @@ function commandsComponent() {
 
         isLoading(command) {
             return this.executingCommand === command;
-        },
-
-        canSendInput() {
-            return this.session && this.session.connected && !this.commandComplete;
         }
     };
 }

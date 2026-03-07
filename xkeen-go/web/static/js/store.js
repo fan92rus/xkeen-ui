@@ -74,6 +74,11 @@ document.addEventListener('alpine:init', () => {
             error: ''
         },
 
+        // Interactive command state
+        interactiveSession: null,
+        inputValue: '',
+        commandComplete: false,
+
         // Confirm dialog state
         confirm: {
             show: false,
@@ -257,6 +262,25 @@ document.addEventListener('alpine:init', () => {
             this.modal.output = '';
             this.modal.command = '';
             this.modal.error = '';
+            // Reset interactive state
+            if (this.interactiveSession) {
+                this.interactiveSession.close();
+                this.interactiveSession = null;
+            }
+            this.inputValue = '';
+            this.commandComplete = false;
+        },
+
+        // Interactive command methods
+        canSendInput() {
+            return this.interactiveSession && this.interactiveSession.connected && !this.commandComplete;
+        },
+
+        sendInput() {
+            if (this.canSendInput() && this.inputValue) {
+                this.interactiveSession.send(this.inputValue + '\n');
+                this.inputValue = '';
+            }
         },
 
         async copyModalOutput() {
