@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+    <title>XKEEN-GO Login</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="login-container">
+        <form class="login-form" id="loginForm">
+            <h1>XKEEN-GO</h1>
+            <input type="password" name="password" placeholder="Password" required autofocus>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const password = form.password.value;
+
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+
+            if (res.ok) {
+                window.location.href = '/';
+            } else {
+                const data = await res.json();
+                showToast(data.error || 'Login failed', 'error');
+            }
+        } catch (err) {
+            showToast('Login failed', 'error');
+        }
+    });
+
+    function showToast(message, type) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = `toast ${type}`;
+        setTimeout(() => toast.classList.add('hidden'), 3000);
+    }
+    </script>
+</body>
+</html>

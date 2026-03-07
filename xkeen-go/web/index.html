@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+    <title>XKEEN-GO Config Editor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body x-data x-init="$store.app.init()">
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>XKEEN Config Editor</h1>
+            <div class="actions">
+                <!-- Service Status & Controls -->
+                <div x-data="service" class="service-controls">
+                    <span :class="'status-' + $store.app.serviceStatus"
+                          x-text="$store.app.serviceStatus"></span>
+                    <button @click="start()"
+                            :disabled="$store.app.serviceStatus === 'running'"
+                            class="btn btn-sm">Start</button>
+                    <button @click="stop()"
+                            :disabled="$store.app.serviceStatus === 'stopped'"
+                            class="btn btn-sm">Stop</button>
+                </div>
+                <button @click="window.dispatchEvent(new CustomEvent('editor:save'))"
+                        class="btn btn-primary">Save</button>
+                <button @click="$store.app.restartService()"
+                        class="btn btn-danger">Restart Xkeen</button>
+                <button @click="$store.app.logout()"
+                        class="btn">Logout</button>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <nav class="tabs">
+            <button class="tab"
+                    :class="{ 'active': $store.app.activeTab === 'editor' }"
+                    @click="$store.app.activeTab = 'editor'">Editor</button>
+            <button class="tab"
+                    :class="{ 'active': $store.app.activeTab === 'logs' }"
+                    @click="$store.app.activeTab = 'logs'">Logs</button>
+            <button class="tab"
+                    :class="{ 'active': $store.app.activeTab === 'settings' }"
+                    @click="$store.app.activeTab = 'settings'">Settings</button>
+            <button class="tab"
+                    :class="{ 'active': $store.app.activeTab === 'commands' }"
+                    @click="$store.app.activeTab = 'commands'">Commands</button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Editor Tab -->
+            <section x-show="$store.app.activeTab === 'editor'"
+                     x-data="editor"
+                     x-cloak
+                     class="tab-content"
+                     :class="{ 'active': $store.app.activeTab === 'editor' }">
+                <aside class="sidebar">
+                    <h2>Config Files</h2>
+                    <ul class="file-list">
+                        <template x-for="file in $store.app.files" :key="file.path">
+                            <li :class="{ 'active': $store.app.currentFile?.path === file.path }"
+                                @click="$store.app.loadFile(file.path)"
+                                x-text="file.name"></li>
+                        </template>
+                    </ul>
+                </aside>
+
+                <section class="editor-container">
+                    <div class="editor-header">
+                        <span x-text="$store.app.currentFile?.path || 'No file selected'"></span>
+                        <div class="editor-actions">
+                            <span :class="$store.app.isValidJson === false ? 'error' : ''"
+                                  x-text="$store.app.isValidJson === false ? 'Invalid JSON' : 'Valid JSON'"></span>
+                            <button x-show="$store.app.currentFile"
+                                    @click="showDiff()"
+                                    class="btn btn-sm">Diff</button>
+                            <button x-show="$store.app.currentFile"
+                                    @click="showBackups()"
+                                    class="btn btn-sm">Backups</button>
+                        </div>
+                    </div>
+                    <div x-ref="editor" id="editor"></div>
+                </section>
+            </section>
+
+            <!-- Logs Tab -->
+            <section x-show="$store.app.activeTab === 'logs'"
+                     x-data="logs"
+                     x-cloak
+                     class="tab-content"
+                     :class="{ 'active': $store.app.activeTab === 'logs' }"
+                     id="logsTab">
+                <div class="logs-header">
+                    <select x-model="$store.app.logFile" @change="$store.app.loadLogs()">
+                        <option value="/opt/var/log/xray/access.log">Access Log</option>
+                        <option value="/opt/var/log/xray/error.log">Error Log</option>
+                    </select>
+
+                    <div class="logs-filters">
+                        <input type="text"
+                               x-model="$store.app.logSearch"
+                               placeholder="Search logs...">
+                        <select x-model="$store.app.logFilter">
+                            <option value="all">All levels</option>
+                            <option value="error">Errors</option>
+                            <option value="warn">Warnings</option>
+                            <option value="info">Info</option>
+                        </select>
+                    </div>
+
+                    <button @click="$store.app.clearLogs()" class="btn">Clear</button>
+                    <button @click="$store.app.loadLogs()" class="btn">Refresh</button>
+                </div>
+
+                <div class="logs-container">
+                    <template x-for="(log, index) in $store.app.filteredLogs" :key="index">
+                        <div :class="'log-entry log-' + log.level">
+                            <span class="log-time" x-text="log.timestamp"></span>
+                            <span class="log-level" x-text="log.level.toUpperCase()"></span>
+                            <span class="log-message" x-text="log.message"></span>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section x-show="$store.app.activeTab === 'settings'"
+                     x-data="{}"
+                     x-cloak
+                     class="tab-content"
+                     :class="{ 'active': $store.app.activeTab === 'settings' }">
+                <div class="settings-container">
+                    <h2>Xray Settings</h2>
+
+                    <div class="settings-section">
+                        <h3>Logging</h3>
+
+                        <div class="setting-row">
+                            <label for="logLevel">Log Level:</label>
+                            <select id="logLevel"
+                                    x-model="$store.app.xraySettings.logLevel"
+                                    @change="$store.app.updateLogLevel()">
+                                <template x-for="level in $store.app.xraySettings.logLevels" :key="level">
+                                    <option :value="level" x-text="level.toUpperCase()"></option>
+                                </template>
+                            </select>
+                        </div>
+
+                        <div class="setting-info">
+                            <p><strong>Log level descriptions:</strong></p>
+                            <ul>
+                                <li><strong>DEBUG</strong> - Detailed debug information (verbose)</li>
+                                <li><strong>INFO</strong> - General operational information</li>
+                                <li><strong>WARNING</strong> - Warning messages only</li>
+                                <li><strong>ERROR</strong> - Error messages only</li>
+                                <li><strong>NONE</strong> - Disable logging</li>
+                            </ul>
+                        </div>
+
+                        <div class="setting-info">
+                            <p><strong>Current log files:</strong></p>
+                            <p>Access log: <code x-text="$store.app.xraySettings.accessLog"></code></p>
+                            <p>Error log: <code x-text="$store.app.xraySettings.errorLog"></code></p>
+                        </div>
+
+                        <div class="setting-warning" x-show="$store.app.xraySettings.logLevel === 'none'">
+                            <p>Warning: Logging is disabled. No logs will be written to files.</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button @click="$store.app.restartService()"
+                                class="btn btn-primary">Apply & Restart Xray</button>
+                        <button @click="$store.app.loadXraySettings()"
+                                class="btn">Refresh Settings</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Commands Tab -->
+            <section x-show="$store.app.activeTab === 'commands'"
+                     x-data="commands"
+                     x-cloak
+                     class="tab-content"
+                     :class="{ 'active': $store.app.activeTab === 'commands' }">
+                <div class="commands-container">
+                    <!-- Command categories -->
+                    <div class="commands-grid">
+                        <template x-for="category in categories" :key="category.name">
+                            <div class="command-category-block">
+                                <h3 class="category-title" x-text="category.name"></h3>
+                                <div class="category-commands-list">
+                                    <template x-for="cmd in category.commands" :key="cmd.name">
+                                        <div class="command-item">
+                                            <div class="command-info">
+                                                <span class="command-name" x-text="cmd.name"></span>
+                                                <span class="command-desc" x-text="cmd.description"></span>
+                                            </div>
+                                            <button class="btn"
+                                                    :class="isDangerous(cmd.name) ? 'btn-danger' : 'btn-primary'"
+                                                    @click="executeCommand(cmd.name)"
+                                                    :disabled="isLoading(cmd.name)"
+                                                    x-text="isLoading(cmd.name) ? 'Executing...' : (isDangerous(cmd.name) ? 'Execute' : 'Run')">
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Output Modal -->
+        <div class="modal-overlay" x-show="$store.app.modal.show" x-transition @click.self="$store.app.closeModal()">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Command Output: <span x-text="$store.app.modal.command"></span></h3>
+                    <button class="modal-close" @click="$store.app.closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <pre x-show="$store.app.modal.error" class="modal-error" x-html="$store.app.modal.error"></pre>
+                    <pre id="modal-output" class="modal-output" x-html="$store.app.modal.output"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" @click="$store.app.copyModalOutput()">Copy Output</button>
+                    <button class="btn btn-primary" @click="$store.app.closeModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirmation Dialog -->
+        <div class="modal-overlay" x-show="$store.app.confirm.show" x-transition @click.self="$store.app.cancelConfirm()">
+            <div class="modal confirm-dialog">
+                <div class="modal-header">
+                    <h3>Confirm Command</h3>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to execute this command?</p>
+                    <p class="confirm-description" x-text="$store.app.confirm.description"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" @click="$store.app.cancelConfirm()">Cancel</button>
+                    <button class="btn btn-danger" @click="$store.app.executeConfirm()">Execute</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backups Modal -->
+        <div class="modal-overlay" x-show="$store.app.backupsModal.show" x-transition @click.self="$store.app.closeBackupsModal()">
+            <div class="modal modal-large">
+                <div class="modal-header">
+                    <h3>Backups: <span x-text="$store.app.backupsModal.fileName"></span></h3>
+                    <button class="modal-close" @click="$store.app.closeBackupsModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="backups-list" x-show="$store.app.backupsModal.backups.length > 0">
+                        <template x-for="(backup, index) in $store.app.backupsModal.backups" :key="backup.path">
+                            <div class="backup-item"
+                                 :class="{ 'selected': $store.app.backupsModal.selectedBackup?.path === backup.path }"
+                                 @click="$store.app.selectBackup(backup)">
+                                <span class="backup-time" x-text="$store.app.formatBackupTime(backup.modified)"></span>
+                                <div class="backup-actions">
+                                    <button class="btn btn-sm" @click.stop="$store.app.copyBackupContent(backup)">Copy</button>
+                                    <button class="btn btn-sm btn-primary" @click.stop="$store.app.loadBackupToEditor(backup)">Load</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="backups-empty" x-show="$store.app.backupsModal.backups.length === 0">
+                        <p>No backups available</p>
+                    </div>
+                    <div class="backup-diff" x-show="$store.app.backupsModal.selectedBackup && $store.app.backupsModal.diffContent">
+                        <h4>Diff with current file</h4>
+                        <pre class="diff-content" x-html="$store.app.backupsModal.diffContent"></pre>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" @click="$store.app.closeBackupsModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Diff Modal -->
+        <div class="modal-overlay" x-show="$store.app.diffModal.show" x-transition @click.self="$store.app.closeDiffModal()">
+            <div class="modal modal-large">
+                <div class="modal-header">
+                    <h3>Changes since last save</h3>
+                    <button class="modal-close" @click="$store.app.closeDiffModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <pre class="diff-content" x-html="$store.app.diffModal.diffContent"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" @click="$store.app.closeDiffModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div x-show="$store.app.toast.show"
+             x-transition
+             :class="'toast ' + ($store.app.toast.type || '')"
+             x-text="$store.app.toast.message"></div>
+    </div>
+
+    <!-- CodeMirror importmap -->
+    <script type="importmap">
+    {
+        "imports": {
+            "codemirror": "https://esm.sh/codemirror@6.0.1",
+            "@codemirror/lang-json": "https://esm.sh/@codemirror/lang-json@6.0.1",
+            "@codemirror/theme-one-dark": "https://esm.sh/@codemirror/theme-one-dark@6.1.2",
+            "@codemirror/merge": "https://esm.sh/@codemirror/merge@6.0.0",
+            "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
+            "@codemirror/view": "https://esm.sh/@codemirror/view@6.26.3"
+        }
+    }
+    </script>
+
+    <!-- Load components first, then Alpine.js as ES module -->
+    <script type="module">
+        // Load all components
+        import '/static/js/store.js';
+        import '/static/js/app.js';
+        import '/static/js/components/editor.js';
+        import '/static/js/components/logs.js';
+        import '/static/js/components/service.js';
+        import '/static/js/components/commands.js';
+
+        // Then load and start Alpine.js
+        import Alpine from 'https://esm.sh/alpinejs@3.14.3';
+        window.Alpine = Alpine;
+        Alpine.start();
+    </script>
+</body>
+</html>

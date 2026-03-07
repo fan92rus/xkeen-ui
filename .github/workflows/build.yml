@@ -1,0 +1,180 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.21'
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download dependencies
+        working-directory: xkeen-go
+        run: go mod download
+
+      - name: Run go vet
+        working-directory: xkeen-go
+        run: go vet ./...
+
+      - name: Run tests
+        working-directory: xkeen-go
+        run: go test -v -coverprofile=coverage.out ./...
+        continue-on-error: true
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: xkeen-go/coverage.out
+          fail_ci_if_error: false
+
+  build:
+    name: Build keenetic-arm64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            GIT_COMMIT=$(git rev-parse HEAD)
+          else
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+            GIT_COMMIT=$(git rev-parse HEAD)
+          fi
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "git_commit=${GIT_COMMIT}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        working-directory: xkeen-go
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          go build -ldflags "-s -w \
+            -X main.version=${{ steps.version.outputs.version }} \
+            -X main.buildDate=${{ steps.version.outputs.build_date }} \
+            -X main.gitCommit=${{ steps.version.outputs.git_commit }}" \
+            -o xkeen-go-keenetic-arm64
+
+      - name: Verify version
+        working-directory: xkeen-go
+        run: |
+          ./xkeen-go-keenetic-arm64 version
+          echo "---"
+          echo "Version from ldflags: ${{ steps.version.outputs.version }}"
+
+      - name: Compress with UPX
+        uses: svenstaro/upx-action@v2
+        with:
+          files: xkeen-go/xkeen-go-keenetic-arm64
+          args: --best --lzma
+        continue-on-error: true
+
+      - name: Create archive
+        working-directory: xkeen-go
+        run: |
+          mkdir -p release
+          tar -czvf release/xkeen-go-keenetic-arm64.tar.gz \
+            xkeen-go-keenetic-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xkeen-go-keenetic-arm64
+          path: xkeen-go/release/xkeen-go-keenetic-arm64.tar.gz
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: xkeen-go-keenetic-arm64
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: XKEEN-GO v${{ steps.version.outputs.version }}
+          body: |
+            ## XKEEN-GO ${{ steps.version.outputs.version }}
+
+            Lightweight Web UI for XKeen configuration on Keenetic routers.
+
+            ### Supported Devices
+            - KN-1010, KN-1011
+            - KN-1810, KN-1910
+            - Other Keenetic routers with ARM64 processor and Entware
+
+            ### Installation
+            ```sh
+            # Download and extract
+            tar -xzf xkeen-go-keenetic-arm64.tar.gz
+
+            # Install (run as root)
+            ./xkeen-go-keenetic-arm64 install
+
+            # Start service
+            /opt/etc/init.d/xkeen-go start
+            ```
+
+            ### Default Credentials
+            - Username: `admin`
+            - Password: `admin`
+            - **Change password immediately after first login!**
+
+            ### Check Version
+            ```sh
+            ./xkeen-go-keenetic-arm64 version
+            ```
+
+          files: |
+            artifacts/xkeen-go-keenetic-arm64.tar.gz
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
