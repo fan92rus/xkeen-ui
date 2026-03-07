@@ -2,6 +2,7 @@
 # XKEEN-GO Atomic Update Script
 # This script is called by the running process before it exits.
 # It waits for the old process to terminate, then atomically replaces the binary.
+# Compatible with busybox (no fractional sleep).
 
 OLD_PID=$1
 NEW_BINARY="/tmp/xkeen-go-keenetic-arm64.new"
@@ -18,10 +19,10 @@ log() {
 log "Waiting for process $OLD_PID to terminate..."
 WAIT_COUNT=0
 while kill -0 "$OLD_PID" 2>/dev/null; do
-    sleep 0.5
+    sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
     # Timeout after 30 seconds
-    if [ $WAIT_COUNT -gt 60 ]; then
+    if [ $WAIT_COUNT -gt 30 ]; then
         log "ERROR: Timeout waiting for process $OLD_PID to terminate"
         rm -f "$NEW_BINARY"
         exit 1
