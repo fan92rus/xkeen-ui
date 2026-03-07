@@ -2,14 +2,6 @@
 
 import { get, post } from './api.js';
 
-export async function getStatus() {
-    const data = await get('/api/xkeen/status');
-    if (data.status && data.status.running !== undefined) {
-        return data.status.running ? 'running' : 'stopped';
-    }
-    return 'unknown';
-}
-
 export async function start() {
     return post('/api/xkeen/start', {});
 }
