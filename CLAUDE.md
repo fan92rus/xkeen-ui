@@ -117,6 +117,14 @@ ServiceHandler uses a whitelist of allowed commands (`/opt/etc/init.d/xkeen {sta
 ### WebSocket for Logs
 LogsHandler provides real-time log streaming via WebSocket at `/ws/logs`. Authentication is done via session cookie (WebSocket cannot send custom headers for CSRF).
 
+### Auto-Update
+UpdateHandler provides one-click updates from GitHub releases:
+- GET /api/update/check - Check for updates (returns current version, latest version, update availability)
+- POST /api/update/start - Start update with SSE progress streaming
+- Updates are downloaded from https://github.com/fan92rus/xkeen-go-ui
+- Binary is replaced and service is restarted automatically
+- Progress is reported via Server-Sent Events (SSE) with percent and status
+
 ## Configuration
 
 Config file: `/opt/etc/xkeen-go/config.json` (can override with `-config` flag)
