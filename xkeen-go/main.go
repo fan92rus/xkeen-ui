@@ -17,11 +17,12 @@ import (
 
 	"github.com/user/xkeen-go/internal/config"
 	"github.com/user/xkeen-go/internal/server"
+	"github.com/user/xkeen-go/internal/version"
 )
 
 // Build information (set via ldflags)
 var (
-	version   = "1.0.0"
+	appVersion   = "1.0.0"
 	buildDate = "unknown"
 	gitCommit = "unknown"
 )
@@ -184,7 +185,7 @@ func main() {
 }
 
 func printVersion() {
-	fmt.Printf("XKEEN-GO %s\n", version)
+	fmt.Printf("XKEEN-GO %s\n", appVersion)
 	fmt.Printf("Build date: %s\n", buildDate)
 	fmt.Printf("Git commit: %s\n", gitCommit)
 }
@@ -232,8 +233,11 @@ func runServer() {
 		}
 	}
 
+	// Initialize version package with ldflags values
+	version.SetVersion(appVersion, buildDate, gitCommit)
+
 	// Log startup information
-	log.Printf("XKEEN-GO %s starting...", version)
+	log.Printf("XKEEN-GO %s starting...", appVersion)
 	log.Printf("Config file: %s", configPath)
 	log.Printf("Listen port: %d", cfg.Port)
 	log.Printf("Xray config dir: %s", cfg.XrayConfigDir)

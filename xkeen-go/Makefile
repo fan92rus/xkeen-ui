@@ -15,7 +15,7 @@ GOTEST=$(GOCMD) test
 GOMOD=$(GOCMD) mod
 
 # Build flags
-LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION) -X main.buildDate=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)"
+LDFLAGS=-ldflags "-s -w -X main.appVersion=$(VERSION) -X main.buildDate=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)"
 
 .PHONY: build clean test run deps version
 
