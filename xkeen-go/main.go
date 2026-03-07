@@ -29,13 +29,14 @@ var (
 
 // Installation paths for Keenetic/Entware
 const (
-	installBinDir     = "/opt/bin"
-	installConfigDir  = "/opt/etc/xkeen-go"
-	installConfig     = "/opt/etc/xkeen-go/config.json"
-	installInitScript = "/opt/etc/init.d/xkeen-go"
-	installLogFile    = "/opt/var/log/xkeen-go.log"
-	installPidFile    = "/var/run/xkeen-go.pid"
-	binaryName        = "xkeen-go-keenetic-arm64"
+	installBinDir      = "/opt/bin"
+	installConfigDir   = "/opt/etc/xkeen-go"
+	installConfig      = "/opt/etc/xkeen-go/config.json"
+	installInitScript  = "/opt/etc/init.d/xkeen-go"
+	installUpdateScript = "/opt/etc/xkeen-go/update.sh"
+	installLogFile     = "/opt/var/log/xkeen-go.log"
+	installPidFile     = "/var/run/xkeen-go.pid"
+	binaryName         = "xkeen-go-keenetic-arm64"
 )
 
 // Default config JSON template
@@ -377,6 +378,12 @@ func install() error {
 		return fmt.Errorf("failed to create init script: %w", err)
 	}
 
+	// Create update script
+	fmt.Printf("Creating update script at %s...\n", installUpdateScript)
+	if err := os.WriteFile(installUpdateScript, []byte(updateScript), 0755); err != nil {
+		return fmt.Errorf("failed to create update script: %w", err)
+	}
+
 	// Enable service
 	fmt.Println("Enabling service...")
 	_ = exec.Command(installInitScript, "enable").Run()
@@ -437,6 +444,12 @@ func uninstall() error {
 	if _, err := os.Stat(installInitScript); err == nil {
 		fmt.Println("Removing init script...")
 		os.Remove(installInitScript)
+	}
+
+	// Remove update script
+	if _, err := os.Stat(installUpdateScript); err == nil {
+		fmt.Println("Removing update script...")
+		os.Remove(installUpdateScript)
 	}
 
 	// Remove binary

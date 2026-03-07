@@ -21,11 +21,12 @@ import (
 
 // UpdateHandler handles application update operations.
 type UpdateHandler struct {
-	githubRepo  string
-	binaryName  string
-	installPath string
-	initScript  string
-	downloadURL string
+	githubRepo   string
+	binaryName   string
+	installPath  string
+	initScript   string
+	updateScript string
+	downloadURL  string
 }
 
 // NewUpdateHandler creates a new UpdateHandler.
@@ -33,11 +34,12 @@ func NewUpdateHandler() *UpdateHandler {
 	repo := "fan92rus/xkeen-go-ui"
 	binaryName := "xkeen-go-keenetic-arm64"
 	return &UpdateHandler{
-		githubRepo:  repo,
-		binaryName:  binaryName,
-		installPath: "/opt/bin/" + binaryName,
-		initScript:  "/opt/etc/init.d/xkeen-go",
-		downloadURL: fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
+		githubRepo:   repo,
+		binaryName:   binaryName,
+		installPath:  "/opt/bin/" + binaryName,
+		initScript:   "/opt/etc/init.d/xkeen-go",
+		updateScript: "/opt/etc/xkeen-go/update.sh",
+		downloadURL:  fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
 	}
 }
 
@@ -227,36 +229,37 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 	sendEvent("progress", ProgressData{Percent: 60, Status: "verified"})
 
-	// Step 4: Stop service
-	sendEvent("progress", ProgressData{Percent: 70, Status: "stopping service"})
-	if err := h.runCommand(h.initScript, "stop"); err != nil {
-		log.Printf("Warning: failed to stop service: %v", err)
-		// Continue anyway, we might not be running as a service
-	}
+	// Step 4: Launch update script in background
+	// The script will wait for this process to terminate, then replace the binary
+	sendEvent("progress", ProgressData{Percent: 70, Status: "preparing update"})
 
-	// Step 5: Replace binary
-	sendEvent("progress", ProgressData{Percent: 80, Status: "replacing binary"})
-	if err := os.Rename(tmpFile, h.installPath); err != nil {
-		// Try copy if rename fails (cross-filesystem)
-		if err := h.copyFile(tmpFile, h.installPath); err != nil {
-			sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to replace binary: %v", err)})
-			return
-		}
+	currentPID := os.Getpid()
+	// Use shell to properly detach with nohup
+	shellCmd := fmt.Sprintf("nohup sh %s %d >/dev/null 2>&1 &", h.updateScript, currentPID)
+	updateCmd := exec.Command("sh", "-c", shellCmd)
+	if err := updateCmd.Run(); err != nil {
+		// Clean up temp file on error
 		os.Remove(tmpFile)
+		sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to start update script: %v", err)})
+		return
 	}
 
-	// Step 6: Start service
-	sendEvent("progress", ProgressData{Percent: 95, Status: "starting service"})
-	if err := h.runCommand(h.initScript, "start"); err != nil {
-		log.Printf("Warning: failed to start service: %v", err)
-	}
+	log.Printf("Update script started, current process %d will terminate", currentPID)
 
-	// Step 7: Complete
-	sendEvent("progress", ProgressData{Percent: 100, Status: "complete"})
+	// Step 5: Notify client and schedule shutdown
+	sendEvent("progress", ProgressData{Percent: 90, Status: "restarting"})
 	sendEvent("complete", CompleteData{
 		Success: true,
-		Message: "Update complete. Service is restarting...",
+		Message: "Update downloaded. Service is restarting...",
 	})
+
+	// Give SSE response time to be sent, then exit
+	// The update script will replace the binary and restart the service
+	go func() {
+		time.Sleep(1 * time.Second)
+		log.Printf("Shutting down for update...")
+		os.Exit(0)
+	}()
 }
 
 // downloadFile downloads a file from URL to path.
@@ -286,33 +289,6 @@ func (h *UpdateHandler) downloadFile(ctx context.Context, path string) error {
 
 	_, err = io.Copy(out, resp.Body)
 	return err
-}
-
-// copyFile copies a file from src to dst.
-func (h *UpdateHandler) copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
-}
-
-// runCommand executes a command with arguments.
-func (h *UpdateHandler) runCommand(name string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, name, args...)
-	return cmd.Run()
 }
 
 // respondJSON writes a JSON response.
