@@ -1,6 +1,6 @@
 // components/commands.js - Commands tab with categorized XKeen commands
 
-import { postStream } from '../services/api.js';
+import { InteractiveSession } from '../services/interactive.js';
 import { AnsiUp } from 'https://esm.sh/ansi_up@6.0.2';
 
 const ansi_up = new AnsiUp();
@@ -10,6 +10,8 @@ function commandsComponent() {
         // State
         executingCommand: '',
         commandComplete: false,
+        session: null,  // InteractiveSession instance
+        inputValue: '', // User input for interactive commands
 
         // Categories with commands and descriptions
         categories: [
@@ -73,17 +75,37 @@ function commandsComponent() {
             this.$store.app.modal.command = command;
             this.$store.app.modal.show = true;
             this.commandComplete = false;
+            this.inputValue = '';
 
             try {
-                await postStream('/api/xkeen/command', { command: command }, (msg) => {
-                    this.handleStreamMessage(msg);
-                });
+                await this.executeInteractive(command);
             } catch (err) {
                 this.$store.app.modal.error = 'Failed to execute command: ' + err.message;
             } finally {
                 this.executingCommand = '';
                 this.commandComplete = true;
             }
+        },
+
+        executeInteractive(command) {
+            return new Promise((resolve, reject) => {
+                this.session = new InteractiveSession(
+                    command,
+                    (msg) => this.handleStreamMessage(msg),
+                    (msg) => {
+                        this.session = null;
+                        if (!msg.success && !this.$store.app.modal.error) {
+                            this.$store.app.modal.error = `Command failed with exit code ${msg.exitCode}`;
+                        }
+                        resolve();
+                    },
+                    (error) => {
+                        this.session = null;
+                        reject(new Error('WebSocket connection error'));
+                    }
+                );
+                this.session.connect();
+            });
         },
 
         handleStreamMessage(msg) {
@@ -103,6 +125,13 @@ function commandsComponent() {
             }
         },
 
+        sendInput() {
+            if (this.session && this.inputValue) {
+                this.session.send(this.inputValue + '\n');
+                this.inputValue = '';
+            }
+        },
+
         scrollToBottom() {
             this.$nextTick(() => {
                 const outputEl = document.getElementById('modal-output');
@@ -114,6 +143,10 @@ function commandsComponent() {
 
         isLoading(command) {
             return this.executingCommand === command;
+        },
+
+        canSendInput() {
+            return this.session && this.session.connected && !this.commandComplete;
         }
     };
 }
