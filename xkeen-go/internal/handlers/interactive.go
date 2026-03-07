@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
