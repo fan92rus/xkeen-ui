@@ -54,29 +54,11 @@ jobs:
             -X main.gitCommit=${{ steps.version.outputs.git_commit }}" \
             -o xkeen-go-keenetic-arm64
 
-      - name: Copy uncompressed binary
-        working-directory: xkeen-go
-        run: cp xkeen-go-keenetic-arm64 xkeen-go-keenetic-arm64-full
-
-      - name: Compress with UPX
-        uses: svenstaro/upx-action@v2
-        with:
-          files: xkeen-go/xkeen-go-keenetic-arm64
-          args: --best --lzma
-        continue-on-error: true
-
-      - name: Upload compressed artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: xkeen-go-keenetic-arm64
           path: xkeen-go/xkeen-go-keenetic-arm64
-          retention-days: 30
-
-      - name: Upload full artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: xkeen-go-keenetic-arm64-full
-          path: xkeen-go/xkeen-go-keenetic-arm64-full
           retention-days: 30
 
   release:
@@ -91,16 +73,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download compressed artifact
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: xkeen-go-keenetic-arm64
-          path: artifacts
-
-      - name: Download full artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: xkeen-go-keenetic-arm64-full
           path: artifacts
 
       - name: Get version
@@ -122,10 +98,6 @@ jobs:
             ## XKEEN-GO ${{ steps.version.outputs.version }}
 
             Lightweight Web UI for XKeen configuration on Keenetic routers.
-
-            ### Downloads
-            - `xkeen-go-keenetic-arm64` - compressed with UPX (smaller)
-            - `xkeen-go-keenetic-arm64-full` - uncompressed (more compatible)
 
             ### Supported Devices
             - KN-1010, KN-1011
@@ -156,6 +128,5 @@ jobs:
 
           files: |
             artifacts/xkeen-go-keenetic-arm64
-            artifacts/xkeen-go-keenetic-arm64-full
           draft: false
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}
