@@ -171,6 +171,53 @@
                         </div>
                     </div>
 
+                    <div class="settings-section">
+                        <h3>Updates</h3>
+
+                        <div class="update-status">
+                            <div class="setting-row">
+                                <label>Current version:</label>
+                                <span class="version-info" x-text="$store.app.currentVersion"></span>
+                            </div>
+
+                            <template x-if="$store.app.updateInfo.update_available">
+                                <div class="update-available">
+                                    <p>New version available: <strong x-text="$store.app.updateInfo.latest_version"></strong></p>
+                                    <a :href="$store.app.updateInfo.release_url"
+                                       target="_blank"
+                                       class="release-link">View release notes</a>
+                                </div>
+                            </template>
+
+                            <template x-if="!$store.app.updateInfo.update_available && $store.app.updateInfo.latest_version">
+                                <p class="up-to-date">You are running the latest version.</p>
+                            </template>
+                        </div>
+
+                        <div class="update-actions">
+                            <button @click="$store.app.checkUpdate()"
+                                    :disabled="$store.app.updateChecking || $store.app.updating"
+                                    class="btn"
+                                    x-text="$store.app.updateChecking ? 'Checking...' : 'Check for Updates'"></button>
+
+                            <template x-if="$store.app.updateInfo.update_available">
+                                <button @click="$store.app.startUpdate()"
+                                        :disabled="$store.app.updating"
+                                        class="btn btn-primary"
+                                        x-text="$store.app.updating ? 'Updating...' : 'Update Now'"></button>
+                            </template>
+                        </div>
+
+                        <!-- Progress bar during update -->
+                        <div x-show="$store.app.updating" class="update-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill"
+                                     :style="'width: ' + $store.app.updateProgress + '%'"></div>
+                            </div>
+                            <p class="progress-status" x-text="$store.app.updateStatus"></p>
+                        </div>
+                    </div>
+
                     <div class="settings-actions">
                         <button @click="$store.app.restartService()"
                                 class="btn btn-primary">Apply & Restart Xray</button>
