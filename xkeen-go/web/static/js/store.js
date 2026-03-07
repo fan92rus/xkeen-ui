@@ -4,6 +4,7 @@ import * as configService from './services/config.js';
 import * as xkeenService from './services/xkeen.js';
 import * as logsService from './services/logs.js';
 import * as updateService from './services/update.js';
+import * as statusService from './services/status.js';
 
 /**
  * Get CSRF token from cookie
@@ -183,8 +184,8 @@ document.addEventListener('alpine:init', () => {
         async startService() {
             try {
                 await xkeenService.start();
-                this.showToast('Service started', 'success');
-                this.fetchServiceStatus();
+                this.showToast('Service starting...', 'success');
+                // Status will be updated via SSE
             } catch (err) {
                 this.showToast('Failed to start service', 'error');
             }
@@ -193,8 +194,8 @@ document.addEventListener('alpine:init', () => {
         async stopService() {
             try {
                 await xkeenService.stop();
-                this.showToast('Service stopped', 'success');
-                this.fetchServiceStatus();
+                this.showToast('Service stopping...', 'success');
+                // Status will be updated via SSE
             } catch (err) {
                 this.showToast('Failed to stop service', 'error');
             }
@@ -547,6 +548,10 @@ document.addEventListener('alpine:init', () => {
             this.loadFiles();
             this.loadXraySettings();
             this.checkUpdate();
+            // Connect to SSE status stream
+            statusService.connectStatusStream((status) => {
+                this.serviceStatus = status;
+            });
         }
     });
 });
