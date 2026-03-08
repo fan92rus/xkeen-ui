@@ -79,10 +79,17 @@ jobs:
             -X main.gitCommit=${GIT_COMMIT}" \
             -o xkeen-go-keenetic-arm64
 
+      - name: Compress with UPX
+        run: |
+          sudo apt-get update && sudo apt-get install -y upx-ucl
+          upx --best --lzma xkeen-go/xkeen-go-keenetic-arm64 -o xkeen-go/xkeen-go-keenetic-arm64-upx
+          mv xkeen-go/xkeen-go-keenetic-arm64-upx xkeen-go/xkeen-go-keenetic-arm64
+
       - name: Generate SHA256 checksum
         working-directory: xkeen-go
         run: |
           # Generate checksum for binary integrity verification
+          # IMPORTANT: This must run AFTER UPX compression
           sha256sum xkeen-go-keenetic-arm64 > xkeen-go-keenetic-arm64.sha256
 
           echo "Checksum generated:"
@@ -93,12 +100,6 @@ jobs:
             echo "ERROR: Invalid checksum format"
             exit 1
           fi
-
-      - name: Compress with UPX
-        run: |
-          sudo apt-get update && sudo apt-get install -y upx-ucl
-          upx --best --lzma xkeen-go/xkeen-go-keenetic-arm64 -o xkeen-go/xkeen-go-keenetic-arm64-upx
-          mv xkeen-go/xkeen-go-keenetic-arm64-upx xkeen-go/xkeen-go-keenetic-arm64
 
       - name: Delete old dev releases
         env:
