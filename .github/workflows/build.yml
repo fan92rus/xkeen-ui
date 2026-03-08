@@ -39,67 +39,66 @@ jobs:
       - name: Determine version bump
         id: bump
         run: |
-          # Get latest tag (or start from v0.0.0 if none)
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Latest tag: $LATEST_TAG"
+          # Get latest stable tag (exclude dev tags)
+          LATEST_STABLE_TAG=$(git tag -l 'v[0-9]*' | grep -v -- '-dev' | sort -V | tail -1 2>/dev/null || echo "v0.0.0")
+          echo "Latest stable tag: $LATEST_STABLE_TAG"
 
-          # Strip 'v' prefix
-          CURRENT_VERSION=${LATEST_TAG#v}
-          echo "Current version: $CURRENT_VERSION"
-
-          # Parse version
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          # Get latest dev tag if exists
+          LATEST_DEV_TAG=$(git tag -l 'v*-dev.*' | sort -V | tail -1 2>/dev/null || echo "")
+          echo "Latest dev tag: $LATEST_DEV_TAG"
 
           FORCE_BUMP="${{ github.event.inputs.force_bump }}"
 
           if [ "$FORCE_BUMP" = "auto" ] || [ -z "$FORCE_BUMP" ]; then
-            # Auto-detect from commits since last tag
-            if [ "$LATEST_TAG" = "v0.0.0" ]; then
-              # First release - check all commits
-              COMMITS=$(git log --pretty=format:"%s" 2>/dev/null || echo "")
+            # Auto mode: use dev version if exists, otherwise bump from stable
+            if [ -n "$LATEST_DEV_TAG" ]; then
+              # Extract base version from dev tag (e.g., v1.13.2-dev.123 -> 1.13.2)
+              DEV_VERSION=${LATEST_DEV_TAG#v}
+              BASE_VERSION=$(echo "$DEV_VERSION" | sed 's/-dev\..*//')
+              NEW_VERSION="$BASE_VERSION"
+              BUMP_TYPE="none (from dev)"
+              echo "Using version from dev tag: $NEW_VERSION"
             else
-              COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s" --no-merges 2>/dev/null || echo "")
+              # No dev tag - bump from stable
+              CURRENT_VERSION=${LATEST_STABLE_TAG#v}
+              MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+              MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+              PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+              # Default bump
+              PATCH=$((PATCH + 1))
+              BUMP_TYPE="patch (auto)"
+
+              NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+              echo "Bumping from stable: $NEW_VERSION"
             fi
-
-            echo "Analyzing commits..."
-            echo "$COMMITS"
-
-            BUMP_TYPE="patch"  # default
-
-            # Check for breaking changes first (highest priority)
-            if echo "$COMMITS" | grep -qE "^[a-z]+(\(.+\))?!:"; then
-              BUMP_TYPE="major"
-            # Then check for features
-            elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
-              BUMP_TYPE="minor"
-            # Default is patch for fix:, chore:, docs:, etc.
-            fi
-
-            echo "Auto-detected bump type: $BUMP_TYPE"
           else
-            BUMP_TYPE="$FORCE_BUMP"
-            echo "Forced bump type: $BUMP_TYPE"
+            # Force bump - always bump from stable tag
+            CURRENT_VERSION=${LATEST_STABLE_TAG#v}
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+            case "$FORCE_BUMP" in
+              major)
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH=0
+                ;;
+              minor)
+                MINOR=$((MINOR + 1))
+                PATCH=0
+                ;;
+              patch)
+                PATCH=$((PATCH + 1))
+                ;;
+            esac
+
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            BUMP_TYPE="$FORCE_BUMP (forced)"
+            echo "Forced bump from stable: $NEW_VERSION"
           fi
 
-          # Apply bump
-          case "$BUMP_TYPE" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           NEW_TAG="v${NEW_VERSION}"
 
           echo "New version: $NEW_VERSION"
@@ -107,7 +106,7 @@ jobs:
 
           echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${NEW_TAG}" >> $GITHUB_OUTPUT
-          echo "prev_tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "prev_tag=${LATEST_STABLE_TAG}" >> $GITHUB_OUTPUT
           echo "bump_type=${BUMP_TYPE}" >> $GITHUB_OUTPUT
 
       - name: Build binary
@@ -134,7 +133,7 @@ jobs:
           VERSION="${{ steps.bump.outputs.version }}"
           BUMP_TYPE="${{ steps.bump.outputs.bump_type }}"
 
-          # Generate changelog section
+          # Generate changelog section - always from stable tag
           if [ "$PREV_TAG" = "v0.0.0" ]; then
             CHANGES="## Initial Release\n"
             CHANGES+="\n"
@@ -181,7 +180,7 @@ jobs:
           echo "Release notes:"
           cat /tmp/release-notes.md
 
-      - name: Delete all pre-releases
+      - name: Delete all pre-releases and dev tags
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -194,7 +193,14 @@ jobs:
             while read tag; do
               echo "Deleting pre-release: $tag"
               gh release delete "$tag" --yes 2>/dev/null || true
+            done
+
+          echo "Deleting all dev tags..."
+          git tag -l 'v*-dev.*' | \
+            while read tag; do
+              echo "Deleting dev tag: $tag"
               git push --delete origin "$tag" 2>/dev/null || true
+              git tag -d "$tag" 2>/dev/null || true
             done
 
       - name: Create tag
