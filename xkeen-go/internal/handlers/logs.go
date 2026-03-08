@@ -26,6 +26,8 @@ import (
 var defaultLogFiles = []string{
 	"/opt/var/log/xray/access.log",
 	"/opt/var/log/xray/error.log",
+	"/opt/var/log/mihomo/access.log",
+	"/opt/var/log/mihomo/error.log",
 }
 
 // LogsHandler handles log-related operations.
