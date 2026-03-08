@@ -134,7 +134,20 @@
                      :class="{ 'active': $store.app.activeTab === 'settings' }">
                 <div class="settings-container">
                     <div class="settings-header">
-                        <h2>Xray Settings</h2>
+                        <h2 x-text="$store.app.currentMode === 'mihomo' ? 'Mihomo Settings' : 'Xray Settings'"></h2>
+
+                        <!-- Mode Switcher -->
+                        <div class="mode-switcher">
+                            <button @click="$store.app.switchMode('xray')"
+                                    :class="{ active: $store.app.currentMode === 'xray' }"
+                                    :disabled="!$store.app.xrayAvailable"
+                                    class="btn btn-sm">Xray</button>
+                            <button @click="$store.app.switchMode('mihomo')"
+                                    :class="{ active: $store.app.currentMode === 'mihomo' }"
+                                    :disabled="!$store.app.mihomoAvailable"
+                                    class="btn btn-sm">Mihomo</button>
+                        </div>
+
                         <div class="settings-actions">
                             <button @click="$store.app.restartService()"
                                     class="btn btn-primary">Apply & Restart Xray</button>
