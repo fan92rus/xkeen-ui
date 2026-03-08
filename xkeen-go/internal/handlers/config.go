@@ -244,14 +244,20 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate JSON
-	jsonData, err := utils.JSONCtoJSON(data)
-	if err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse JSONC: %v", err))
-		return
+	// Validate based on file type
+	var isValid bool
+	if isYAMLFile(cleanPath) {
+		// YAML files - basic validation (non-empty)
+		isValid = len(strings.TrimSpace(string(data))) > 0
+	} else {
+		// JSON/JSONC files - validate JSON
+		jsonData, err := utils.JSONCtoJSON(data)
+		if err != nil {
+			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse JSONC: %v", err))
+			return
+		}
+		isValid = json.Valid(jsonData)
 	}
-
-	isValid := json.Valid(jsonData)
 
 	h.respondJSON(w, http.StatusOK, ReadFileResponse{
 		Path:    cleanPath,
@@ -288,16 +294,25 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate JSON
-	jsonData, err := utils.JSONCtoJSON([]byte(req.Content))
-	if err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSONC: %v", err))
-		return
-	}
+	// Validate based on file type
+	if isYAMLFile(cleanPath) {
+		// YAML files - basic validation (non-empty)
+		if strings.TrimSpace(req.Content) == "" {
+			h.respondError(w, http.StatusBadRequest, "YAML content cannot be empty")
+			return
+		}
+	} else {
+		// JSON/JSONC files - validate JSON
+		jsonData, err := utils.JSONCtoJSON([]byte(req.Content))
+		if err != nil {
+			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSONC: %v", err))
+			return
+		}
 
-	if !json.Valid(jsonData) {
-		h.respondError(w, http.StatusBadRequest, "invalid JSON content")
-		return
+		if !json.Valid(jsonData) {
+			h.respondError(w, http.StatusBadRequest, "invalid JSON content")
+			return
+		}
 	}
 
 	// Create backup
