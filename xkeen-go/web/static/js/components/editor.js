@@ -2,6 +2,7 @@
 
 import { EditorView, basicSetup } from 'codemirror';
 import { json } from '@codemirror/lang-json';
+import { yaml } from '@codemirror/lang-yaml';
 import { oneDark } from '@codemirror/theme-one-dark';
 
 document.addEventListener('alpine:init', () => {
@@ -45,6 +46,22 @@ document.addEventListener('alpine:init', () => {
                 // Listen for show diff event
                 this._showDiffHandler = () => this.showDiff();
                 window.addEventListener('editor:showDiff', this._showDiffHandler);
+
+                // Listen for mode change events
+                this._modeChangeHandler = (e) => {
+                    // Editor will be recreated when a new file is loaded
+                    // Just clear current state
+                    if (this.instance) {
+                        this.instance.dispatch({
+                            changes: {
+                                from: 0,
+                                to: this.instance.state.doc.length,
+                                insert: '// Select a file to edit'
+                            }
+                        });
+                    }
+                };
+                window.addEventListener('mode:change', this._modeChangeHandler);
             },
 
             destroy() {
@@ -57,9 +74,46 @@ document.addEventListener('alpine:init', () => {
                 if (this._showDiffHandler) {
                     window.removeEventListener('editor:showDiff', this._showDiffHandler);
                 }
+                if (this._modeChangeHandler) {
+                    window.removeEventListener('mode:change', this._modeChangeHandler);
+                }
                 if (this.instance) {
                     this.instance.destroy();
                 }
+            },
+
+            recreateEditor(content, filePath) {
+                if (this.instance) {
+                    this.instance.destroy();
+                }
+
+                // Determine language based on file extension
+                const language = this.getLanguageExtension(filePath);
+
+                this.instance = new EditorView({
+                    doc: content,
+                    extensions: [
+                        basicSetup,
+                        language,
+                        oneDark,
+                        EditorView.lineWrapping,
+                        EditorView.theme({
+                            '&': { height: '100%' },
+                            '.cm-scroller': { overflow: 'auto' }
+                        })
+                    ],
+                    parent: this.$refs.editor
+                });
+            },
+
+            getLanguageExtension(filePath) {
+                if (!filePath) return json();
+
+                const lower = filePath.toLowerCase();
+                if (lower.endsWith('.yml') || lower.endsWith('.yaml')) {
+                    return yaml();
+                }
+                return json();
             },
 
             async initEditor() {
@@ -87,14 +141,10 @@ document.addEventListener('alpine:init', () => {
             },
 
             loadContent(file) {
-                if (!this.instance) return;
-                this.instance.dispatch({
-                    changes: {
-                        from: 0,
-                        to: this.instance.state.doc.length,
-                        insert: file.content
-                    }
-                });
+                if (!this.$refs.editor) return;
+
+                // Recreate editor with correct language for this file
+                this.recreateEditor(file.content, file.path);
                 this.$store.app.isValidJson = file.valid;
             },
 
