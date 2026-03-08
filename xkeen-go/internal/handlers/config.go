@@ -150,15 +150,8 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// For directories, always include
+		// Skip directories - only show config files
 		if entry.IsDir() {
-			files = append(files, FileInfo{
-				Name:     name,
-				Path:     filepath.Join(cleanPath, name),
-				Size:     info.Size(),
-				Modified: info.ModTime().Unix(),
-				IsDir:    true,
-			})
 			continue
 		}
 
