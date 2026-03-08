@@ -25,8 +25,10 @@ xkeen-go/coverage.out
 go.work
 go.work.sum
 
-# Dependency directories
-vendor/
+# Dependency directories (Go vendor, not web frontend vendor)
+/vendor/
+xkeen-go/vendor/
+!xkeen-go/web/static/vendor/
 
 # Build output
 bin/
