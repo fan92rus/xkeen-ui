@@ -150,8 +150,8 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 	ctx, cancel := context.WithTimeout(context.Background(), config.Timeout)
 	defer cancel()
 
-	// Build command
-	cmdStr := fmt.Sprintf("xkeen -%s", config.Cmd)
+	// Build command (config.Cmd already includes the dash prefix, e.g. "-start")
+	cmdStr := fmt.Sprintf("xkeen %s", config.Cmd)
 	parts := strings.Fields(cmdStr)
 	if len(parts) == 0 {
 		h.sendError(conn, "Failed to parse command")

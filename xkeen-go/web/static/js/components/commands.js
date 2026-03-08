@@ -15,32 +15,142 @@ function commandsComponent() {
             {
                 name: 'Управление прокси-клиентом',
                 commands: [
-                    { name: 'start', description: 'Запуск XKeen' },
-                    { name: 'stop', description: 'Остановка XKeen' },
-                    { name: 'restart', description: 'Перезапуск XKeen' },
-                    { name: 'status', description: 'Статус XKeen' }
+                    { name: '-start', description: 'Запуск' },
+                    { name: '-stop', description: 'Остановка' },
+                    { name: '-restart', description: 'Перезапуск' },
+                    { name: '-status', description: 'Статус работы' },
+                    { name: '-tpx', description: 'Порты, шлюз и протокол' },
+                    { name: '-auto', description: 'Вкл/выкл автозапуск' },
+                    { name: '-d', description: 'Задержка автозапуска' },
+                    { name: '-fd', description: 'Контроль файловых дескрипторов' },
+                    { name: '-diag', description: 'Диагностика' },
+                    { name: '-channel', description: 'Переключить канал (Stable/Dev)' },
+                    { name: '-xray', description: 'Переключить на ядро Xray' },
+                    { name: '-mihomo', description: 'Переключить на ядро Mihomo' },
+                    { name: '-ipv6', description: 'Вкл/выкл IPv6' },
+                    { name: '-dns', description: 'Вкл/выкл перенаправление DNS' }
                 ]
             },
             {
-                name: 'Резервная копия XKeen',
+                name: 'Обновление',
                 commands: [
-                    { name: 'kb', description: 'Создать резервную копию' },
-                    { name: 'kbr', description: 'Восстановить из резервной копии' }
+                    { name: '-uk', description: 'Обновить XKeen' },
+                    { name: '-ug', description: 'Обновить GeoFile' },
+                    { name: '-ux', description: 'Обновить Xray' },
+                    { name: '-um', description: 'Обновить Mihomo' },
+                    { name: '-ugc', description: 'Задача автообновления GeoFile' }
                 ]
             },
             {
-                name: 'Обновление компонентов',
+                name: 'Установка',
                 commands: [
-                    { name: 'uk', description: 'Обновить XKeen' },
-                    { name: 'ug', description: 'Обновить GeoIP/GeoSite' },
-                    { name: 'ux', description: 'Обновить Xray' },
-                    { name: 'um', description: 'Обновить модули' }
+                    { name: '-i', description: 'Установка XKeen + Xray + GeoFile + Mihomo' },
+                    { name: '-io', description: 'OffLine установка XKeen' }
+                ]
+            },
+            {
+                name: 'Резервное копирование | XKeen',
+                commands: [
+                    { name: '-kb', description: 'Создать резервную копию' },
+                    { name: '-kbr', description: 'Восстановить из резервной копии' }
+                ]
+            },
+            {
+                name: 'Резервное копирование | Xray',
+                commands: [
+                    { name: '-cb', description: 'Создать резервную копию' },
+                    { name: '-cbr', description: 'Восстановить из резервной копии' }
+                ]
+            },
+            {
+                name: 'Резервное копирование | Mihomo',
+                commands: [
+                    { name: '-mb', description: 'Создать резервную копию' },
+                    { name: '-mbr', description: 'Восстановить из резервной копии' }
+                ]
+            },
+            {
+                name: 'Переустановка',
+                commands: [
+                    { name: '-k', description: 'Переустановить XKeen' },
+                    { name: '-g', description: 'Переустановить GeoFile' }
+                ]
+            },
+            {
+                name: 'Порты прокси-клиента',
+                commands: [
+                    { name: '-ap', description: 'Добавить порт' },
+                    { name: '-dp', description: 'Удалить порт' },
+                    { name: '-cp', description: 'Показать порты' }
+                ]
+            },
+            {
+                name: 'Исключённые порты',
+                commands: [
+                    { name: '-ape', description: 'Добавить порт' },
+                    { name: '-dpe', description: 'Удалить порт' },
+                    { name: '-cpe', description: 'Показать порты' }
+                ]
+            },
+            {
+                name: 'Регистрация в системе',
+                commands: [
+                    { name: '-rrk', description: 'Регистрация XKeen' },
+                    { name: '-rrx', description: 'Регистрация Xray' },
+                    { name: '-rrm', description: 'Регистрация Mihomo' },
+                    { name: '-ri', description: 'Автозапуск через init.d' }
+                ]
+            },
+            {
+                name: 'Удаление | Компоненты',
+                commands: [
+                    { name: '-dgs', description: 'Удалить GeoSite' },
+                    { name: '-dgi', description: 'Удалить GeoIP' },
+                    { name: '-dx', description: 'Удалить Xray' },
+                    { name: '-dm', description: 'Удалить Mihomo' },
+                    { name: '-dk', description: 'Удалить XKeen' },
+                    { name: '-remove', description: 'Полная деинсталляция XKeen' }
+                ]
+            },
+            {
+                name: 'Удаление | Регистрации',
+                commands: [
+                    { name: '-drk', description: 'Удалить регистрацию XKeen' },
+                    { name: '-drx', description: 'Удалить регистрацию Xray' },
+                    { name: '-drm', description: 'Удалить регистрацию Mihomo' }
+                ]
+            },
+            {
+                name: 'Удаление | Задачи',
+                commands: [
+                    { name: '-dgc', description: 'Удалить автообновление GeoFile' }
+                ]
+            },
+            {
+                name: 'Модули',
+                commands: [
+                    { name: '-modules', description: 'Перенести модули' },
+                    { name: '-delmodules', description: 'Удалить модули' }
+                ]
+            },
+            {
+                name: 'Информация',
+                commands: [
+                    { name: '-v', description: 'Версия XKeen' },
+                    { name: '-about', description: 'О программе' },
+                    { name: '-ad', description: 'Поддержать разработчиков' },
+                    { name: '-af', description: 'Обратная связь' }
                 ]
             }
         ],
 
         // Dangerous commands that require confirmation
-        dangerousCommands: ['stop', 'restart', 'uk', 'ug', 'ux', 'um'],
+        dangerousCommands: [
+            '-stop', '-restart',
+            '-i', '-io',
+            '-remove', '-dgs', '-dgi', '-dx', '-dm', '-dk',
+            '-drk', '-drx', '-drm'
+        ],
 
         executeCommand(command) {
             if (this.isDangerous(command)) {
