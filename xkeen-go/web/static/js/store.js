@@ -619,9 +619,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         // Init
-        init() {
-            this.checkModeAvailability();
-            this.loadFiles();
+        async init() {
+            await this.checkModeAvailability();  // Wait for mode to load from backend
+            this.loadFiles();                     // Then load files with correct mode
             this.loadXraySettings();
             this.checkUpdate();
             // Connect to SSE status stream
