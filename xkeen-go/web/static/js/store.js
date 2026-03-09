@@ -464,11 +464,11 @@ document.addEventListener('alpine:init', () => {
             this.diffModal.diffContent = '';
         },
 
-        // Diff computation - returns HTML with colored +/- markers
+        // Diff computation using LCS (Longest Common Subsequence) algorithm
+        // Returns HTML with colored +/- markers
         computeDiff(a, b) {
             const linesA = a.split('\n');
             const linesB = b.split('\n');
-            let result = [];
 
             const escapeHtml = (str) => {
                 return str.replace(/&/g, '&amp;')
@@ -476,20 +476,54 @@ document.addEventListener('alpine:init', () => {
                           .replace(/>/g, '&gt;');
             };
 
-            const maxLen = Math.max(linesA.length, linesB.length);
-            for (let i = 0; i < maxLen; i++) {
-                const lineA = linesA[i];
-                const lineB = linesB[i];
+            // Build LCS (Longest Common Subsequence) matrix
+            const m = linesA.length;
+            const n = linesB.length;
 
-                if (lineA === lineB) {
-                    result.push('  ' + escapeHtml(lineA || ''));
+            // Create a matrix to store LCS lengths
+            const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+            // Fill the matrix
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (linesA[i - 1] === linesB[j - 1]) {
+                        dp[i][j] = dp[i - 1][j - 1] + 1;
+                    } else {
+                        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                    }
+                }
+            }
+
+            // Backtrack to find the diff
+            const result = [];
+            let i = m, j = n;
+
+            // Collect operations in reverse order
+            const ops = [];
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && linesA[i - 1] === linesB[j - 1]) {
+                    ops.push({ type: 'equal', line: linesA[i - 1] });
+                    i--;
+                    j--;
+                } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                    ops.push({ type: 'removed', line: linesB[j - 1] });
+                    j--;
+                } else if (i > 0) {
+                    ops.push({ type: 'added', line: linesA[i - 1] });
+                    i--;
+                }
+            }
+
+            // Reverse to get correct order and format
+            for (let k = ops.length - 1; k >= 0; k--) {
+                const op = ops[k];
+                const escaped = escapeHtml(op.line);
+                if (op.type === 'equal') {
+                    result.push('  ' + escaped);
+                } else if (op.type === 'removed') {
+                    result.push('<span class="diff-removed">- ' + escaped + '</span>');
                 } else {
-                    if (lineB !== undefined) {
-                        result.push('<span class="diff-removed">- ' + escapeHtml(lineB) + '</span>');
-                    }
-                    if (lineA !== undefined) {
-                        result.push('<span class="diff-added">+ ' + escapeHtml(lineA) + '</span>');
-                    }
+                    result.push('<span class="diff-added">+ ' + escaped + '</span>');
                 }
             }
 
