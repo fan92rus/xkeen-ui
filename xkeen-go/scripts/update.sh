@@ -51,6 +51,10 @@ log "Binary replaced successfully"
 # Clean up any leftover temp files
 rm -f "$NEW_BINARY"
 
+# Run install to update init script and other system files
+log "Updating system files..."
+"$TARGET_BINARY" install >/dev/null 2>&1
+
 # Start the new version
 log "Starting service..."
 "$INIT_SCRIPT" start
