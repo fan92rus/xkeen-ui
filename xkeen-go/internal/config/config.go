@@ -53,9 +53,6 @@ type CORSConfig struct {
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	// Username for admin access.
-	Username string `json:"username"`
-
 	// PasswordHash is bcrypt hash of the password.
 	PasswordHash string `json:"password_hash"`
 
@@ -95,7 +92,6 @@ func DefaultConfig() *Config {
 			AllowedOrigins: []string{},
 		},
 		Auth: AuthConfig{
-			Username:         "admin",
 			PasswordHash:     "", // Will be generated on first run
 			SessionTimeout:   24,
 			MaxLoginAttempts: 5,

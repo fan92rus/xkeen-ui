@@ -12,7 +12,6 @@
         "allowed_origins": ["http://localhost:8089"]
     },
     "auth": {
-        "username": "admin",
         "password_hash": "",
         "session_timeout": 24,
         "max_login_attempts": 5,

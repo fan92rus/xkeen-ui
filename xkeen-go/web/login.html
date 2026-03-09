@@ -85,7 +85,7 @@
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: 'admin', password })
+                body: JSON.stringify({ password })
             });
 
             const data = await response.json();
@@ -198,7 +198,7 @@
                     const loginResponse = await fetch('/api/auth/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: 'admin', password: newPassword })
+                        body: JSON.stringify({ password: newPassword })
                     });
 
                     const loginData = await loginResponse.json();

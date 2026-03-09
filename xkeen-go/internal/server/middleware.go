@@ -24,15 +24,13 @@ const (
 	SessionKey contextKey = "session"
 	// CSRFTokenKey is the context key for CSRF token.
 	CSRFTokenKey contextKey = "csrf_token"
-	// UsernameKey is the context key for username.
-	UsernameKey contextKey = "username"
 )
 
 // SessionManager handles session state.
 type SessionManager interface {
-	IsValid(sessionToken string) (bool, string)
+	IsValid(sessionToken string) bool
 	GetCSRFToken(sessionToken string) string
-	CreateSession(username string) (sessionToken, csrfToken string, err error)
+	CreateSession() (sessionToken, csrfToken string, err error)
 	DestroySession(sessionToken string)
 }
 
@@ -230,8 +228,7 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Validate session
-		valid, username := m.sessions.IsValid(cookie.Value)
-		if !valid {
+		if !m.sessions.IsValid(cookie.Value) {
 			// Clear invalid cookie
 			http.SetCookie(w, &http.Cookie{
 				Name:     "session",
@@ -250,7 +247,6 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 
 		// Add session info to context
 		ctx := context.WithValue(r.Context(), SessionKey, cookie.Value)
-		ctx = context.WithValue(ctx, UsernameKey, username)
 		ctx = context.WithValue(ctx, CSRFTokenKey, csrfToken)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -344,7 +340,6 @@ func (m *Middleware) LoggingMiddleware(next http.Handler) http.Handler {
 		duration := time.Since(start)
 
 		// Log format: method path status duration ip
-		username, _ := r.Context().Value(UsernameKey).(string)
 		logLine := fmt.Sprintf("%s %s %d %v %s",
 			r.Method,
 			r.URL.Path,
@@ -352,9 +347,6 @@ func (m *Middleware) LoggingMiddleware(next http.Handler) http.Handler {
 			duration,
 			getRealIP(r),
 		)
-		if username != "" {
-			logLine += fmt.Sprintf(" user=%s", username)
-		}
 
 		// Use standard log for now (can be replaced with structured logging)
 		fmt.Printf("[%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), logLine)
@@ -548,12 +540,6 @@ func (m *Middleware) respondTooManyRequests(w http.ResponseWriter, retryAfter ti
 func GetSessionToken(ctx context.Context) string {
 	token, _ := ctx.Value(SessionKey).(string)
 	return token
-}
-
-// GetUsername extracts username from context.
-func GetUsername(ctx context.Context) string {
-	username, _ := ctx.Value(UsernameKey).(string)
-	return username
 }
 
 // GetCSRFToken extracts CSRF token from context.

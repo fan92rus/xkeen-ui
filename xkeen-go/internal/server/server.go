@@ -61,7 +61,6 @@ type sessionStore struct {
 }
 
 type session struct {
-	username  string
 	csrfToken string
 	createdAt time.Time
 	expiresAt time.Time
@@ -391,20 +390,20 @@ func (ss *sessionStore) cleanup() {
 	}
 }
 
-func (ss *sessionStore) IsValid(sessionToken string) (bool, string) {
+func (ss *sessionStore) IsValid(sessionToken string) bool {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
 
 	sess, exists := ss.sessions[sessionToken]
 	if !exists {
-		return false, ""
+		return false
 	}
 
 	if time.Now().After(sess.expiresAt) {
-		return false, ""
+		return false
 	}
 
-	return true, sess.username
+	return true
 }
 
 func (ss *sessionStore) GetCSRFToken(sessionToken string) string {
@@ -419,7 +418,7 @@ func (ss *sessionStore) GetCSRFToken(sessionToken string) string {
 	return sess.csrfToken
 }
 
-func (ss *sessionStore) CreateSession(username string) (sessionToken, csrfToken string, err error) {
+func (ss *sessionStore) CreateSession() (sessionToken, csrfToken string, err error) {
 	sessionToken, err = generateSecureToken(32)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate session token: %w", err)
@@ -434,7 +433,6 @@ func (ss *sessionStore) CreateSession(username string) (sessionToken, csrfToken 
 	defer ss.mu.Unlock()
 
 	ss.sessions[sessionToken] = &session{
-		username:  username,
 		csrfToken: csrfToken,
 		createdAt: time.Now(),
 		expiresAt: time.Now().Add(ss.sessionTimeout),
@@ -538,7 +536,7 @@ func ClearSessionCookie(w http.ResponseWriter) {
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 	// Check if already logged in
 	if cookie, err := r.Cookie("session"); err == nil {
-		if valid, _ := s.sessions.IsValid(cookie.Value); valid {
+		if s.sessions.IsValid(cookie.Value) {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
@@ -556,18 +554,12 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
-	}
-
-	// Default username if not provided
-	if req.Username == "" {
-		req.Username = "admin"
 	}
 
 	// Check password from config
@@ -582,7 +574,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.Username != s.cfg.Auth.Username || !s.security.CheckPassword(req.Password, storedHash) {
+	if !s.security.CheckPassword(req.Password, storedHash) {
 		// Record failed attempt
 		s.middleware.RecordFailedAttempt(r.Context())
 
@@ -599,7 +591,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	s.middleware.ResetAttempts(r.Context())
 
 	// Create session
-	sessionToken, csrfToken, err := s.sessions.CreateSession(req.Username)
+	sessionToken, csrfToken, err := s.sessions.CreateSession()
 	if err != nil {
 		log.Printf("Failed to create session: %v", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
@@ -641,12 +633,10 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	loggedIn := false
-	username := ""
 
 	if cookie, err := r.Cookie("session"); err == nil {
-		if valid, user := s.sessions.IsValid(cookie.Value); valid {
+		if s.sessions.IsValid(cookie.Value) {
 			loggedIn = true
-			username = user
 		}
 	}
 
@@ -654,7 +644,6 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":        true,
 		"logged_in": loggedIn,
-		"user":      username,
 	})
 }
 
@@ -764,7 +753,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Password changed successfully for user: %s", GetUsername(r.Context()))
+	log.Printf("Password changed successfully")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

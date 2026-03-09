@@ -35,11 +35,10 @@ func NewAuthTestHelper(handler http.Handler) *AuthTestHelper {
 	}
 }
 
-// Login performs a login request with username and password.
+// Login performs a login request with password only.
 // Stores session cookies for subsequent authenticated requests.
-func (h *AuthTestHelper) Login(username, password string) (*http.Response, error) {
+func (h *AuthTestHelper) Login(password string) (*http.Response, error) {
 	body := map[string]string{
-		"username": username,
 		"password": password,
 	}
 	bodyBytes, _ := json.Marshal(body)
@@ -60,9 +59,8 @@ func (h *AuthTestHelper) Login(username, password string) (*http.Response, error
 }
 
 // LoginForm performs a login request using form data.
-func (h *AuthTestHelper) LoginForm(username, password string) (*http.Response, error) {
+func (h *AuthTestHelper) LoginForm(password string) (*http.Response, error) {
 	formData := url.Values{}
-	formData.Set("username", username)
 	formData.Set("password", password)
 
 	resp, err := h.Client.PostForm(h.baseURL+"/api/auth/login", formData)
@@ -77,10 +75,9 @@ func (h *AuthTestHelper) LoginForm(username, password string) (*http.Response, e
 	return resp, nil
 }
 
-// Setup performs initial setup with username and password.
-func (h *AuthTestHelper) Setup(username, password string) (*http.Response, error) {
+// Setup performs initial setup with password.
+func (h *AuthTestHelper) Setup(password string) (*http.Response, error) {
 	body := map[string]string{
-		"username": username,
 		"password": password,
 	}
 	bodyBytes, _ := json.Marshal(body)
@@ -362,14 +359,13 @@ func (h *AuthTestHelper) URL() string {
 // Session represents an authenticated session for testing.
 type Session struct {
 	Helper    *AuthTestHelper
-	Username  string
 	Cookies   []*http.Cookie
 	CSRFToken string
 }
 
 // NewSession creates a new authenticated session.
-func (h *AuthTestHelper) NewSession(username, password string) (*Session, error) {
-	resp, err := h.Login(username, password)
+func (h *AuthTestHelper) NewSession(password string) (*Session, error) {
+	resp, err := h.Login(password)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +378,6 @@ func (h *AuthTestHelper) NewSession(username, password string) (*Session, error)
 
 	return &Session{
 		Helper:    h,
-		Username:  username,
 		Cookies:   h.Cookies,
 		CSRFToken: h.CSRFToken,
 	}, nil

@@ -422,7 +422,6 @@ func (m *MockFS) SeedTestData() {
 
 	// Sample xkeen-go auth file
 	m.WriteFile("/opt/etc/xkeen-go/auth.json", []byte(`{
-    "username": "admin",
     "password_hash": "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.qO.1BoWBPfGKWe",
     "created_at": "2026-03-01T00:00:00Z"
 }`))

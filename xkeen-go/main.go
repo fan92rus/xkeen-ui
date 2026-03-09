@@ -59,7 +59,6 @@ const defaultConfigJSON = `{
         "allowed_origins": []
     },
     "auth": {
-        "username": "admin",
         "password_hash": "",
         "session_timeout": 24,
         "max_login_attempts": 5,
@@ -384,10 +383,9 @@ func install() error {
 		}
 		fmt.Println()
 		fmt.Println("***************************************")
-		fmt.Println("*  IMPORTANT: Default credentials     *")
-		fmt.Println("*  Username: admin                    *")
+		fmt.Println("*  IMPORTANT: Default password        *")
 		fmt.Println("*  Password: admin                    *")
-		fmt.Println("*  YOU MUST CHANGE PASSWORD ON LOGIN! *")
+		fmt.Println("*  YOU MUST CHANGE IT ON LOGIN!       *")
 		fmt.Println("***************************************")
 	} else {
 		fmt.Println("Configuration file already exists, keeping it")

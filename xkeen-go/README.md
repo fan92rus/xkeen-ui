@@ -77,7 +77,6 @@ XKEEN-GO is a single-binary web application designed to provide a modern, secure
      "session_secret": "",
      "log_level": "info",
      "auth": {
-       "username": "admin",
        "password_hash": "",
        "session_timeout": 24,
        "max_login_attempts": 5,
@@ -171,7 +170,6 @@ The configuration file is located at `/opt/etc/xkeen-go/config.json` by default.
     "allowed_origins": []
   },
   "auth": {
-    "username": "admin",
     "password_hash": "$2a$12$...",
     "session_timeout": 24,
     "max_login_attempts": 5,
@@ -192,7 +190,6 @@ The configuration file is located at `/opt/etc/xkeen-go/config.json` by default.
 | `log_level` | string | `info` | Logging level: debug, info, warn, error |
 | `cors.enabled` | bool | false | Enable CORS support |
 | `cors.allowed_origins` | []string | [] | List of allowed CORS origins |
-| `auth.username` | string | `admin` | Admin username |
 | `auth.password_hash` | string | (empty) | bcrypt hash of the password |
 | `auth.session_timeout` | int | 24 | Session timeout in hours |
 | `auth.max_login_attempts` | int | 5 | Maximum failed login attempts before lockout |
@@ -276,7 +273,7 @@ By default, the following directories are accessible:
 ```bash
 curl -X POST http://localhost:8089/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"your-password"}'
+  -d '{"password":"your-password"}'
 ```
 
 Response:
