@@ -1,7 +1,7 @@
 // components/commands.js - Commands tab with categorized XKeen commands
 
 import { InteractiveSession } from '../services/interactive.js';
-import { AnsiUp } from 'https://esm.sh/ansi_up@6.0.2';
+import { AnsiUp } from 'ansi_up';
 
 const ansi_up = new AnsiUp();
 

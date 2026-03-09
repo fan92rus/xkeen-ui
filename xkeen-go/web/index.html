@@ -477,35 +477,7 @@
              x-text="$store.app.toast.message"></div>
     </div>
 
-    <!-- CodeMirror importmap -->
-    <script type="importmap">
-    {
-        "imports": {
-            "codemirror": "https://esm.sh/codemirror@6.0.1",
-            "@codemirror/lang-json": "https://esm.sh/@codemirror/lang-json@6.0.1",
-            "@codemirror/lang-yaml": "https://esm.sh/@codemirror/lang-yaml@6.1.2",
-            "@codemirror/theme-one-dark": "https://esm.sh/@codemirror/theme-one-dark@6.1.2",
-            "@codemirror/merge": "https://esm.sh/@codemirror/merge@6.0.0",
-            "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
-            "@codemirror/view": "https://esm.sh/@codemirror/view@6.26.3"
-        }
-    }
-    </script>
-
-    <!-- Load components first, then Alpine.js as ES module -->
-    <script type="module">
-        // Load all components
-        import '/static/js/store.js';
-        import '/static/js/app.js';
-        import '/static/js/components/editor.js';
-        import '/static/js/components/logs.js';
-        import '/static/js/components/service.js';
-        import '/static/js/components/commands.js';
-
-        // Then load and start Alpine.js
-        import Alpine from 'https://esm.sh/alpinejs@3.14.3';
-        window.Alpine = Alpine;
-        Alpine.start();
-    </script>
+    <!-- Load bundled frontend -->
+    <script type="module" src="/static/dist/bundle.js"></script>
 </body>
 </html>

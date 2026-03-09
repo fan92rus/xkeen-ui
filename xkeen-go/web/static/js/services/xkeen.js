@@ -21,3 +21,8 @@ export async function getSettings() {
 export async function setLogLevel(level) {
     return post('/api/xray/settings/log-level', { log_level: level });
 }
+
+export async function getStatus() {
+    const data = await get('/api/xkeen/status');
+    return data.status || 'unknown';
+}

@@ -1,0 +1,24 @@
+{
+  "name": "xkeen-ui-frontend",
+  "version": "1.0.0",
+  "description": "XKEEN-UI Frontend Bundle",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch"
+  },
+  "dependencies": {
+    "alpinejs": "^3.14.3",
+    "codemirror": "^6.0.1",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/merge": "^6.0.0",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.26.3",
+    "ansi_up": "^6.0.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
