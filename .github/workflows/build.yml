@@ -123,19 +123,19 @@ jobs:
             -X main.appVersion=${{ steps.bump.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
             -X main.gitCommit=${GIT_COMMIT}" \
-            -o xkeen-go-keenetic-arm64
+            -o xkeen-ui-keenetic-arm64
 
       - name: Generate SHA256 checksum
         working-directory: xkeen-go
         run: |
           # Generate checksum for binary integrity verification
-          sha256sum xkeen-go-keenetic-arm64 > xkeen-go-keenetic-arm64.sha256
+          sha256sum xkeen-ui-keenetic-arm64 > xkeen-ui-keenetic-arm64.sha256
 
           echo "Checksum generated:"
-          cat xkeen-go-keenetic-arm64.sha256
+          cat xkeen-ui-keenetic-arm64.sha256
 
           # Verify checksum format (should be: "hash  filename")
-          if [ $(wc -w < xkeen-go-keenetic-arm64.sha256) -ne 2 ]; then
+          if [ $(wc -w < xkeen-ui-keenetic-arm64.sha256) -ne 2 ]; then
             echo "ERROR: Invalid checksum format"
             exit 1
           fi
@@ -177,23 +177,23 @@ jobs:
           ### Installation
           \`\`\`sh
           # Download and make executable
-          chmod +x xkeen-go-keenetic-arm64
+          chmod +x xkeen-ui-keenetic-arm64
 
           # Install (run as root)
-          ./xkeen-go-keenetic-arm64 install
+          ./xkeen-ui-keenetic-arm64 install
 
           # Start service
-          /opt/etc/init.d/xkeen-go start
+          /opt/etc/init.d/xkeen-ui start
           \`\`\`
 
           ### Verify Download (Optional)
           \`\`\`sh
           # Download checksum file
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-go-keenetic-arm64.sha256
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-ui-keenetic-arm64.sha256
 
           # Verify integrity
-          sha256sum -c xkeen-go-keenetic-arm64.sha256
-          # Should output: xkeen-go-keenetic-arm64: OK
+          sha256sum -c xkeen-ui-keenetic-arm64.sha256
+          # Should output: xkeen-ui-keenetic-arm64: OK
           \`\`\`
 
           ### Default Credentials
@@ -240,6 +240,6 @@ jobs:
           name: XKEEN-GO ${{ steps.bump.outputs.version }}
           body_path: /tmp/release-notes.md
           files: |
-            xkeen-go/xkeen-go-keenetic-arm64
-            xkeen-go/xkeen-go-keenetic-arm64.sha256
+            xkeen-go/xkeen-ui-keenetic-arm64
+            xkeen-go/xkeen-ui-keenetic-arm64.sha256
           draft: false
