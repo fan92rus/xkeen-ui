@@ -62,11 +62,12 @@ cd /opt/tmp/ && wget -qO- https://api.github.com/repos/fan92rus/xkeen-ui/release
 ## Команды управления сервисом
 
 ```bash
-xkeen-ui start    # Запуск
-xkeen-ui stop     # Остановка
-xkeen-ui restart  # Перезапуск
-xkeen-ui status   # Статус
-xkeen-ui log      # Логи
+xkeen-ui start      # Запуск
+xkeen-ui stop       # Остановка
+xkeen-ui restart    # Перезапуск
+xkeen-ui status     # Статус
+xkeen-ui log        # Логи
+xkeen-ui uninstall  # Удаление
 ```
 
 ## Конфигурация
