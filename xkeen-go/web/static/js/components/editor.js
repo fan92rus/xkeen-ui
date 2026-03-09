@@ -5,6 +5,9 @@ import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
 import { oneDark } from '@codemirror/theme-one-dark';
 
+// Re-export for use in other components if needed
+export { EditorView, basicSetup, json, yaml, oneDark };
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('editor', function() {
         return {
