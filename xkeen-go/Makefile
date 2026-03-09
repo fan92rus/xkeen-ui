@@ -1,6 +1,6 @@
 # XKEEN-GO Makefile
 
-BINARY_NAME=xkeen-go
+BINARY_NAME=xkeen-ui
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DIR=./build
 MAIN_PATH=.

@@ -5,10 +5,10 @@
 # Compatible with busybox (no fractional sleep).
 
 OLD_PID=$1
-NEW_BINARY="/tmp/xkeen-go-keenetic-arm64.new"
-TARGET_BINARY="/opt/bin/xkeen-go-keenetic-arm64"
-INIT_SCRIPT="/opt/etc/init.d/xkeen-go"
-LOGFILE="/opt/var/log/xkeen-go.log"
+NEW_BINARY="/tmp/xkeen-ui-keenetic-arm64.new"
+TARGET_BINARY="/opt/bin/xkeen-ui-keenetic-arm64"
+INIT_SCRIPT="/opt/etc/init.d/xkeen-ui"
+LOGFILE="/opt/var/log/xkeen-ui.log"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [update] $1" >> "$LOGFILE"

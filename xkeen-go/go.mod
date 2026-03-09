@@ -1,4 +1,4 @@
-module github.com/user/xkeen-go
+module github.com/user/xkeen-ui
 
 go 1.21
 

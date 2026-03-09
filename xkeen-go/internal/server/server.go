@@ -19,9 +19,9 @@ import (
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/user/xkeen-go/internal/config"
-	"github.com/user/xkeen-go/internal/handlers"
-	"github.com/user/xkeen-go/internal/utils"
+	"github.com/user/xkeen-ui/internal/config"
+	"github.com/user/xkeen-ui/internal/handlers"
+	"github.com/user/xkeen-ui/internal/utils"
 )
 
 // Server represents the HTTP server.
@@ -144,7 +144,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 }
 
 // validateAndResolveBackupPath validates the default backup path and returns a safe backup directory.
-// If the default path (parent of XrayConfigDir + /xkeen-go/backups) is not within AllowedRoots,
+// If the default path (parent of XrayConfigDir + /xkeen-ui/backups) is not within AllowedRoots,
 // it attempts to find a safe fallback location within one of the AllowedRoots.
 func validateAndResolveBackupPath(xrayConfigDir string, allowedRoots []string) (string, error) {
 	if len(allowedRoots) == 0 {
@@ -158,7 +158,7 @@ func validateAndResolveBackupPath(xrayConfigDir string, allowedRoots []string) (
 	}
 
 	// Calculate the default backup directory
-	defaultBackupDir := filepath.Join(filepath.Dir(xrayConfigDir), "xkeen-go", "backups")
+	defaultBackupDir := filepath.Join(filepath.Dir(xrayConfigDir), "xkeen-ui", "backups")
 
 	// Validate that the default backup directory is within allowed roots
 	if validator.IsAllowed(defaultBackupDir) {
@@ -179,7 +179,7 @@ func validateAndResolveBackupPath(xrayConfigDir string, allowedRoots []string) (
 	fallbackDir := ""
 	for _, root := range allowedRoots {
 		// Try to use a subdirectory within the allowed root
-		candidateDir := filepath.Join(root, "xkeen-go", "backups")
+		candidateDir := filepath.Join(root, "xkeen-ui", "backups")
 		if validator.IsAllowed(candidateDir) {
 			if strings.Contains(root, "xray") && fallbackDir == "" {
 				fallbackDir = candidateDir

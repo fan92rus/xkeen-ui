@@ -19,7 +19,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/user/xkeen-go/internal/version"
+	"github.com/user/xkeen-ui/internal/version"
 )
 
 // UpdateHandler handles application update operations.
@@ -35,14 +35,14 @@ type UpdateHandler struct {
 
 // NewUpdateHandler creates a new UpdateHandler.
 func NewUpdateHandler() *UpdateHandler {
-	repo := "fan92rus/xkeen-go-ui"
-	binaryName := "xkeen-go-keenetic-arm64"
+	repo := "fan92rus/xkeen-ui"
+	binaryName := "xkeen-ui-keenetic-arm64"
 	return &UpdateHandler{
 		githubRepo:   repo,
 		binaryName:   binaryName,
 		installPath:  "/opt/bin/" + binaryName,
-		initScript:   "/opt/etc/init.d/xkeen-go",
-		updateScript: "/opt/etc/xkeen-go/update.sh",
+		initScript:   "/opt/etc/init.d/xkeen-ui",
+		updateScript: "/opt/etc/xkeen-ui/update.sh",
 		downloadURL:  fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
 	}
 }

@@ -29,7 +29,7 @@ func NewMockFS() *MockFS {
 			"/opt/etc/xray":        true,
 			"/opt/etc/xray/configs": true,
 			"/opt/etc/xkeen":       true,
-			"/opt/etc/xkeen-go":    true,
+			"/opt/etc/xkeen-ui":    true,
 			"/opt/var":             true,
 			"/opt/var/log":         true,
 			"/opt/var/log/xray":    true,
@@ -306,7 +306,7 @@ func (m *MockFS) SeedTestData() {
 	// Create necessary directories
 	m.Mkdir("/opt/etc/xray/configs")
 	m.Mkdir("/opt/var/log/xray")
-	m.Mkdir("/opt/etc/xkeen-go")
+	m.Mkdir("/opt/etc/xkeen-ui")
 
 	// Sample inbound configuration
 	m.WriteFile("/opt/etc/xray/configs/03_inbounds.json", []byte(`{
@@ -420,14 +420,14 @@ func (m *MockFS) SeedTestData() {
 	m.WriteFile("/opt/var/log/xray/error.log", []byte(`2026-03-03 09:00:00 [Error] connection timeout
 `))
 
-	// Sample xkeen-go auth file
-	m.WriteFile("/opt/etc/xkeen-go/auth.json", []byte(`{
+	// Sample xkeen-ui auth file
+	m.WriteFile("/opt/etc/xkeen-ui/auth.json", []byte(`{
     "password_hash": "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.qO.1BoWBPfGKWe",
     "created_at": "2026-03-01T00:00:00Z"
 }`))
 
-	// Sample xkeen-go config
-	m.WriteFile("/opt/etc/xkeen-go/config.json", []byte(`{
+	// Sample xkeen-ui config
+	m.WriteFile("/opt/etc/xkeen-ui/config.json", []byte(`{
     "port": 8089,
     "session_timeout": 3600,
     "max_login_attempts": 5,

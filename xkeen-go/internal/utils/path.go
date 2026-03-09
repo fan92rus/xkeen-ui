@@ -1,4 +1,4 @@
-// Package utils provides utility functions for the xkeen-go application.
+// Package utils provides utility functions for the xkeen-ui application.
 package utils
 
 import (

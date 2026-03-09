@@ -13,7 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/user/xkeen-go/internal/utils"
+	"github.com/user/xkeen-ui/internal/utils"
 )
 
 // SettingsHandler handles Xray settings operations.
