@@ -159,3 +159,5 @@ MIT License
 ## Автор
 
 [fan92rus](https://github.com/fan92rus)
+
+<img width="1910" height="667" alt="image" src="https://github.com/user-attachments/assets/be784547-3ab4-4604-9106-e3c5155187af" />
