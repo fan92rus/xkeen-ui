@@ -136,8 +136,11 @@ case "$1" in
         stop
         echo "$NAME disabled"
         ;;
+    uninstall)
+        $DAEMON uninstall
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|log|enable|disable}"
+        echo "Usage: $0 {start|stop|restart|status|log|enable|disable|uninstall}"
         exit 1
         ;;
 esac
