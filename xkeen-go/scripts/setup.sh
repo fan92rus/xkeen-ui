@@ -1,6 +1,6 @@
 #!/bin/sh
 # XKEEN-UI One-Line Installer for Keenetic routers
-# Usage: curl -Ls https://raw.githubusercontent.com/fan92rus/xkeen-ui/main/xkeen-go/scripts/setup.sh | sh
+# Usage: curl -Ls https://raw.githubusercontent.com/fan92rus/xkeen-ui/refs/heads/master/xkeen-go/scripts/setup.sh | sh
 # Compatible with busybox (Keenetic/Entware)
 
 set -e
