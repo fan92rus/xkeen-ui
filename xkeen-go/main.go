@@ -341,13 +341,6 @@ func install() error {
 		_ = exec.Command(installInitScript, "disable").Run()
 	}
 
-	// Remove old binary if exists
-	oldBinary := filepath.Join(installBinDir, binaryName)
-	if _, err := os.Stat(oldBinary); err == nil {
-		fmt.Println("Removing old binary...")
-		os.Remove(oldBinary)
-	}
-
 	// Create directories
 	fmt.Println("Creating directories...")
 	dirs := []string{
@@ -361,15 +354,28 @@ func install() error {
 		}
 	}
 
-	// Copy binary to /opt/bin
+	// Check if binary is already in the target location
 	targetBin := filepath.Join(installBinDir, binaryName)
-	fmt.Printf("Installing binary to %s...\n", targetBin)
-	data, err := os.ReadFile(execPath)
-	if err != nil {
-		return fmt.Errorf("failed to read binary: %w", err)
-	}
-	if err := os.WriteFile(targetBin, data, 0755); err != nil {
-		return fmt.Errorf("failed to copy binary: %w", err)
+	needsCopy := execPath != targetBin
+
+	if needsCopy {
+		// Remove old binary if exists (only if running from different location)
+		if _, err := os.Stat(targetBin); err == nil {
+			fmt.Println("Removing old binary...")
+			os.Remove(targetBin)
+		}
+
+		// Copy binary to /opt/bin
+		fmt.Printf("Installing binary to %s...\n", targetBin)
+		data, err := os.ReadFile(execPath)
+		if err != nil {
+			return fmt.Errorf("failed to read binary: %w", err)
+		}
+		if err := os.WriteFile(targetBin, data, 0755); err != nil {
+			return fmt.Errorf("failed to copy binary: %w", err)
+		}
+	} else {
+		fmt.Println("Binary already in target location, skipping copy")
 	}
 
 	// Create default config if not exists
