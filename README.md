@@ -7,7 +7,13 @@
 Выполните на роутере одну команду:
 
 ```bash
-cd /opt/tmp/ && wget -qO- https://api.github.com/repos/fan92rus/xkeen-ui/releases/latest | grep "browser_download_url.*arm64" | cut -d '"' -f 4 | xargs -r wget -qO xkeen-ui-keenetic-arm64 && chmod +x xkeen-ui-keenetic-arm64 && ./xkeen-ui-keenetic-arm64 install && rm -f xkeen-ui-keenetic-arm64 && xkeen-ui start
+curl -Ls https://raw.githubusercontent.com/fan92rus/xkeen-ui/main/xkeen-go/scripts/setup.sh | sh
+```
+
+Или через wget:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/fan92rus/xkeen-ui/main/xkeen-go/scripts/setup.sh | sh
 ```
 
 Откройте веб-интерфейс: `http://<ip-роутера>:8089`
