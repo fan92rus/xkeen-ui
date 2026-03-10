@@ -11,7 +11,7 @@ func GetBinaryNameForArch() string {
 	case "arm64":
 		return "xkeen-ui-keenetic-arm64"
 	case "mips", "mipsle":
-		return "xkeen-ui-keenetic-mips"
+		return "xkeen-ui-keenetic-mipsle"
 	case "amd64":
 		// AMD64 for development/testing - use arm64 as fallback
 		return "xkeen-ui-keenetic-arm64"

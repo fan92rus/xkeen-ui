@@ -136,27 +136,27 @@ jobs:
             -X main.gitCommit=${GIT_COMMIT}" \
             -o xkeen-ui-keenetic-arm64
 
-          # Build MIPS (for KN-1010 and similar)
-          echo "Building MIPS..."
-          CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags "-s -w \
+          # Build MIPSLE (for KN-1010 and similar)
+          echo "Building MIPSLE..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "-s -w \
             -X main.appVersion=${{ steps.bump.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
             -X main.gitCommit=${GIT_COMMIT}" \
-            -o xkeen-ui-keenetic-mips
+            -o xkeen-ui-keenetic-mipsle
 
       - name: Generate SHA256 checksums
         working-directory: xkeen-go
         run: |
           # Generate checksums for both binaries
           sha256sum xkeen-ui-keenetic-arm64 > xkeen-ui-keenetic-arm64.sha256
-          sha256sum xkeen-ui-keenetic-mips > xkeen-ui-keenetic-mips.sha256
+          sha256sum xkeen-ui-keenetic-mipsle > xkeen-ui-keenetic-mipsle.sha256
 
           echo "Checksums generated:"
           cat xkeen-ui-keenetic-arm64.sha256
-          cat xkeen-ui-keenetic-mips.sha256
+          cat xkeen-ui-keenetic-mipsle.sha256
 
           # Verify checksum format (should be: "hash  filename")
-          for file in xkeen-ui-keenetic-arm64.sha256 xkeen-ui-keenetic-mips.sha256; do
+          for file in xkeen-ui-keenetic-arm64.sha256 xkeen-ui-keenetic-mipsle.sha256; do
             if [ $(wc -w < "$file") -ne 2 ]; then
               echo "ERROR: Invalid checksum format in $file"
               exit 1
@@ -198,7 +198,7 @@ jobs:
           - KN-1810, KN-1910
           - Other Keenetic routers with ARM64 processor and Entware
 
-          **MIPS** (xkeen-ui-keenetic-mips):
+          **MIPS** (xkeen-ui-keenetic-mipsle):
           - KN-1010, KN-1011
           - Other Keenetic routers with MIPS processor and Entware
 
@@ -207,10 +207,10 @@ jobs:
           # Download and make executable (choose your architecture)
           chmod +x xkeen-ui-keenetic-arm64  # for ARM64
           # or
-          chmod +x xkeen-ui-keenetic-mips    # for MIPS
+          chmod +x xkeen-ui-keenetic-mipsle    # for MIPS
 
           # Install (run as root)
-          ./xkeen-ui-keenetic-arm64 install  # or xkeen-ui-keenetic-mips
+          ./xkeen-ui-keenetic-arm64 install  # or xkeen-ui-keenetic-mipsle
 
           # Start service
           /opt/etc/init.d/xkeen-ui start
@@ -221,7 +221,7 @@ jobs:
           # Download checksum file for your architecture
           wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-ui-keenetic-arm64.sha256
           # or
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-ui-keenetic-mips.sha256
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-ui-keenetic-mipsle.sha256
 
           # Verify integrity
           sha256sum -c xkeen-ui-keenetic-arm64.sha256
@@ -274,6 +274,6 @@ jobs:
           files: |
             xkeen-go/xkeen-ui-keenetic-arm64
             xkeen-go/xkeen-ui-keenetic-arm64.sha256
-            xkeen-go/xkeen-ui-keenetic-mips
-            xkeen-go/xkeen-ui-keenetic-mips.sha256
+            xkeen-go/xkeen-ui-keenetic-mipsle
+            xkeen-go/xkeen-ui-keenetic-mipsle.sha256
           draft: false

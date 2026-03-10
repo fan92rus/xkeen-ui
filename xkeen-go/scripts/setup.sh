@@ -59,7 +59,9 @@ detect_arch() {
             echo "arm64"
             ;;
         mips|mipsel|mipsle)
-            echo "mips"
+            # Keenetic routers use MIPS little-endian (mipsle)
+            # uname -m returns just "mips" on these devices
+            echo "mipsle"
             ;;
         x86_64|amd64)
             warn "AMD64 detected - using arm64 binary (for development/testing)"

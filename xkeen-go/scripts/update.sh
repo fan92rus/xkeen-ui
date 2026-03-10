@@ -5,7 +5,7 @@
 # Compatible with busybox (no fractional sleep).
 #
 # Arguments:
-#   $1 - Binary name (e.g., xkeen-ui-keenetic-arm64, xkeen-ui-keenetic-mips)
+#   $1 - Binary name (e.g., xkeen-ui-keenetic-arm64, xkeen-ui-keenetic-mipsle)
 #   $2 - Old PID to wait for
 
 BINARY_NAME=$1

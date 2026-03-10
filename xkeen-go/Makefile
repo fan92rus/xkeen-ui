@@ -17,7 +17,7 @@ GOMOD=$(GOCMD) mod
 # Build flags
 LDFLAGS=-ldflags "-s -w -X main.appVersion=$(VERSION) -X main.buildDate=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)"
 
-.PHONY: build clean test run deps version build-frontend deps-frontend watch-frontend keenetic keenetic-arm64 keenetic-mips keenetic-dist
+.PHONY: build clean test run deps version build-frontend deps-frontend watch-frontend keenetic keenetic-arm64 keenetic-mipsle keenetic-dist
 
 version:
 	@echo "Version:    $(VERSION)"
@@ -33,17 +33,17 @@ build: build-frontend
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-keenetic-arm64 $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)-keenetic-arm64"
 
-# Build for Keenetic MIPS (KN-1010 and similar)
-keenetic-mips: build-frontend
+# Build for Keenetic MIPSLE (little-endian, KN-1010 and similar)
+keenetic-mipsle: build-frontend
 	@echo "Cleaning frontend build artifacts..."
 	@rm -rf web/node_modules web/package.json web/package-lock.json web/build.js
 	@rm -rf web/static/js web/static/vendor
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-keenetic-mips $(MAIN_PATH)
-	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)-keenetic-mips"
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-keenetic-mipsle $(MAIN_PATH)
+	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)-keenetic-mipsle"
 
-# Build for all Keenetic platforms (arm64 + mips)
-keenetic: keenetic-arm64 keenetic-mips
+# Build for all Keenetic platforms (arm64 + mipsle)
+keenetic: keenetic-arm64 keenetic-mipsle
 	@echo "Built all Keenetic binaries"
 
 # Build for Keenetic ARM64 only
@@ -59,7 +59,7 @@ keenetic-arm64: build-frontend
 keenetic-dist: keenetic
 	@echo "Compressing binaries with UPX..."
 	@upx --best --lzma $(BUILD_DIR)/$(BINARY_NAME)-keenetic-arm64 || echo "UPX not found, skipping compression"
-	@upx --best --lzma $(BUILD_DIR)/$(BINARY_NAME)-keenetic-mips || echo "UPX not found, skipping compression"
+	@upx --best --lzma $(BUILD_DIR)/$(BINARY_NAME)-keenetic-mipsle || echo "UPX not found, skipping compression"
 	@echo "Distribution build complete"
 
 # Frontend build
