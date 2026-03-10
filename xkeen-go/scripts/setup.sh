@@ -167,13 +167,21 @@ main() {
         exit 1
     fi
 
+    # Start service
+    info "Starting service..."
+    if command -v xkeen-ui >/dev/null 2>&1; then
+        xkeen-ui start
+    else
+        /opt/etc/init.d/xkeen-ui start
+    fi
+
     log ""
     success "==================================="
     success "  Installation Complete!"
     success "==================================="
     log ""
-    info "To start the service:"
-    info "  xkeen-ui start"
+    info "Web interface: http://<router-ip>:8089"
+    info "Default password: admin"
     log ""
     info "Commands:"
     info "  Start:   xkeen-ui start"
@@ -181,8 +189,6 @@ main() {
     info "  Restart: xkeen-ui restart"
     info "  Status:  xkeen-ui status"
     info "  Logs:    xkeen-ui log"
-    log ""
-    info "Web interface: http://<router-ip>:8089"
     log ""
 }
 
