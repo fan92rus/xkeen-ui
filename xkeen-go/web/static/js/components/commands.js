@@ -219,11 +219,15 @@ function commandsComponent() {
 
         handleStreamMessage(msg) {
             if (msg.type === 'output') {
-                const html = ansi_up.ansi_to_html(msg.text, { use_classes: false });
-                this.$store.app.modal.output += html + '\n';
+                // PTY sends raw output in arbitrary chunks - don't add \n
+                // Strip carriage returns (\r) which PTY uses for in-place updates
+                let text = msg.text.replace(/\r/g, '');
+                const html = ansi_up.ansi_to_html(text, { use_classes: false });
+                this.$store.app.modal.output += html;
                 this.scrollToBottom();
             } else if (msg.type === 'error') {
-                const html = ansi_up.ansi_to_html(msg.text, { use_classes: false });
+                let text = msg.text.replace(/\r/g, '');
+                const html = ansi_up.ansi_to_html(text, { use_classes: false });
                 this.$store.app.modal.error += (this.$store.app.modal.error ? '\n' : '') + html;
                 this.scrollToBottom();
             } else if (msg.type === 'complete') {

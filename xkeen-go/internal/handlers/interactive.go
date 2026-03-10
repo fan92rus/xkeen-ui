@@ -2,15 +2,17 @@
 package handlers
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
+	"github.com/creack/pty"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -145,7 +147,7 @@ func (h *InteractiveHandler) sendError(conn *websocket.Conn, text string) {
 	})
 }
 
-// executeInteractive runs the command and handles stdin/stdout/stderr.
+// executeInteractive runs the command with PTY and handles stdin/stdout.
 func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config CommandConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), config.Timeout)
 	defer cancel()
@@ -160,71 +162,57 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
-	// Create pipes
-	stdin, err := cmd.StdinPipe()
+	// Start command with PTY
+	ptmx, err := pty.Start(cmd)
 	if err != nil {
-		h.sendError(conn, "Failed to create stdin pipe: "+err.Error())
+		h.sendError(conn, "Failed to start PTY: "+err.Error())
 		return
 	}
-	defer stdin.Close()
+	defer func() { _ = ptmx.Close() }()
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		h.sendError(conn, "Failed to create stdout pipe: "+err.Error())
-		return
-	}
+	// Set initial PTY size (reasonable default for web UI)
+	_ = pty.Setsize(ptmx, &pty.Winsize{
+		Cols: 120,
+		Rows: 40,
+	})
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		h.sendError(conn, "Failed to create stderr pipe: "+err.Error())
-		return
-	}
-
-	// Start command
-	if err := cmd.Start(); err != nil {
-		h.sendError(conn, "Failed to start command: "+err.Error())
-		return
-	}
-
-	// Done channel for coordination
-	done := make(chan struct{})
-
-	// Read stdout in goroutine
+	// Read from PTY and send to WebSocket
 	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			conn.WriteJSON(ServerMessage{
-				Type: "output",
-				Text: scanner.Text(),
-			})
+		buf := make([]byte, 1024)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				// Send output immediately, even partial lines
+				if writeErr := conn.WriteJSON(ServerMessage{
+					Type: "output",
+					Text: string(buf[:n]),
+				}); writeErr != nil {
+					log.Printf("WebSocket write error: %v", writeErr)
+					return
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("PTY read error: %v", err)
+				}
+				return
+			}
 		}
 	}()
 
-	// Read stderr in goroutine
+	// Read WebSocket messages and write to PTY
 	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			conn.WriteJSON(ServerMessage{
-				Type: "error",
-				Text: scanner.Text(),
-			})
-		}
-	}()
-
-	// Read WebSocket messages and write to stdin
-	go func() {
-		defer close(done)
 		for {
 			var msg ClientMessage
 			if err := conn.ReadJSON(&msg); err != nil {
 				return // Connection closed or error
 			}
 			if msg.Type == "input" {
-				stdin.Write([]byte(msg.Text))
+				_, _ = ptmx.Write([]byte(msg.Text))
 			} else if msg.Type == "signal" {
 				// Handle signal (e.g., terminate)
 				if cmd.Process != nil {
-					cmd.Process.Kill()
+					_ = cmd.Process.Signal(syscall.SIGTERM)
 				}
 				return
 			}
@@ -245,7 +233,7 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 	}
 
 	// Send completion message
-	conn.WriteJSON(ServerMessage{
+	_ = conn.WriteJSON(ServerMessage{
 		Type:     "complete",
 		Success:  exitCode == 0,
 		ExitCode: exitCode,
