@@ -328,13 +328,6 @@ func install() error {
 	fmt.Println("Checking for existing installation...")
 	stopProcess()
 
-	// Remove old autostart symlinks if they exist (from previous installations)
-	if _, err := os.Stat("/opt/etc/init.d/rc.d/S99xkeen-ui"); err == nil {
-		fmt.Println("Removing old autostart symlinks...")
-		os.Remove("/opt/etc/init.d/rc.d/S99xkeen-ui")
-		os.Remove("/opt/etc/init.d/rc.d/K01xkeen-ui")
-	}
-
 	// Create directories
 	fmt.Println("Creating directories...")
 	dirs := []string{
@@ -445,6 +438,9 @@ func install() error {
 	}
 	sLink := filepath.Join(rcDir, "S99xkeen-ui")
 	kLink := filepath.Join(rcDir, "K01xkeen-ui")
+	// Remove existing symlinks first (os.Symlink doesn't overwrite)
+	os.Remove(sLink)
+	os.Remove(kLink)
 	if err := os.Symlink(installInitScript, sLink); err != nil {
 		fmt.Printf("Warning: failed to create S99 symlink: %v\n", err)
 	}
