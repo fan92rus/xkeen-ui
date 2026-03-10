@@ -101,6 +101,11 @@ status() {
     else
         echo "$NAME is not running"
     fi
+    if [ -f /opt/etc/init.d/rc.d/S99xkeen-ui ]; then
+        echo "Autostart: enabled"
+    else
+        echo "Autostart: disabled"
+    fi
 }
 
 log() {
@@ -130,11 +135,15 @@ case "$1" in
         log
         ;;
     enable)
-        echo "$NAME enabled"
+        mkdir -p /opt/etc/init.d/rc.d
+        ln -sf ../init.d/xkeen-ui /opt/etc/init.d/rc.d/S99xkeen-ui
+        ln -sf ../init.d/xkeen-ui /opt/etc/init.d/rc.d/K01xkeen-ui
+        echo "$NAME enabled (autostart on boot)"
         ;;
     disable)
-        stop
-        echo "$NAME disabled"
+        rm -f /opt/etc/init.d/rc.d/S99xkeen-ui
+        rm -f /opt/etc/init.d/rc.d/K01xkeen-ui
+        echo "$NAME disabled (no autostart)"
         ;;
     uninstall)
         $DAEMON uninstall
@@ -443,9 +452,11 @@ func install() error {
 		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
-	// Enable service
-	fmt.Println("Enabling service...")
-	_ = exec.Command(installInitScript, "enable").Run()
+	// Enable autostart (create S-links in rc.d)
+	fmt.Println("Enabling autostart...")
+	if err := exec.Command(installInitScript, "enable").Run(); err != nil {
+		fmt.Printf("Warning: failed to enable autostart: %v\n", err)
+	}
 
 	fmt.Println()
 	fmt.Println("===================================")
