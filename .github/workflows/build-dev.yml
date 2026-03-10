@@ -76,43 +76,55 @@ jobs:
           echo "tag=${DEV_TAG}" >> $GITHUB_OUTPUT
           echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Build binary
+      - name: Build binaries
         working-directory: xkeen-go
-        env:
-          CGO_ENABLED: 0
-          GOOS: linux
-          GOARCH: arm64
         run: |
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           GIT_COMMIT=${{ steps.version.outputs.short_sha }}
 
-          go build -ldflags "-s -w \
+          # Build ARM64
+          echo "Building ARM64..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w \
             -X main.appVersion=${{ steps.version.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
             -X main.gitCommit=${GIT_COMMIT}" \
             -o xkeen-ui-keenetic-arm64
+
+          # Build MIPS (for KN-1010 and similar)
+          echo "Building MIPS..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags "-s -w \
+            -X main.appVersion=${{ steps.version.outputs.version }} \
+            -X main.buildDate=${BUILD_DATE} \
+            -X main.gitCommit=${GIT_COMMIT}" \
+            -o xkeen-ui-keenetic-mips
 
       - name: Compress with UPX
         run: |
           sudo apt-get update && sudo apt-get install -y upx-ucl
           upx --best --lzma xkeen-go/xkeen-ui-keenetic-arm64 -o xkeen-go/xkeen-ui-keenetic-arm64-upx
           mv xkeen-go/xkeen-ui-keenetic-arm64-upx xkeen-go/xkeen-ui-keenetic-arm64
+          upx --best --lzma xkeen-go/xkeen-ui-keenetic-mips -o xkeen-go/xkeen-ui-keenetic-mips-upx
+          mv xkeen-go/xkeen-ui-keenetic-mips-upx xkeen-go/xkeen-ui-keenetic-mips
 
-      - name: Generate SHA256 checksum
+      - name: Generate SHA256 checksums
         working-directory: xkeen-go
         run: |
-          # Generate checksum for binary integrity verification
+          # Generate checksums for both binaries
           # IMPORTANT: This must run AFTER UPX compression
           sha256sum xkeen-ui-keenetic-arm64 > xkeen-ui-keenetic-arm64.sha256
+          sha256sum xkeen-ui-keenetic-mips > xkeen-ui-keenetic-mips.sha256
 
-          echo "Checksum generated:"
+          echo "Checksums generated:"
           cat xkeen-ui-keenetic-arm64.sha256
+          cat xkeen-ui-keenetic-mips.sha256
 
           # Verify checksum format (should be: "hash  filename")
-          if [ $(wc -w < xkeen-ui-keenetic-arm64.sha256) -ne 2 ]; then
-            echo "ERROR: Invalid checksum format"
-            exit 1
-          fi
+          for file in xkeen-ui-keenetic-arm64.sha256 xkeen-ui-keenetic-mips.sha256; do
+            if [ $(wc -w < "$file") -ne 2 ]; then
+              echo "ERROR: Invalid checksum format in $file"
+              exit 1
+            fi
+          done
 
       - name: Delete old dev releases
         env:
@@ -150,17 +162,29 @@ jobs:
           | Commit | \`${{ steps.version.outputs.short_sha }}\` |
           | Build date | $(date -u +%Y-%m-%dT%H:%M:%SZ) |
 
+          ### Supported Devices
+
+          **ARM64** (xkeen-ui-keenetic-arm64):
+          - KN-1810, KN-1910
+          - Other Keenetic routers with ARM64 processor and Entware
+
+          **MIPS** (xkeen-ui-keenetic-mips):
+          - KN-1010, KN-1011
+          - Other Keenetic routers with MIPS processor and Entware
+
           ### Installation
           \`\`\`sh
-          chmod +x xkeen-ui-keenetic-arm64
-          ./xkeen-ui-keenetic-arm64 install
+          chmod +x xkeen-ui-keenetic-arm64  # or xkeen-ui-keenetic-mips
+          ./xkeen-ui-keenetic-arm64 install  # or xkeen-ui-keenetic-mips
           /opt/etc/init.d/xkeen-ui restart
           \`\`\`
 
           ### Verify Download (Optional)
           \`\`\`sh
-          # Download checksum file
+          # Download checksum file for your architecture
           wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/xkeen-ui-keenetic-arm64.sha256
+          # or
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/xkeen-ui-keenetic-mips.sha256
 
           # Verify integrity
           sha256sum -c xkeen-ui-keenetic-arm64.sha256
@@ -173,7 +197,9 @@ jobs:
             --notes-file /tmp/release-notes.md \
             --prerelease \
             xkeen-go/xkeen-ui-keenetic-arm64 \
-            xkeen-go/xkeen-ui-keenetic-arm64.sha256
+            xkeen-go/xkeen-ui-keenetic-arm64.sha256 \
+            xkeen-go/xkeen-ui-keenetic-mips \
+            xkeen-go/xkeen-ui-keenetic-mips.sha256
 
       - name: Summary
         run: |
