@@ -101,11 +101,6 @@ status() {
     else
         echo "$NAME is not running"
     fi
-    if [ -f /opt/etc/init.d/rc.d/S99xkeen-ui ]; then
-        echo "Autostart: enabled"
-    else
-        echo "Autostart: disabled"
-    fi
 }
 
 log() {
@@ -134,22 +129,11 @@ case "$1" in
     log)
         log
         ;;
-    enable)
-        mkdir -p /opt/etc/init.d/rc.d
-        ln -sf ../init.d/xkeen-ui /opt/etc/init.d/rc.d/S99xkeen-ui
-        ln -sf ../init.d/xkeen-ui /opt/etc/init.d/rc.d/K01xkeen-ui
-        echo "$NAME enabled (autostart on boot)"
-        ;;
-    disable)
-        rm -f /opt/etc/init.d/rc.d/S99xkeen-ui
-        rm -f /opt/etc/init.d/rc.d/K01xkeen-ui
-        echo "$NAME disabled (no autostart)"
-        ;;
     uninstall)
         $DAEMON uninstall
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|log|enable|disable|uninstall}"
+        echo "Usage: $0 {start|stop|restart|status|log|uninstall}"
         exit 1
         ;;
 esac
@@ -344,10 +328,11 @@ func install() error {
 	fmt.Println("Checking for existing installation...")
 	stopProcess()
 
-	// Disable old init script if exists
-	if _, err := os.Stat(installInitScript); err == nil {
-		fmt.Println("Disabling old init script...")
-		_ = exec.Command(installInitScript, "disable").Run()
+	// Remove old autostart symlinks if they exist (from previous installations)
+	if _, err := os.Stat("/opt/etc/init.d/rc.d/S99xkeen-ui"); err == nil {
+		fmt.Println("Removing old autostart symlinks...")
+		os.Remove("/opt/etc/init.d/rc.d/S99xkeen-ui")
+		os.Remove("/opt/etc/init.d/rc.d/K01xkeen-ui")
 	}
 
 	// Create directories
@@ -452,10 +437,19 @@ func install() error {
 		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
-	// Enable autostart (create S-links in rc.d)
+	// Enable autostart (create symlinks in rc.d)
 	fmt.Println("Enabling autostart...")
-	if err := exec.Command(installInitScript, "enable").Run(); err != nil {
-		fmt.Printf("Warning: failed to enable autostart: %v\n", err)
+	rcDir := "/opt/etc/init.d/rc.d"
+	if err := os.MkdirAll(rcDir, 0755); err != nil {
+		fmt.Printf("Warning: failed to create rc.d directory: %v\n", err)
+	}
+	sLink := filepath.Join(rcDir, "S99xkeen-ui")
+	kLink := filepath.Join(rcDir, "K01xkeen-ui")
+	if err := os.Symlink(installInitScript, sLink); err != nil {
+		fmt.Printf("Warning: failed to create S99 symlink: %v\n", err)
+	}
+	if err := os.Symlink(installInitScript, kLink); err != nil {
+		fmt.Printf("Warning: failed to create K01 symlink: %v\n", err)
 	}
 
 	fmt.Println()
