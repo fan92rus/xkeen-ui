@@ -13,16 +13,8 @@ import (
 
 // Timeout constants for XKeen CLI commands.
 const (
-	// CommandStatusTimeout is the timeout for status check operations.
-	CommandStatusTimeout = 10 * time.Second
-	// CommandStartStopTimeout is the timeout for start/stop operations.
-	CommandStartStopTimeout = 30 * time.Second
-	// CommandRestartTimeout is the timeout for restart operations.
-	CommandRestartTimeout = 45 * time.Second
-	// CommandBackupTimeout is the timeout for backup operations.
-	CommandBackupTimeout = 60 * time.Second
-	// CommandUpdateTimeout is the timeout for update operations.
-	CommandUpdateTimeout = 120 * time.Second
+	// CommandTimeout is the default timeout for all XKeen commands.
+	CommandTimeout = 10 * time.Minute
 )
 
 // CommandConfig holds configuration for a whitelisted command.
@@ -45,18 +37,6 @@ type CommandsListResponse struct {
 	Commands []CommandInfo `json:"commands"`
 }
 
-// Command timeout constants for additional operations.
-const (
-	// CommandInstallTimeout is the timeout for installation operations.
-	CommandInstallTimeout = 300 * time.Second
-	// CommandInfoTimeout is the timeout for information commands.
-	CommandInfoTimeout = 10 * time.Second
-	// CommandPortTimeout is the timeout for port management operations.
-	CommandPortTimeout = 15 * time.Second
-	// CommandModuleTimeout is the timeout for module operations.
-	CommandModuleTimeout = 60 * time.Second
-)
-
 // defaultCommands is the default set of whitelisted XKeen commands.
 var defaultCommands = map[string]CommandConfig{
 	// === Installation ===
@@ -64,13 +44,13 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-i",
 		Description: "Установка XKeen + Xray + GeoFile + Mihomo",
 		Dangerous:   true,
-		Timeout:     CommandInstallTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-io": {
 		Cmd:         "-io",
 		Description: "OffLine установка XKeen",
 		Dangerous:   true,
-		Timeout:     CommandInstallTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Update ===
@@ -78,31 +58,31 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-uk",
 		Description: "Обновить XKeen",
 		Dangerous:   false,
-		Timeout:     CommandUpdateTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-ug": {
 		Cmd:         "-ug",
 		Description: "Обновить GeoFile (GeoIP/GeoSite)",
 		Dangerous:   false,
-		Timeout:     CommandUpdateTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-ux": {
 		Cmd:         "-ux",
 		Description: "Обновить Xray (повышение/понижение версии)",
 		Dangerous:   false,
-		Timeout:     CommandUpdateTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-um": {
 		Cmd:         "-um",
 		Description: "Обновить Mihomo (повышение/понижение версии)",
 		Dangerous:   false,
-		Timeout:     CommandUpdateTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-ugc": {
 		Cmd:         "-ugc",
 		Description: "Включить/изменить задачу автообновления GeoFile",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === System Registration ===
@@ -110,25 +90,25 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-rrk",
 		Description: "Регистрация XKeen в системе",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-rrx": {
 		Cmd:         "-rrx",
 		Description: "Регистрация Xray в системе",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-rrm": {
 		Cmd:         "-rrm",
 		Description: "Регистрация Mihomo в системе",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-ri": {
 		Cmd:         "-ri",
 		Description: "Автозапуск XKeen средствами init.d",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Removal | Components ===
@@ -136,37 +116,37 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-remove",
 		Description: "Полная деинсталляция XKeen",
 		Dangerous:   true,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dgs": {
 		Cmd:         "-dgs",
 		Description: "Удалить GeoSite",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dgi": {
 		Cmd:         "-dgi",
 		Description: "Удалить GeoIP",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dx": {
 		Cmd:         "-dx",
 		Description: "Удалить Xray",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dm": {
 		Cmd:         "-dm",
 		Description: "Удалить Mihomo",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dk": {
 		Cmd:         "-dk",
 		Description: "Удалить XKeen",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Removal | Auto-update Tasks ===
@@ -174,7 +154,7 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-dgc",
 		Description: "Удалить задачу автообновления GeoFile",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Removal | System Registration ===
@@ -182,19 +162,19 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-drk",
 		Description: "Удалить регистрацию XKeen",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-drx": {
 		Cmd:         "-drx",
 		Description: "Удалить регистрацию Xray",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-drm": {
 		Cmd:         "-drm",
 		Description: "Удалить регистрацию Mihomo",
 		Dangerous:   true,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Ports | Proxy ===
@@ -202,19 +182,19 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-ap",
 		Description: "Добавить порт прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandPortTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dp": {
 		Cmd:         "-dp",
 		Description: "Удалить порт прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandPortTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-cp": {
 		Cmd:         "-cp",
 		Description: "Показать порты прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Ports | Excluded ===
@@ -222,19 +202,19 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-ape",
 		Description: "Добавить исключённый порт",
 		Dangerous:   false,
-		Timeout:     CommandPortTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dpe": {
 		Cmd:         "-dpe",
 		Description: "Удалить исключённый порт",
 		Dangerous:   false,
-		Timeout:     CommandPortTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-cpe": {
 		Cmd:         "-cpe",
 		Description: "Показать исключённые порты",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Reinstallation ===
@@ -242,13 +222,13 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-k",
 		Description: "Переустановить XKeen",
 		Dangerous:   false,
-		Timeout:     CommandUpdateTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-g": {
 		Cmd:         "-g",
 		Description: "Переустановить GeoFile",
 		Dangerous:   false,
-		Timeout:     CommandUpdateTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Backup | XKeen ===
@@ -256,13 +236,13 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-kb",
 		Description: "Создать резервную копию XKeen",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-kbr": {
 		Cmd:         "-kbr",
 		Description: "Восстановить резервную копию XKeen",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Backup | Xray ===
@@ -270,13 +250,13 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-cb",
 		Description: "Создать резервную копию конфигурации Xray",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-cbr": {
 		Cmd:         "-cbr",
 		Description: "Восстановить конфигурацию Xray",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Backup | Mihomo ===
@@ -284,13 +264,13 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-mb",
 		Description: "Создать резервную копию конфигурации Mihomo",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-mbr": {
 		Cmd:         "-mbr",
 		Description: "Восстановить конфигурацию Mihomo",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Proxy Client Management ===
@@ -298,85 +278,85 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-start",
 		Description: "Запуск прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStartStopTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-stop": {
 		Cmd:         "-stop",
 		Description: "Остановка прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStartStopTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-restart": {
 		Cmd:         "-restart",
 		Description: "Перезапуск прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandRestartTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-status": {
 		Cmd:         "-status",
 		Description: "Статус работы прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-tpx": {
 		Cmd:         "-tpx",
 		Description: "Порты, шлюз и протокол прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-auto": {
 		Cmd:         "-auto",
 		Description: "Включить/отключить автозапуск прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-d": {
 		Cmd:         "-d",
 		Description: "Установить задержку автозапуска",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-fd": {
 		Cmd:         "-fd",
 		Description: "Контроль файловых дескрипторов прокси-клиента",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-diag": {
 		Cmd:         "-diag",
 		Description: "Выполнить диагностику",
 		Dangerous:   false,
-		Timeout:     CommandBackupTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-channel": {
 		Cmd:         "-channel",
 		Description: "Переключить канал обновлений (Stable/Dev)",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-xray": {
 		Cmd:         "-xray",
 		Description: "Переключить XKeen на ядро Xray",
 		Dangerous:   false,
-		Timeout:     CommandStartStopTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-mihomo": {
 		Cmd:         "-mihomo",
 		Description: "Переключить XKeen на ядро Mihomo",
 		Dangerous:   false,
-		Timeout:     CommandStartStopTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-ipv6": {
 		Cmd:         "-ipv6",
 		Description: "Включить/отключить IPv6 в KeeneticOS",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-dns": {
 		Cmd:         "-dns",
 		Description: "Включить/отключить перенаправление DNS",
 		Dangerous:   false,
-		Timeout:     CommandStatusTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Module Management ===
@@ -384,13 +364,13 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-modules",
 		Description: "Перенос модулей в пользовательскую директорию",
 		Dangerous:   false,
-		Timeout:     CommandModuleTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-delmodules": {
 		Cmd:         "-delmodules",
 		Description: "Удаление модулей из пользовательской директории",
 		Dangerous:   false,
-		Timeout:     CommandModuleTimeout,
+		Timeout:     CommandTimeout,
 	},
 
 	// === Information ===
@@ -398,25 +378,25 @@ var defaultCommands = map[string]CommandConfig{
 		Cmd:         "-about",
 		Description: "О программе XKeen",
 		Dangerous:   false,
-		Timeout:     CommandInfoTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-ad": {
 		Cmd:         "-ad",
 		Description: "Поддержать разработчиков",
 		Dangerous:   false,
-		Timeout:     CommandInfoTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-af": {
 		Cmd:         "-af",
 		Description: "Обратная связь",
 		Dangerous:   false,
-		Timeout:     CommandInfoTimeout,
+		Timeout:     CommandTimeout,
 	},
 	"-v": {
 		Cmd:         "-v",
 		Description: "Версия XKeen",
 		Dangerous:   false,
-		Timeout:     CommandInfoTimeout,
+		Timeout:     CommandTimeout,
 	},
 }
 
