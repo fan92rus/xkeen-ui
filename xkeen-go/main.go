@@ -465,10 +465,18 @@ func install() error {
 	fmt.Printf("  Symlink:     %s -> init script\n", installSymlink)
 	fmt.Printf("  Log file:    %s\n", installLogFile)
 	fmt.Println()
-	fmt.Println("To start the service:")
-	fmt.Printf("  xkeen-ui start    # Background mode\n")
-	fmt.Printf("  %s    # Foreground (see logs in console)\n", targetBin)
+
+	// Auto-start service after installation
+	fmt.Println("Starting service...")
+	startCmd := exec.Command("sh", "-c", "nohup sh "+installInitScript+" start >> "+installLogFile+" 2>&1 &")
+	if err := startCmd.Run(); err != nil {
+		fmt.Printf("Warning: failed to start service: %v\n", err)
+		fmt.Println("Please start manually: xkeen-ui start")
+	} else {
+		fmt.Println("Service started successfully")
+	}
 	fmt.Println()
+
 	fmt.Println("Commands:")
 	fmt.Println("  Start:   xkeen-ui start")
 	fmt.Println("  Stop:    xkeen-ui stop")
