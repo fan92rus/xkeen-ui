@@ -19,7 +19,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
-	"github.com/user/xkeen-ui/internal/utils"
+	"github.com/fan92rus/xkeen-ui/internal/utils"
 )
 
 // Default log files to watch

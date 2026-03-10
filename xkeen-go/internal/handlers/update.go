@@ -13,30 +13,32 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 
-	"github.com/user/xkeen-ui/internal/version"
+	"github.com/fan92rus/xkeen-ui/internal/utils"
+	"github.com/fan92rus/xkeen-ui/internal/version"
 )
 
 // UpdateHandler handles application update operations.
 type UpdateHandler struct {
-	githubRepo     string
-	binaryName     string
-	installPath    string
-	initScript     string
-	updateScript   string
-	downloadURL    string
-	devReleaseTag  string // Latest dev release tag for download
+	githubRepo    string
+	binaryName    string
+	installPath   string
+	initScript    string
+	updateScript  string
+	downloadURL   string
+	devReleaseTag string // Latest dev release tag for download
 }
 
 // NewUpdateHandler creates a new UpdateHandler.
 func NewUpdateHandler() *UpdateHandler {
 	repo := "fan92rus/xkeen-ui"
-	binaryName := "xkeen-ui-keenetic-arm64"
+	binaryName := utils.GetBinaryNameForArch()
 	return &UpdateHandler{
 		githubRepo:   repo,
 		binaryName:   binaryName,
@@ -65,6 +67,8 @@ type CheckUpdateResponse struct {
 	IsPrerelease    bool   `json:"is_prerelease"`
 	ReleaseURL      string `json:"release_url,omitempty"`
 	ReleaseNotes    string `json:"release_notes,omitempty"`
+	Architecture    string `json:"architecture"`
+	BinaryName      string `json:"binary_name"`
 	Error           string `json:"error,omitempty"`
 }
 
@@ -86,6 +90,8 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.respondJSON(w, http.StatusOK, CheckUpdateResponse{
 			CurrentVersion: currentVersion,
+			Architecture:   runtime.GOARCH,
+			BinaryName:     h.binaryName,
 			Error:          err.Error(),
 		})
 		return
@@ -106,6 +112,8 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 		IsPrerelease:    release.Prerelease,
 		ReleaseURL:      release.HTMLURL,
 		ReleaseNotes:    release.Body,
+		Architecture:    runtime.GOARCH,
+		BinaryName:      h.binaryName,
 	})
 }
 
@@ -353,8 +361,8 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	sendEvent("progress", ProgressData{Percent: 70, Status: "preparing update"})
 
 	currentPID := os.Getpid()
-	// Use shell to properly detach with nohup
-	shellCmd := fmt.Sprintf("nohup sh %s %d >/dev/null 2>&1 &", h.updateScript, currentPID)
+	// Pass binary name to update script so it can find the correct files
+	shellCmd := fmt.Sprintf("nohup sh %s %s %d >/dev/null 2>&1 &", h.updateScript, h.binaryName, currentPID)
 	updateCmd := exec.Command("sh", "-c", shellCmd)
 	if err := updateCmd.Run(); err != nil {
 		// Clean up temp file on error

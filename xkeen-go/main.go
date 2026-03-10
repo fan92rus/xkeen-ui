@@ -16,9 +16,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/user/xkeen-ui/internal/config"
-	"github.com/user/xkeen-ui/internal/server"
-	"github.com/user/xkeen-ui/internal/version"
+	"github.com/fan92rus/xkeen-ui/internal/config"
+	"github.com/fan92rus/xkeen-ui/internal/server"
+	"github.com/fan92rus/xkeen-ui/internal/utils"
+	"github.com/fan92rus/xkeen-ui/internal/version"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -39,8 +40,10 @@ const (
 	installUpdateScript = "/opt/etc/xkeen-ui/update.sh"
 	installLogFile      = "/opt/var/log/xkeen-ui.log"
 	installPidFile      = "/var/run/xkeen-ui.pid"
-	binaryName          = "xkeen-ui-keenetic-arm64"
 )
+
+// binaryName is the architecture-specific binary name
+var binaryName = utils.GetBinaryNameForArch()
 
 // Default config JSON template
 const defaultConfigJSON = `{
@@ -67,9 +70,10 @@ const defaultConfigJSON = `{
     }
 }`
 
-// Init script template for Keenetic with start-stop-daemon
-const initScriptTemplate = `#!/bin/sh
-DAEMON=/opt/bin/xkeen-ui-keenetic-arm64
+// getInitScript returns the init script template with the given binary name.
+func getInitScript(binName string) string {
+	return fmt.Sprintf(`#!/bin/sh
+DAEMON=/opt/bin/%s
 CONFIG=/opt/etc/xkeen-ui/config.json
 PIDFILE=/var/run/xkeen-ui.pid
 LOGFILE=/opt/var/log/xkeen-ui.log
@@ -139,7 +143,8 @@ case "$1" in
 esac
 
 exit 0
-`
+`, binName)
+}
 
 func main() {
 	// Parse subcommands
@@ -413,7 +418,7 @@ func install() error {
 	if err := os.MkdirAll(initDir, 0755); err != nil {
 		return fmt.Errorf("failed to create init directory: %w", err)
 	}
-	if err := os.WriteFile(installInitScript, []byte(initScriptTemplate), 0755); err != nil {
+	if err := os.WriteFile(installInitScript, []byte(getInitScript(binaryName)), 0755); err != nil {
 		return fmt.Errorf("failed to create init script: %w", err)
 	}
 

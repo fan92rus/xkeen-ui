@@ -3,10 +3,15 @@
 # This script is called by the running process before it exits.
 # It waits for the old process to terminate, then atomically replaces the binary.
 # Compatible with busybox (no fractional sleep).
+#
+# Arguments:
+#   $1 - Binary name (e.g., xkeen-ui-keenetic-arm64, xkeen-ui-keenetic-mips)
+#   $2 - Old PID to wait for
 
-OLD_PID=$1
-NEW_BINARY="/tmp/xkeen-ui-keenetic-arm64.new"
-TARGET_BINARY="/opt/bin/xkeen-ui-keenetic-arm64"
+BINARY_NAME=$1
+OLD_PID=$2
+NEW_BINARY="/tmp/${BINARY_NAME}.new"
+TARGET_BINARY="/opt/bin/${BINARY_NAME}"
 INIT_SCRIPT="/opt/etc/init.d/xkeen-ui"
 LOGFILE="/opt/var/log/xkeen-ui.log"
 

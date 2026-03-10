@@ -19,9 +19,9 @@ import (
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/user/xkeen-ui/internal/config"
-	"github.com/user/xkeen-ui/internal/handlers"
-	"github.com/user/xkeen-ui/internal/utils"
+	"github.com/fan92rus/xkeen-ui/internal/config"
+	"github.com/fan92rus/xkeen-ui/internal/handlers"
+	"github.com/fan92rus/xkeen-ui/internal/utils"
 )
 
 // Server represents the HTTP server.
