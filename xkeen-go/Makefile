@@ -24,8 +24,11 @@ version:
 	@echo "Build time: $(BUILD_TIME)"
 	@echo "Git commit: $(GIT_COMMIT)"
 
-# Build frontend first, then Go binary
+# Build frontend first, clean build artifacts, then Go binary
 build: build-frontend
+	@echo "Cleaning frontend build artifacts..."
+	@rm -rf web/node_modules web/package.json web/package-lock.json web/build.js
+	@rm -rf web/static/js web/static/vendor
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-keenetic-arm64 $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)-keenetic-arm64"
