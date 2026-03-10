@@ -7,13 +7,7 @@
 Выполните на роутере одну команду:
 
 ```bash
-curl -Ls https://raw.githubusercontent.com/fan92rus/xkeen-ui/main/xkeen-go/scripts/setup.sh | sh
-```
-
-Или через wget:
-
-```bash
-wget -qO- https://raw.githubusercontent.com/fan92rus/xkeen-ui/main/xkeen-go/scripts/setup.sh | sh
+curl -Ls https://raw.githubusercontent.com/fan92rus/xkeen-ui/refs/heads/master/xkeen-go/scripts/setup.sh | sh
 ```
 
 Откройте веб-интерфейс: `http://<ip-роутера>:8089`
