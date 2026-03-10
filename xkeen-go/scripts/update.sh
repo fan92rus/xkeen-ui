@@ -49,8 +49,11 @@ if ! mv "$NEW_BINARY" "$TARGET_BINARY"; then
     exit 1
 fi
 
-# Ensure correct permissions
 chmod 755 "$TARGET_BINARY"
+
+sync
+sleep 1
+
 log "Binary replaced successfully"
 
 # Clean up any leftover temp files
@@ -58,9 +61,10 @@ rm -f "$NEW_BINARY"
 
 # Run install to update init script and other system files
 log "Updating system files..."
-"$TARGET_BINARY" install >/dev/null 2>&1
+"$TARGET_BINARY" install >> "$LOGFILE" 2>&1
+log "Install finished"
 
 # Start the new version
 log "Starting service..."
-"$INIT_SCRIPT" start
+sh "$INIT_SCRIPT" start >> "$LOGFILE" 2>&1
 log "Update complete"
