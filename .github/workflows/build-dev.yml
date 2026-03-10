@@ -40,6 +40,10 @@ jobs:
         working-directory: xkeen-go
         run: make build-frontend
 
+      - name: Clean frontend artifacts
+        working-directory: xkeen-go
+        run: rm -rf web/node_modules web/package.json web/package-lock.json web/build.js web/static/js web/static/vendor
+
       - name: Determine version
         id: version
         run: |
