@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -411,3 +412,103 @@ func TestConcurrentReadWrite(t *testing.T) {
 	wg.Wait()
 	// Just verify no panics occurred
 }
+
+func TestGetFilters_NeverReturnsNilSlices(t *testing.T) {
+	// Regression test: GetFilters must never return nil slices
+	// (frontend crashes on .length of null)
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	filters := store.GetFilters()
+	for _, slice := range [][]string{
+		filters.IncludeMarkers,
+		filters.ExcludeMarkers,
+		filters.IncludeCountries,
+		filters.ExcludeCountries,
+	} {
+		if slice == nil {
+			t.Error("expected empty slice, got nil")
+		}
+	}
+}
+
+func TestGetFilters_NilSlicesAfterSetFilters(t *testing.T) {
+	// Ensure SetFilters with nil slices → GetFilters returns empty slices
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	store.SetFilters(&Filter{
+		IncludeMarkers:   nil,
+		ExcludeMarkers:   nil,
+		IncludeCountries: nil,
+		ExcludeCountries: nil,
+	})
+
+	filters := store.GetFilters()
+	for _, slice := range [][]string{
+		filters.IncludeMarkers,
+		filters.ExcludeMarkers,
+		filters.IncludeCountries,
+		filters.ExcludeCountries,
+	} {
+		if slice == nil {
+			t.Error("expected empty slice, got nil after SetFilters with nil")
+		}
+	}
+}
+
+func TestConcurrentProxies(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func(n int) {
+			defer wg.Done()
+			proxies := make([]*ProxyEntry, n+1)
+			for j := range proxies {
+				proxies[j] = &ProxyEntry{Tag: fmt.Sprintf("p-%d-%d", n, j)}
+			}
+			store.SetProxies(proxies)
+		}(i)
+		go func() {
+			defer wg.Done()
+			store.GetProxies()
+		}()
+	}
+	wg.Wait()
+}
+
+func TestStore_PersistenceWithFilters(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	store1, _ := NewStore(path)
+	store1.AddSubscription(&Subscription{Name: "Test", URL: "https://a.com", Enabled: true})
+	store1.SetFilters(&Filter{
+		ExcludeMarkers:   []string{"mobile"},
+		MaxProxies:       50,
+		IncludeRegex:     "speed",
+	})
+	store1.SetStrategy(&RoutingStrategy{Type: "random"})
+
+	// Create new store instance — should load from disk
+	store2, _ := NewStore(path)
+	filters := store2.GetFilters()
+	if len(filters.ExcludeMarkers) != 1 || filters.ExcludeMarkers[0] != "mobile" {
+		t.Errorf("exclude_markers not persisted: %v", filters.ExcludeMarkers)
+	}
+	if filters.MaxProxies != 50 {
+		t.Errorf("max_proxies not persisted: %d", filters.MaxProxies)
+	}
+	if filters.IncludeRegex != "speed" {
+		t.Errorf("include_regex not persisted: %q", filters.IncludeRegex)
+	}
+
+	strategy := store2.GetStrategy()
+	if strategy.Type != "random" {
+		t.Errorf("strategy type not persisted: %q", strategy.Type)
+	}
+}
+

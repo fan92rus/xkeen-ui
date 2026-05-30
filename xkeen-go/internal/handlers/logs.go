@@ -115,8 +115,8 @@ func NewLogsHandler(cfg LogsConfig) *LogsHandler {
 // Close gracefully stops all goroutines.
 func (h *LogsHandler) Close() {
 	h.cancel()
+	close(h.broadcast) // close channel first so runBroadcast can exit
 	h.wg.Wait()
-	close(h.broadcast)
 }
 
 // checkOrigin validates the origin of WebSocket connections.
