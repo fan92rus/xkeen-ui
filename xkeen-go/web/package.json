@@ -5,20 +5,22 @@
   "type": "module",
   "scripts": {
     "build": "node build.js",
-    "watch": "node build.js --watch"
+    "watch": "node build.js --watch",
+    "test:e2e": "node test/subscription-ui.test.js"
   },
   "dependencies": {
-    "alpinejs": "^3.14.3",
-    "codemirror": "^6.0.1",
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/lang-yaml": "^6.1.2",
-    "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/merge": "^6.0.0",
     "@codemirror/state": "^6.4.1",
+    "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.26.3",
-    "ansi_up": "^6.0.2"
+    "alpinejs": "^3.14.3",
+    "ansi_up": "^6.0.2",
+    "codemirror": "^6.0.1"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.24.0",
+    "puppeteer": "^25.1.0"
   }
 }
