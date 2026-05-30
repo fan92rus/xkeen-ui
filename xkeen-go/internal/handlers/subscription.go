@@ -192,9 +192,12 @@ func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request)
 	filters := h.store.GetFilters()
 	filtered := subscription.ApplyFilter(allProxies, filters)
 
+	markers := subscription.ExtractAllMarkers(allProxies)
+
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"total":    len(allProxies),
 		"filtered": len(filtered),
+		"markers":  markers,
 		"proxies":  filtered,
 	})
 }

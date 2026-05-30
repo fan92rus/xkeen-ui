@@ -147,11 +147,11 @@
                         <!-- Markers -->
                         <div class="sub-row-label">Маркеры</div>
                         <div class="marker-pills">
-                            <template x-for="m in markers" :key="m.id">
-                                <button class="mpill" :class="{ excl: markerExcl(m.id) }"
-                                        @click="toggleMarker(m.id)"
-                                        :title="m.l + (markerExcl(m.id) ? ' — исключить' : '')"
-                                        x-text="m.id + ' ' + m.l"></button>
+                            <template x-for="m in markers" :key="m">
+                                <button class="mpill" :class="{ excl: markerExcl(m) }"
+                                        @click="toggleMarker(m)"
+                                        :title="markerExcl(m) ? 'Исключить из фильтра' : 'Нажмите для исключения'"
+                                        x-text="m"></button>
                             </template>
                         </div>
 

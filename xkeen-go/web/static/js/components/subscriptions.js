@@ -2,11 +2,6 @@
 
 import * as api from '../services/subscription.js';
 
-const MARKERS = [
-    { id: '⚡', l: 'Быстрые' }, { id: '⭐', l: 'Стандарт' }, { id: '🎮', l: 'Гейминг' },
-    { id: '0.5X', l: 'Мобильные' }, { id: '⬇️', l: 'Загрузка' }, { id: '💎', l: 'Авто' }
-];
-
 const STRATS = [
     { v: 'all', l: 'Первый' }, { v: 'random', l: 'Случайный' },
     { v: 'roundrobin', l: 'По очереди' }, { v: 'leastping', l: 'Мин. пинг' },
@@ -19,7 +14,7 @@ function subscriptions() {
         filters: { include_markers: [], exclude_markers: ['0.5X'], include_countries: [], exclude_countries: [], include_regex: '', exclude_regex: '', max_proxies: 50 },
         strategy: { type: 'all' },
         busy: false, editId: null, edit: {}, newUrl: '', proxyQ: '', showPreview: false,
-        markers: MARKERS, strats: STRATS,
+        markers: [], strats: STRATS,
 
         async init() {
             try {
@@ -111,7 +106,11 @@ function subscriptions() {
         // -- Proxies --
 
         async _loadProxies() {
-            try { this.proxies = (await api.getProxies()).proxies || []; } catch { this.proxies = []; }
+            try {
+                const d = await api.getProxies();
+                this.proxies = d.proxies || [];
+                if (d.markers) this.markers = d.markers;
+            } catch { this.proxies = []; }
         },
 
         get filteredProxies() {

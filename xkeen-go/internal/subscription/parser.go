@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -661,45 +662,166 @@ func isRegionalIndicator(r rune) bool {
 	return r >= 0x1F1E6 && r <= 0x1F1FF
 }
 
-// knownMarkerVariants maps marker strings to their canonical form.
-var knownMarkerVariants = map[string]string{
-	"⚡":  "⚡",   // fast (with and without variation selector)
-	"⭐":  "⭐",   // standard
-	"🎮":  "🎮",   // gaming
-	"0.5X": "0.5X", // mobile
-	"1X":   "1X",
-	"⬇":  "⬇",   // download
-	"💎":  "💎",   // auto
+// extractMarker dynamically extracts a category marker from the remarks string.
+// It works with any subscription format by:
+//   1. Tokenizing by spaces, pipes, dashes
+//   2. Skipping flag emojis (🇩🇪)
+//   3. Returning the first "marker-class" token:
+//      - emoji tokens (⚡, ⭐, 🎮, ⬇, 💎, etc.) are always markers
+//      - text tokens that aren't country codes, numbers, or domains
+//
+// Heuristic: if only 1 non-flag text token remains, it's a country name → no marker.
+func extractMarker(remarks string) string {
+	if remarks == "" {
+		return ""
+	}
+
+	// Split by common delimiters
+	rawTokens := strings.FieldsFunc(remarks, func(r rune) bool {
+		return r == ' ' || r == '|' || r == '—' || r == '–' || r == '\t'
+	})
+
+	var candidates []string
+
+	for _, token := range rawTokens {
+		if token == "" {
+			continue
+		}
+
+		// Strip variation selectors for comparison
+		cleaned := strings.Map(func(r rune) rune {
+			if r == 0xFE0F {
+				return -1
+			}
+			return r
+		}, token)
+		if cleaned == "" {
+			continue
+		}
+
+		// Skip flag emojis entirely (two regional indicators)
+		if isFlagToken(cleaned) {
+			continue
+		}
+
+		// Emoji tokens (non-flag, non-letter) are always marker candidates
+		if isEmojiToken(cleaned) {
+			candidates = append(candidates, cleaned)
+			continue
+		}
+
+		// Skip numeric-only tokens (01, 1, 23)
+		if isNumericOnly(cleaned) {
+			continue
+		}
+
+		// Skip 2-letter country codes (US, DE, NL)
+		if isCountryCode(cleaned) {
+			continue
+		}
+
+		// Skip domain-like tokens (contain dots, like com.twitter)
+		if strings.Contains(cleaned, ".") {
+			continue
+		}
+
+		// Text token that survived filtering
+		candidates = append(candidates, cleaned)
+	}
+
+	// If only 1 text/emoji candidate remains:
+	//   - In pipe-delimited format (has |): it IS a marker (e.g. "VIP", "IPLC")
+	//   - In space-delimited format: it's likely a country name → no marker
+	if len(candidates) == 0 {
+		return ""
+	}
+	if len(candidates) == 1 && !strings.ContainsRune(remarks, '|') {
+		return ""
+	}
+
+	return candidates[0]
 }
 
-// extractMarker finds the first known marker in the remarks string.
-func extractMarker(remarks string) string {
-	// Check text markers first (0.5X, 1X)
-	if idx := strings.Index(remarks, "0.5X"); idx != -1 {
-		return "0.5X"
-	}
-	if idx := strings.Index(remarks, "1X"); idx != -1 && (idx == 0 || remarks[idx-1] != ' ') {
-		// Make sure it's not part of a bigger word
-		return "1X"
-	}
-
-	// Check emoji markers
-	for i := 0; i < len(remarks); {
-		r, size := utf8.DecodeRuneInString(remarks[i:])
-		// Skip variation selector
-		nextIdx := i + size
-		if nextIdx < len(remarks) {
-			if nextR, nextSz := utf8.DecodeRuneInString(remarks[nextIdx:]); nextR == 0xFE0F {
-				nextIdx += nextSz
-			}
+// isFlagToken checks if a string consists of exactly two regional indicator runes.
+func isFlagToken(s string) bool {
+	count := 0
+	for _, r := range s {
+		if r >= 0x1F1E6 && r <= 0x1F1FF {
+			count++
+		} else {
+			return false
 		}
-		if canonical, ok := knownMarkerVariants[string(r)]; ok {
-			return canonical
-		}
-		i = nextIdx
 	}
+	return count == 2
+}
 
-	return ""
+// isEmojiToken checks if a token is an emoji (not a word/letter string).
+// Returns true for tokens that contain non-letter, non-digit, non-space runes.
+func isEmojiToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	hasNonLetter := false
+	for _, r := range s {
+		if r == 0xFE0F || r == 0x200D { // variation selector, ZWJ
+			continue
+		}
+		if !isLetterOrDigit(r) {
+			hasNonLetter = true
+			break
+		}
+	}
+	return hasNonLetter
+}
+
+// isLetterOrDigit checks if a rune is a letter or digit (Unicode-aware).
+func isLetterOrDigit(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || (r >= 0x0400 && r <= 0x04FF) // Cyrillic
+}
+
+// isCountryCode checks if a 2-letter string looks like a country code.
+func isCountryCode(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for _, r := range s {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// isNumericOnly checks if a string consists entirely of digits.
+func isNumericOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ExtractAllMarkers returns a sorted list of unique markers that appear
+// in at least 2 entries. Single-occurrence markers are filtered as noise.
+func ExtractAllMarkers(entries []*ProxyEntry) []string {
+	counts := make(map[string]int)
+	for _, e := range entries {
+		if e.Marker != "" {
+			counts[e.Marker]++
+		}
+	}
+	var markers []string
+	for m, c := range counts {
+		if c >= 2 {
+			markers = append(markers, m)
+		}
+	}
+	sort.Strings(markers)
+	return markers
 }
 
 // parseHostPort splits host:port handling IPv6 brackets.

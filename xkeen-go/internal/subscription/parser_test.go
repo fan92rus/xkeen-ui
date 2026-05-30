@@ -222,20 +222,80 @@ func TestExtractMarker(t *testing.T) {
 		remarks string
 		want    string
 	}{
+		// Flag + emoji + country name format
 		{"🇩🇪 ⚡ Германия", "⚡"},
 		{"🇳🇱 ⭐ Нидерланды", "⭐"},
 		{"🇪🇪 🎮 Гейминг", "🎮"},
 		{"🇷🇺 0.5X Мобильные", "0.5X"},
 		{"⬇ Быстрые", "⬇"},
 		{"💎 Авто", "💎"},
+
+		// No marker (only flag + country name)
 		{"🇩🇪 Германия", ""},
+
+		// Empty
 		{"", ""},
+
+		// Marzban/V2Board style: CC | number | category | domain
+		{"US | 01 | IPLC | com.twitter", "IPLC"},
+		{"DE | 02 | CDN | google.com", "CDN"},
+		{"NL | 1 | VIP", "VIP"},
+
+		// Simple text without structure
+		{"My Server", "My"},
+
+		// Only flag, no text marker
+		{"🇩🇪", ""},
+
+		// ⚡️ with variation selector
+		{"🇩🇪 ⚡️ Fast", "⚡"},
+
+		// Mixed: flag + text marker + text
+		{"🇩🇪 1X Standard", "1X"},
 	}
 
 	for _, tt := range tests {
 		got := extractMarker(tt.remarks)
 		if got != tt.want {
 			t.Errorf("extractMarker(%q) = %q, want %q", tt.remarks, got, tt.want)
+		}
+	}
+}
+
+func TestExtractAllMarkers(t *testing.T) {
+	entries := []*ProxyEntry{
+		{Marker: "⚡"},
+		{Marker: "⚡"},
+		{Marker: "⭐"},
+		{Marker: "⭐"},
+		{Marker: "⭐"},
+		{Marker: "🎮"},
+		{Marker: ""},
+		{Marker: "unique-once"}, // should be filtered out (count=1)
+	}
+
+	markers := ExtractAllMarkers(entries)
+
+	// Must contain ⚡ and ⭐ (count >= 2)
+	want := []string{"⚡", "⭐"}
+	if len(markers) != len(want) {
+		t.Fatalf("got %d markers, want %d: %v", len(markers), len(want), markers)
+	}
+	for i, w := range want {
+		if markers[i] != w {
+			t.Errorf("markers[%d] = %q, want %q", i, markers[i], w)
+		}
+	}
+
+	// Verify single-occurrence markers are excluded
+	for _, m := range markers {
+		if m == "unique-once" {
+			t.Error("single-occurrence marker should be filtered out")
+		}
+	}
+	for _, m := range markers {
+		if m == "🎮" {
+			t.Error("single-occurrence marker 🎮 should be filtered out")
 		}
 	}
 }
