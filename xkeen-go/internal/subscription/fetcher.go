@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -14,11 +15,53 @@ type Fetcher struct {
 	client *http.Client
 }
 
-// NewFetcher creates a Fetcher with a 30-second timeout and Hiddify User-Agent.
+// NewFetcher creates a Fetcher with a 30-second timeout, Hiddify User-Agent,
+// and a custom DNS resolver that falls back to public DNS if the system
+// resolver is unavailable (common on Keenetic routers where local DNS
+// may be intercepted by xray).
 func NewFetcher() *Fetcher {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		Resolver: &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				// Try system DNS first, then fallback to public DNS servers.
+				dnsServers := []string{
+					address,          // system default (usually 127.0.0.1:53 on Keenetic)
+					"8.8.8.8:53",    // Google DNS
+					"1.1.1.1:53",    // Cloudflare DNS
+					"8.8.4.4:53",    // Google DNS secondary
+				}
+
+				var lastErr error
+				for _, server := range dnsServers {
+					d := net.Dialer{Timeout: 5 * time.Second}
+					conn, err := d.DialContext(ctx, "udp", server)
+					if err != nil {
+						lastErr = err
+						continue
+					}
+					return conn, nil
+				}
+				if lastErr != nil {
+					return nil, fmt.Errorf("all DNS servers failed: %w", lastErr)
+				}
+				return nil, fmt.Errorf("no DNS servers available")
+			},
+		},
+	}
+
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:  10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		IdleConnTimeout:       30 * time.Second,
+	}
+
 	return &Fetcher{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }
