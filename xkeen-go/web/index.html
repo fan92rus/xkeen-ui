@@ -95,126 +95,128 @@
                      class="tab-content sub-page"
                      :class="{ 'active': $store.app.activeTab === 'subscriptions' }">
 
-                <!-- Add URL -->
-                <div class="sub-add">
+                <!-- Toolbar -->
+                <div class="sub-toolbar">
                     <input type="url" x-model="newUrl" @keydown.enter="add()"
-                           placeholder="Вставьте URL подписки"
+                           placeholder="URL подписки... Enter чтобы добавить"
                            :disabled="busy">
                     <button @click="add()" :disabled="busy || !newUrl.trim()" class="btn btn-primary btn-sm">+</button>
-                    <button @click="fetchAll()" :disabled="busy || !subs.length" class="btn btn-sm" title="Обновить все подписки">🔄</button>
+                    <button @click="fetchAll()" :disabled="busy || !subs.length" class="btn btn-sm" title="Обновить все">🔄</button>
+                    <button @click="_loadProxies()" :disabled="busy || !subs.length" class="btn btn-sm" title="Загрузить прокси">📋</button>
+                    <div class="sub-toolbar-spacer"></div>
+                    <button @click="preview()" :disabled="busy || !proxies.length" class="btn btn-sm">👁 Предпросмотр</button>
+                    <button @click="apply()" :disabled="busy || !proxies.length" class="btn btn-primary btn-sm">✅ Применить</button>
                 </div>
 
-                <div class="sub-scroll">
+                <div class="sub-scroll sub-2col">
 
-                    <!-- Subscription list -->
-                    <template x-for="s in subs" :key="s.id">
-                        <div class="sub-card" :class="{ editing: editId === s.id }">
-                            <!-- View -->
-                            <template x-if="editId !== s.id">
-                                <div class="sub-row">
-                                    <span class="dot" :class="s.enabled ? 'on' : 'off'"></span>
-                                    <span class="name" x-text="s.name || 'Без названия'"></span>
-                                    <span class="badge" x-text="(s.proxy_count || 0) + ' шт'" x-show="s.proxy_count"></span>
-                                    <span class="meta" x-text="s.interval > 0 ? s.interval + ' мин' : 'вручную'"></span>
-                                    <span class="meta" x-text="fmtTime(s.last_fetch)" x-show="s.last_fetch"></span>
-                                    <span class="err" x-text="s.last_error" x-show="s.last_error"></span>
-                                    <span class="acts">
-                                        <button @click="fetchOne(s.id)" :disabled="busy" title="Обновить">🔄</button>
-                                        <button @click="editStart(s)" title="Редактировать">✏️</button>
-                                        <button @click="remove(s.id)" class="danger" title="Удалить">🗑</button>
-                                    </span>
-                                </div>
-                            </template>
-                            <!-- Edit -->
-                            <template x-if="editId === s.id">
-                                <div class="sub-edit">
-                                    <input type="url" x-model="edit.url" class="sub-input">
-                                    <div class="sub-edit-row">
-                                        <input type="text" x-model="edit.name" placeholder="Название" class="sub-input">
-                                        <input type="number" x-model="edit.interval" min="0" class="sub-input xs" placeholder="мин">
-                                        <label><input type="checkbox" x-model="edit.enabled"> Вкл</label>
-                                        <button @click="editSave()" class="btn btn-primary btn-sm">✓</button>
-                                        <button @click="editCancel()" class="btn btn-sm">✕</button>
+                    <!-- LEFT: subscriptions + filters -->
+                    <div class="sub-left">
+                        <!-- Subscription cards -->
+                        <template x-for="s in subs" :key="s.id">
+                            <div class="sub-card" :class="{ editing: editId === s.id }">
+                                <template x-if="editId !== s.id">
+                                    <div class="sub-row">
+                                        <span class="dot" :class="s.enabled ? 'on' : 'off'"></span>
+                                        <span class="name" x-text="s.name || 'Без названия'"></span>
+                                        <span class="badge" x-text="(s.proxy_count || 0) + ' шт'" x-show="s.proxy_count"></span>
+                                        <span class="meta" x-text="s.interval > 0 ? s.interval + ' мин' : 'вручную'"></span>
+                                        <span class="meta" x-text="fmtTime(s.last_fetch)" x-show="s.last_fetch"></span>
+                                        <span class="err" x-text="s.last_error" x-show="s.last_error"></span>
+                                        <span class="acts">
+                                            <button @click="fetchOne(s.id)" :disabled="busy" title="Обновить">🔄</button>
+                                            <button @click="editStart(s)" title="Редактировать">✏️</button>
+                                            <button @click="remove(s.id)" class="danger" title="Удалить">🗑</button>
+                                        </span>
                                     </div>
+                                </template>
+                                <template x-if="editId === s.id">
+                                    <div class="sub-edit">
+                                        <input type="url" x-model="edit.url" class="sub-input">
+                                        <div class="sub-edit-row">
+                                            <input type="text" x-model="edit.name" placeholder="Название" class="sub-input">
+                                            <input type="number" x-model="edit.interval" min="0" class="sub-input xs" placeholder="мин">
+                                            <label><input type="checkbox" x-model="edit.enabled"> Вкл</label>
+                                            <button @click="editSave()" class="btn btn-primary btn-sm">✓</button>
+                                            <button @click="editCancel()" class="btn btn-sm">✕</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <div x-show="subs.length === 0" class="sub-empty">Вставьте URL подписки и нажмите Enter</div>
+
+                        <!-- Filters (only when proxies loaded) -->
+                        <div class="sub-settings" x-show="subs.length && proxies.length">
+
+                            <!-- Stats bar -->
+                            <div class="px-stats">
+                                <span class="px-stat-total">Всего: <strong x-text="proxies.length"></strong></span>
+                                <span class="px-stat-filtered">В выборке: <strong x-text="filteredProxies.length"></strong></span>
+                                <span class="px-stat-excl" x-show="proxies.length - filteredProxies.length > 0">
+                                    Исключено: <strong x-text="proxies.length - filteredProxies.length"></strong>
+                                </span>
+                            </div>
+
+                            <!-- Markers -->
+                            <div class="sub-row-label" x-show="markers.length">Маркеры</div>
+                            <div class="marker-pills" x-show="markers.length">
+                                <template x-for="m in markers" :key="m">
+                                    <button class="mpill" :class="{ excl: markerExcl(m) }"
+                                            @click="toggleMarker(m)"
+                                            :title="markerExcl(m) ? 'Вернуть' : 'Исключить'">
+                                        <span x-text="m"></span>
+                                        <span class="mpill-cnt" x-text="countByMarker(m)"></span>
+                                    </button>
+                                </template>
+                            </div>
+
+                            <!-- Countries -->
+                            <div class="sub-row-label" x-show="allCountries.length">Страны</div>
+                            <div class="country-section" x-show="allCountries.length">
+                                <div class="country-cloud">
+                                    <template x-for="c in allCountries" :key="c">
+                                        <button class="cc"
+                                                :class="{ 'cc-in': filters.include_countries.includes(c), 'cc-ex': filters.exclude_countries.includes(c), 'cc-off': !filters.include_countries.includes(c) && !filters.exclude_countries.includes(c) }"
+                                                @click="toggleCountry(c)"
+                                                x-text="c + ' ' + countByCountry(c)" :title="countByCountry(c) + ' прокси'"></button>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- Regex + Limit -->
+                            <div class="sub-row-compact">
+                                <input type="text" x-model="filters.include_regex" placeholder="Regex +" class="sub-input sm">
+                                <input type="text" x-model="filters.exclude_regex" placeholder="Regex −" class="sub-input sm">
+                                <input type="number" x-model.number="filters.max_proxies" min="0" class="sub-input xs" title="Макс прокси (0 = без лимита)" placeholder="Лимит">
+                            </div>
+
+                            <!-- Strategy -->
+                            <div class="sub-row-label">Роутинг</div>
+                            <div class="strat-pills">
+                                <template x-for="s in strats" :key="s.v">
+                                    <button class="spill" :class="{ active: strategy.type === s.v }"
+                                            @click="strategy.type = s.v" x-text="s.l"></button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: proxy list -->
+                    <div class="sub-right" x-show="proxies.length">
+                        <div class="px-header">
+                            <input type="text" x-model="proxyQ" placeholder="🔍 Поиск..." class="sub-input">
+                            <span class="px-count" x-text="filteredProxies.length + ' / ' + proxies.length"></span>
+                        </div>
+                        <div class="px-list">
+                            <template x-for="p in filteredProxies" :key="p.tag">
+                                <div class="px-row">
+                                    <span class="px-country" x-text="p.country || '?'" :title="p.remarks"></span>
+                                    <span class="px-marker" x-text="p.marker" x-show="p.marker"></span>
+                                    <span class="px-remarks" x-text="p.remarks || p.tag"></span>
+                                    <span class="px-tag mono" x-text="p.tag"></span>
                                 </div>
                             </template>
-                        </div>
-                    </template>
-                    <div x-show="subs.length === 0" class="sub-empty">Вставьте URL подписки и нажмите Enter</div>
-
-                    <!-- Settings -->
-                    <div class="sub-settings" x-show="subs.length">
-                        <!-- Markers -->
-                        <div class="sub-row-label">Маркеры</div>
-                        <div class="marker-pills">
-                            <template x-for="m in markers" :key="m">
-                                <button class="mpill" :class="{ excl: markerExcl(m) }"
-                                        @click="toggleMarker(m)"
-                                        :title="markerExcl(m) ? 'Исключить из фильтра' : 'Нажмите для исключения'"
-                                        x-text="m"></button>
-                            </template>
-                        </div>
-
-                        <!-- Countries -->
-                        <div class="sub-row-label">Страны</div>
-                        <div class="country-row">
-                            <span class="clabel">Только:</span>
-                            <template x-for="c in filters.include_countries" :key="'i'+c">
-                                <span class="ctag incl" @click="removeCountry('in', c)" x-text="c + ' ×'"></span>
-                            </template>
-                            <input type="text" @keydown.enter.prevent="addCountry('in', $el)" placeholder="+">
-
-                            <span class="clabel">Исключить:</span>
-                            <template x-for="c in filters.exclude_countries" :key="'e'+c">
-                                <span class="ctag excl" @click="removeCountry('ex', c)" x-text="c + ' ×'"></span>
-                            </template>
-                            <input type="text" @keydown.enter.prevent="addCountry('ex', $el)" placeholder="+">
-                        </div>
-
-                        <!-- Regex + Limit -->
-                        <div class="sub-row-compact">
-                            <input type="text" x-model="filters.include_regex" placeholder="Regex включить" class="sub-input sm">
-                            <input type="text" x-model="filters.exclude_regex" placeholder="Regex исключить" class="sub-input sm">
-                            <input type="number" x-model.number="filters.max_proxies" min="0" class="sub-input xs" title="Макс прокси (0 = без лимита)" placeholder="Лимит">
-                        </div>
-
-                        <!-- Strategy -->
-                        <div class="sub-row-label">Роутинг</div>
-                        <div class="strat-pills">
-                            <template x-for="s in strats" :key="s.v">
-                                <button class="spill" :class="{ active: strategy.type === s.v }"
-                                        @click="strategy.type = s.v" x-text="s.l"></button>
-                            </template>
-                        </div>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="sub-footer" x-show="subs.length">
-                        <button @click="fetchAll()" :disabled="busy" class="btn btn-sm"
-                                x-text="proxies.length ? '📋 ' + filteredProxies.length + ' / ' + proxies.length + ' прокси' : '📋 Загрузить прокси'"></button>
-                        <div class="sub-footer-r">
-                            <button @click="preview()" :disabled="busy" class="btn btn-sm">Предпросмотр</button>
-                            <button @click="apply()" :disabled="busy" class="btn btn-primary btn-sm">✅ Применить</button>
-                        </div>
-                    </div>
-
-                    <!-- Proxy table -->
-                    <div x-show="proxies.length" class="sub-proxies">
-                        <input type="text" x-model="proxyQ" placeholder="🔍 Поиск..." class="sub-input">
-                        <div class="sub-table-wrap">
-                            <table class="sub-table">
-                                <thead><tr><th>Страна</th><th>Маркер</th><th>Tag</th><th>Имя</th></tr></thead>
-                                <tbody>
-                                    <template x-for="p in filteredProxies" :key="p.tag">
-                                        <tr>
-                                            <td x-text="p.country"></td>
-                                            <td x-text="p.marker"></td>
-                                            <td class="mono" x-text="p.tag"></td>
-                                            <td x-text="p.remarks"></td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
                         </div>
                     </div>
 

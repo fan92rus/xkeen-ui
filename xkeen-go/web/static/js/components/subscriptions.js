@@ -11,7 +11,7 @@ const STRATS = [
 function subscriptions() {
     return {
         subs: [], proxies: [], preview: null,
-        filters: { include_markers: [], exclude_markers: ['0.5X'], include_countries: [], exclude_countries: [], include_regex: '', exclude_regex: '', max_proxies: 50 },
+        filters: { include_markers: [], exclude_markers: [], include_countries: [], exclude_countries: [], include_regex: '', exclude_regex: '', max_proxies: 50 },
         strategy: { type: 'all' },
         busy: false, editId: null, edit: {}, newUrl: '', proxyQ: '', showPreview: false,
         markers: [], strats: STRATS,
@@ -69,7 +69,7 @@ function subscriptions() {
             try {
                 let n = 0;
                 for (const s of this.subs.filter(x => x.enabled)) {
-                    try { n += (await api.fetchSubscription(s.id)).count || 0; } catch {}
+                    try { n += (await api.fetchSubscription(s.id)).total || 0; } catch {}
                 }
                 await this._reload();
                 await this._loadProxies();
@@ -77,7 +77,7 @@ function subscriptions() {
             } finally { this.busy = false; }
         },
 
-        // -- Markers: click toggles exclude (2-state, simple) --
+        // -- Markers --
 
         markerExcl(id) { return this.filters.exclude_markers.includes(id); },
 
@@ -87,7 +87,35 @@ function subscriptions() {
             else this.filters.exclude_markers.push(id);
         },
 
+        countByMarker(m) {
+            return this.proxies.filter(p => p.marker === m).length;
+        },
+
         // -- Countries --
+
+        get allCountries() {
+            const set = new Set(this.proxies.map(p => p.country).filter(Boolean));
+            return [...set].sort();
+        },
+
+        toggleCountry(c) {
+            const ii = this.filters.include_countries.indexOf(c);
+            const ei = this.filters.exclude_countries.indexOf(c);
+            if (ii >= 0) {
+                // included → remove inclusion
+                this.filters.include_countries.splice(ii, 1);
+            } else if (ei >= 0) {
+                // excluded → neutral
+                this.filters.exclude_countries.splice(ei, 1);
+            } else {
+                // neutral → exclude
+                this.filters.exclude_countries.push(c);
+            }
+        },
+
+        countByCountry(c) {
+            return this.proxies.filter(p => p.country === c).length;
+        },
 
         addCountry(field, el) {
             const v = el.value.trim();
@@ -114,10 +142,9 @@ function subscriptions() {
         },
 
         get filteredProxies() {
-            if (!this.proxyQ) return this.proxies;
             const q = this.proxyQ.toLowerCase();
             return this.proxies.filter(p =>
-                [p.tag, p.remarks, p.country, p.protocol].some(v => (v || '').toLowerCase().includes(q))
+                !q || [p.tag, p.remarks, p.country, p.protocol].some(v => (v || '').toLowerCase().includes(q))
             );
         },
 
