@@ -110,20 +110,30 @@ body {
 }
 
 .tab-content {
-    display: none;
     flex: 1;
     overflow: hidden;
+    width: 100%;
+    min-height: 0;
 }
 
+/* Editor tab: sidebar + editor side by side */
 .tab-content.active {
     display: flex;
 }
 
-#logsTab {
+/* Logs / Settings / Commands / Subscriptions: vertical stack */
+.tab-content.tab-logs,
+.tab-content.tab-settings,
+.tab-content.tab-commands,
+.tab-content.tab-subscriptions {
     display: flex;
     flex-direction: column;
-    height: 100%;
 }
+
+/* Internal wrappers ensure correct flex layout */
+.editor-wrapper { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.logs-wrapper { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.sub-wrapper { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 
 .main {
     display: flex;
@@ -183,15 +193,15 @@ body {
     font-size: 0.85rem;
 }
 
-#status {
-    color: var(--text-secondary);
-}
-
-#status.saved {
+.service-controls .status-running {
     color: var(--success);
 }
 
-#status.error {
+.service-controls .status-stopped {
+    color: var(--text-secondary);
+}
+
+.service-controls .status-error {
     color: var(--danger);
 }
 
@@ -1194,9 +1204,6 @@ body {
 
 /* ===== Subscriptions Tab ===== */
 
-.sub-page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-
-/* Toolbar */
 .sub-toolbar {
     display: flex; gap: 6px; padding: 10px 16px; align-items: center;
     background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0;

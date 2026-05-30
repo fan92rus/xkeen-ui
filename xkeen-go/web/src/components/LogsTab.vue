@@ -32,6 +32,7 @@ onUnmounted(disconnect);
 </script>
 
 <template>
+  <div class="logs-wrapper">
   <div class="logs-header">
     <select v-model="app.logFile" @change="app.loadLogs()">
       <option value="/opt/var/log/xray/access.log" v-show="app.currentMode === 'xray'">Access Log</option>
@@ -57,5 +58,6 @@ onUnmounted(disconnect);
       <span class="log-level">{{ log.level.toUpperCase() }}</span>
       <span class="log-message">{{ log.message }}</span>
     </div>
+  </div>
   </div>
 </template>

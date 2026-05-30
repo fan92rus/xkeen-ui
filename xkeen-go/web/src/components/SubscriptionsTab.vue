@@ -168,6 +168,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="sub-wrapper">
   <!-- Toolbar -->
   <div class="sub-toolbar">
     <input type="url" v-model="newUrl" @keydown.enter="add()"
@@ -270,36 +271,5 @@ onMounted(async () => {
       </div>
     </div>
   </div>
-
-  <!-- Preview modal -->
-  <div class="modal-overlay" v-show="showPreview" @click.self="showPreview = false">
-    <div class="modal modal-large">
-      <div class="modal-header">
-        <h3>Предпросмотр</h3>
-        <button class="modal-close" @click="showPreview = false">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="preview-summary">
-          <span>Прокси: <strong>{{ previewData?.proxy_count || 0 }}</strong></span>
-          <span>Стратегия: <strong>{{ stratLabel(previewData?.strategy) }}</strong></span>
-        </div>
-        <details v-show="previewData?.outbounds" open>
-          <summary>04_outbounds.json</summary>
-          <pre class="preview-json">{{ previewData?.outbounds }}</pre>
-        </details>
-        <details v-show="previewData?.routing">
-          <summary>05_routing.json</summary>
-          <pre class="preview-json">{{ previewData?.routing }}</pre>
-        </details>
-        <details v-show="previewData?.observatory">
-          <summary>07_observatory.json</summary>
-          <pre class="preview-json">{{ previewData?.observatory }}</pre>
-        </details>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" @click="showPreview = false">Закрыть</button>
-        <button class="btn btn-primary" @click="apply()" :disabled="busy">✅ Применить</button>
-      </div>
-    </div>
   </div>
 </template>

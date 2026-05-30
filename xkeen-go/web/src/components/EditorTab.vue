@@ -90,6 +90,7 @@ defineExpose({ getContent, save });
 </script>
 
 <template>
+  <div class="editor-wrapper">
   <aside class="sidebar">
     <h2>Файлы конфигурации</h2>
     <ul class="file-list">
@@ -113,4 +114,5 @@ defineExpose({ getContent, save });
     </div>
     <div ref="editorRef" id="editor"></div>
   </section>
+  </div>
 </template>

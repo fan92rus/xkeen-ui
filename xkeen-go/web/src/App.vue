@@ -48,11 +48,11 @@ onMounted(() => {
 
     <!-- Main Content -->
     <main class="main">
-      <EditorTab v-show="app.activeTab === 'editor'" class="tab-content" :class="{ active: app.activeTab === 'editor' }" />
-      <SubscriptionsTab v-show="app.activeTab === 'subscriptions'" class="tab-content sub-page" :class="{ active: app.activeTab === 'subscriptions' }" />
-      <LogsTab v-show="app.activeTab === 'logs'" class="tab-content" :class="{ active: app.activeTab === 'logs' }" />
-      <SettingsTab v-show="app.activeTab === 'settings'" class="tab-content" :class="{ active: app.activeTab === 'settings' }" />
-      <CommandsTab v-show="app.activeTab === 'commands'" class="tab-content" :class="{ active: app.activeTab === 'commands' }" />
+      <EditorTab v-if="app.activeTab === 'editor'" class="tab-content active" />
+      <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content tab-subscriptions" />
+      <LogsTab v-if="app.activeTab === 'logs'" class="tab-content tab-logs" />
+      <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content tab-settings" />
+      <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content tab-commands" />
     </main>
 
     <!-- Output Modal -->
