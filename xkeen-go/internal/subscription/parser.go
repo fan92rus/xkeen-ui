@@ -678,7 +678,7 @@ func extractMarker(remarks string) string {
 
 	// Split by common delimiters
 	rawTokens := strings.FieldsFunc(remarks, func(r rune) bool {
-		return r == ' ' || r == '|' || r == '—' || r == '–' || r == '\t'
+		return r == ' ' || r == '|' || r == '—' || r == '–' || r == '-' || r == '\t'
 	})
 
 	var candidates []string
@@ -705,7 +705,8 @@ func extractMarker(remarks string) string {
 		}
 
 		// Emoji tokens (non-flag, non-letter) are always marker candidates
-		if isEmojiToken(cleaned) {
+		// BUT skip if domain-like (has TLD-like suffix: .com, .net, .ru, etc.)
+		if isEmojiToken(cleaned) && !isDomainLike(cleaned) {
 			candidates = append(candidates, cleaned)
 			continue
 		}
@@ -720,8 +721,8 @@ func extractMarker(remarks string) string {
 			continue
 		}
 
-		// Skip domain-like tokens (contain dots, like com.twitter)
-		if strings.Contains(cleaned, ".") {
+		// Skip domain-like tokens (contain dots with letter suffix, like com.twitter)
+		if isDomainLike(cleaned) {
 			continue
 		}
 
@@ -729,17 +730,59 @@ func extractMarker(remarks string) string {
 		candidates = append(candidates, cleaned)
 	}
 
-	// If only 1 text/emoji candidate remains:
-	//   - In pipe-delimited format (has |): it IS a marker (e.g. "VIP", "IPLC")
-	//   - In space-delimited format: it's likely a country name → no marker
-	if len(candidates) == 0 {
-		return ""
-	}
-	if len(candidates) == 1 && !strings.ContainsRune(remarks, '|') {
-		return ""
+	// If only emoji candidates survived: return the first one.
+	// If only text candidates: likely country/city names, not markers.
+	// Mixed (emoji + text): return the first emoji.
+	var emojiCandidates []string
+	var textCandidates []string
+	for _, c := range candidates {
+		if isEmojiToken(c) {
+			emojiCandidates = append(emojiCandidates, c)
+		} else {
+			textCandidates = append(textCandidates, c)
+		}
 	}
 
-	return candidates[0]
+	// Prefer emoji markers over text
+	if len(emojiCandidates) > 0 {
+		return emojiCandidates[0]
+	}
+
+	// Text-only candidates: valid if:
+	//   - pipe-delimited format (Marzban/V2Board), OR
+	//   - remarks contains a flag emoji AND first text candidate is short (≤4 chars)
+	hasFlag := false
+	for _, r := range remarks {
+		if r >= 0x1F1E6 && r <= 0x1F1FF {
+			hasFlag = true
+			break
+		}
+	}
+	if len(textCandidates) > 0 {
+		// Trim trailing punctuation for the short-marker check
+		trimmedCandidate := strings.TrimRight(textCandidates[0], ",.;:!")
+		if strings.ContainsRune(remarks, '|') || (hasFlag && utf8.RuneCountInString(trimmedCandidate) <= 4) {
+			return textCandidates[0]
+		}
+	}
+
+	return ""
+}
+
+// isDomainLike checks if a token looks like a domain (e.g. "com.twitter", "google.com").
+// Returns true if the token contains a dot followed by 2+ letters.
+func isDomainLike(s string) bool {
+	dotIdx := strings.LastIndex(s, ".")
+	if dotIdx < 0 || dotIdx >= len(s)-2 {
+		return false
+	}
+	suffix := s[dotIdx+1:]
+	for _, r := range suffix {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+			return false
+		}
+	}
+	return true
 }
 
 // isFlagToken checks if a string consists of exactly two regional indicator runes.
@@ -755,23 +798,24 @@ func isFlagToken(s string) bool {
 	return count == 2
 }
 
-// isEmojiToken checks if a token is an emoji (not a word/letter string).
-// Returns true for tokens that contain non-letter, non-digit, non-space runes.
+// isEmojiToken checks if a token is primarily an emoji (not a word with punctuation).
+// Returns true only if the token starts with a non-letter/digit rune (typical for emojis).
 func isEmojiToken(s string) bool {
 	if s == "" {
 		return false
 	}
-	hasNonLetter := false
 	for _, r := range s {
 		if r == 0xFE0F || r == 0x200D { // variation selector, ZWJ
 			continue
 		}
-		if !isLetterOrDigit(r) {
-			hasNonLetter = true
-			break
+		// If the first real character is a letter or digit, it's text
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || (r >= 0x0400 && r <= 0x04FF) {
+			return false
 		}
+		// First real character is non-letter → likely emoji
+		return true
 	}
-	return hasNonLetter
+	return false
 }
 
 // isLetterOrDigit checks if a rune is a letter or digit (Unicode-aware).

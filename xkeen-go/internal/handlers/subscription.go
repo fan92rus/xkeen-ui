@@ -160,46 +160,39 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Apply current filters
-	filters := h.store.GetFilters()
-	filtered := subscription.ApplyFilter(entries, filters)
-
 	// Update subscription metadata
 	sub.LastFetch = time.Now()
 	sub.LastError = ""
-	sub.ProxyCount = len(filtered)
+	sub.ProxyCount = len(entries)
 	_ = h.store.UpdateSubscription(sub)
 
-	// Update proxy cache — merge with existing proxies from other subscriptions
-	// Update proxy cache — replace all cached proxies with the fresh set
-	h.store.SetProxies(filtered)
+	// Store ALL proxies unfiltered — filtering happens only at display/apply time
+	h.store.SetProxies(entries)
+
+	// Extract markers from unfiltered data
+	markers := subscription.ExtractAllMarkers(entries)
 
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,
-		"proxy_count": len(filtered),
+		"proxy_count": len(entries),
 		"total":       len(entries),
-		"proxies":     filtered,
+		"proxies":     entries,
+		"markers":     markers,
 	})
 }
 
 // ---------- Proxies ----------
 
-// GetProxies returns all cached proxies after filtering.
+// GetProxies returns all cached proxies.
 // GET /api/subscriptions/proxies
 func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request) {
 	allProxies := h.store.GetProxies()
-
-	// Re-apply current filters
-	filters := h.store.GetFilters()
-	filtered := subscription.ApplyFilter(allProxies, filters)
-
 	markers := subscription.ExtractAllMarkers(allProxies)
 
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"total":    len(allProxies),
-		"filtered": len(filtered),
 		"markers":  markers,
-		"proxies":  filtered,
+		"proxies":  allProxies,
 	})
 }
 

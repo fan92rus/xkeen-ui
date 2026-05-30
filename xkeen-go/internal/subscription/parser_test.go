@@ -241,8 +241,8 @@ func TestExtractMarker(t *testing.T) {
 		{"DE | 02 | CDN | google.com", "CDN"},
 		{"NL | 1 | VIP", "VIP"},
 
-		// Simple text without structure
-		{"My Server", "My"},
+		// Simple text without structure → no marker (no flag, no pipe)
+		{"My Server", ""},
 
 		// Only flag, no text marker
 		{"🇩🇪", ""},
@@ -250,7 +250,7 @@ func TestExtractMarker(t *testing.T) {
 		// ⚡️ with variation selector
 		{"🇩🇪 ⚡️ Fast", "⚡"},
 
-		// Mixed: flag + text marker + text
+		// Mixed: flag + short text marker + text
 		{"🇩🇪 1X Standard", "1X"},
 	}
 

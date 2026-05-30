@@ -12,7 +12,7 @@ const previewData = ref(null);
 const filters = reactive({
     include_markers: [], exclude_markers: [],
     include_countries: [], exclude_countries: [],
-    include_regex: '', exclude_regex: '', max_proxies: 50
+    include_regex: '', exclude_regex: '', max_proxies: 0
 });
 const strategy = reactive({ type: 'all' });
 const busy = ref(false);
