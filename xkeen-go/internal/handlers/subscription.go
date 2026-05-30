@@ -417,18 +417,18 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var observatoryStr interface{}
+	var observatoryJSON json.RawMessage
 	if subscription.NeedsObservatory(strategy.Type) {
-		if obsJSON, err := subscription.GenerateObservatoryJSON(); err == nil {
-			observatoryStr = string(obsJSON)
+		if obs, err := subscription.GenerateObservatoryJSON(); err == nil {
+			observatoryJSON = obs
 		}
 	}
 
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"proxy_count": len(filtered),
-		"outbounds":   string(outboundsJSON),
-		"routing":     string(routingJSON),
-		"observatory": observatoryStr,
+		"outbounds":   json.RawMessage(outboundsJSON),
+		"routing":     json.RawMessage(routingJSON),
+		"observatory": observatoryJSON,
 		"strategy":    strategy.Type,
 	})
 }

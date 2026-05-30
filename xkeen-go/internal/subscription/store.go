@@ -179,26 +179,24 @@ func (s *Store) GetFilters() *Filter {
 	return cloneFilter(&s.config.Filters)
 }
 
-// cloneFilter returns a deep copy of a Filter.
+// cloneFilter returns a deep copy of a Filter with non-nil slices.
 func cloneFilter(f *Filter) *Filter {
 	cp := *f
-	if f.IncludeMarkers != nil {
-		cp.IncludeMarkers = make([]string, len(f.IncludeMarkers))
-		copy(cp.IncludeMarkers, f.IncludeMarkers)
-	}
-	if f.ExcludeMarkers != nil {
-		cp.ExcludeMarkers = make([]string, len(f.ExcludeMarkers))
-		copy(cp.ExcludeMarkers, f.ExcludeMarkers)
-	}
-	if f.IncludeCountries != nil {
-		cp.IncludeCountries = make([]string, len(f.IncludeCountries))
-		copy(cp.IncludeCountries, f.IncludeCountries)
-	}
-	if f.ExcludeCountries != nil {
-		cp.ExcludeCountries = make([]string, len(f.ExcludeCountries))
-		copy(cp.ExcludeCountries, f.ExcludeCountries)
-	}
+	cp.IncludeMarkers = safeSlice(f.IncludeMarkers)
+	cp.ExcludeMarkers = safeSlice(f.ExcludeMarkers)
+	cp.IncludeCountries = safeSlice(f.IncludeCountries)
+	cp.ExcludeCountries = safeSlice(f.ExcludeCountries)
 	return &cp
+}
+
+// safeSlice returns a copy of the slice, or an empty slice if nil.
+func safeSlice(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	cp := make([]string, len(s))
+	copy(cp, s)
+	return cp
 }
 
 // ---------- Strategy ----------

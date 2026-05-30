@@ -249,7 +249,12 @@ onMounted(async () => {
     try {
         const [d, f, s] = await Promise.all([api.listSubscriptions(), api.getFilters(), api.getStrategy()]);
         subs.value = d.subscriptions || [];
-        if (f) Object.assign(filters, f);
+        if (f) Object.assign(filters, f, {
+            include_markers: f.include_markers || [],
+            exclude_markers: f.exclude_markers || [],
+            include_countries: f.include_countries || [],
+            exclude_countries: f.exclude_countries || [],
+        });
         if (s) Object.assign(strategy, s);
         // Auto-load cached proxies on mount
         await loadProxies();

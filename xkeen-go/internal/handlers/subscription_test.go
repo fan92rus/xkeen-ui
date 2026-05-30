@@ -294,6 +294,18 @@ func TestGetFilters(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
+
+	// Verify no null arrays — frontend crashes on .length of null
+	result := parseResponse(t, resp)
+	for _, key := range []string{"include_markers", "exclude_markers", "include_countries", "exclude_countries"} {
+		val, exists := result[key]
+		if !exists || val == nil {
+			t.Errorf("%s is null, expected empty array", key)
+		}
+		if _, ok := val.([]interface{}); !ok {
+			t.Errorf("%s is %T, expected array", key, val)
+		}
+	}
 }
 
 func TestUpdateFilters(t *testing.T) {
@@ -421,11 +433,22 @@ func TestPreview_WithProxies(t *testing.T) {
 	if result["proxy_count"].(float64) != 3 {
 		t.Fatalf("expected 3 proxy_count, got %v", result["proxy_count"])
 	}
-	if result["outbounds"] == nil {
-		t.Fatal("expected outbounds JSON")
+
+	// Verify outbounds is a JSON object (not a double-encoded string)
+	outbounds, ok := result["outbounds"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected outbounds to be a JSON object, got %T: %v", result["outbounds"], result["outbounds"])
 	}
-	if result["routing"] == nil {
-		t.Fatal("expected routing JSON")
+	if _, hasKey := outbounds["outbounds"]; !hasKey {
+		t.Fatal("expected outbounds object to have 'outbounds' key")
+	}
+
+	routing, ok := result["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected routing to be a JSON object, got %T: %v", result["routing"], result["routing"])
+	}
+	if _, hasKey := routing["routing"]; !hasKey {
+		t.Fatal("expected routing object to have 'routing' key")
 	}
 }
 
