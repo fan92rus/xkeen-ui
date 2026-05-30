@@ -89,6 +89,14 @@ const filteredProxies = computed(() => {
 });
 
 /* ---- helpers ---- */
+function _fmtJson(obj) {
+    const raw = JSON.stringify(obj, null, 2);
+    return raw.replace(/("(?:[^"\\]|\\.)*")\s*:/g, '<span class="pk">$1</span>:')
+              .replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="ps">$1</span>')
+              .replace(/:\s*(\d+\.?\d*)/g, ': <span class="pn">$1</span>')
+              .replace(/:\s*(true|false)/g, ': <span class="pb">$1</span>')
+              .replace(/:\s*(null)/g, ': <span class="pu">$1</span>');
+}
 function _extractMarkers(px) {
     const counts = {};
     for (const p of px) { if (p.marker) counts[p.marker] = (counts[p.marker] || 0) + 1; }
@@ -387,15 +395,15 @@ onMounted(async () => {
         </div>
         <details>
           <summary>outbounds.json</summary>
-          <pre class="preview-json">{{ JSON.stringify(previewData.outbounds, null, 2) }}</pre>
+          <pre class="preview-json" v-html="_fmtJson(previewData.outbounds)"></pre>
         </details>
         <details>
           <summary>routing.json</summary>
-          <pre class="preview-json">{{ JSON.stringify(previewData.routing, null, 2) }}</pre>
+          <pre class="preview-json" v-html="_fmtJson(previewData.routing)"></pre>
         </details>
         <details v-if="previewData.observatory">
           <summary>observatory.json</summary>
-          <pre class="preview-json">{{ JSON.stringify(previewData.observatory, null, 2) }}</pre>
+          <pre class="preview-json" v-html="_fmtJson(previewData.observatory)"></pre>
         </details>
       </div>
       <div class="modal-footer">

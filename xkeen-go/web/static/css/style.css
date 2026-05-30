@@ -522,9 +522,15 @@ body {
 .preview-summary { display: flex; gap: 16px; margin-bottom: 8px; font-size: 13px; color: var(--text-secondary); }
 .preview-summary strong { color: var(--text-primary); }
 .preview-json {
-    background: #11111b; color: var(--success); padding: 8px; border-radius: 6px;
-    font-size: 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    background: #11111b; padding: 12px; border-radius: 6px;
+    font-size: 12px; line-height: 1.5; max-height: 300px; overflow: auto;
+    white-space: pre; tab-size: 2;
 }
+.preview-json .pk { color: #89b4fa; } /* keys */
+.preview-json .ps { color: #a6e3a1; } /* strings */
+.preview-json .pn { color: #fab387; } /* numbers */
+.preview-json .pb { color: #f38ba8; } /* booleans */
+.preview-json .pu { color: #585b70; } /* null */
 details summary { cursor: pointer; padding: 3px 0; color: var(--accent); font-weight: 500; font-size: 13px; }
 
 /* ===== Settings Tab ===== */
