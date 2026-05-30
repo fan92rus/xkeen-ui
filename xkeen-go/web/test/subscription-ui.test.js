@@ -184,14 +184,16 @@ async function main() {
     await test('Edit toggles inline form', async () => {
         const card = (await page.$$('.sub-card'))[0];
         assert(card, 'First card exists');
-        const btns = await card.$$('.acts button');
-        let editBtn = null;
-        for (const b of btns) {
-            const title = await page.evaluate(el => el.title, b);
-            if (title === 'Редактировать') { editBtn = b; break; }
-        }
-        assert(editBtn, 'Edit button found');
-        await editBtn.click();
+        // Find edit button fresh via evaluate click
+        const clicked = await page.evaluate(() => {
+            const card = document.querySelectorAll('.sub-card')[0];
+            if (!card) return false;
+            for (const b of card.querySelectorAll('.acts button')) {
+                if (b.title === 'Редактировать') { b.click(); return true; }
+            }
+            return false;
+        });
+        assert(clicked, 'Edit button found and clicked');
         await wait(500);
         const hasForm = await page.evaluate(() => !!document.querySelector('.sub-card.editing .sub-edit'));
         assert(hasForm, 'Edit form visible after click');
@@ -225,16 +227,15 @@ async function main() {
     });
 
     await test('Fetch button clicks without error', async () => {
-        const cards = await page.$$('.sub-card');
-        assert(cards.length > 0, 'Cards exist');
-        const btns = await cards[0].$$('.acts button');
-        let fetchBtn = null;
-        for (const b of btns) {
-            const title = await page.evaluate(el => el.title, b);
-            if (title === 'Обновить') { fetchBtn = b; break; }
-        }
-        assert(fetchBtn, 'Fetch button exists on card');
-        await fetchBtn.click();
+        const clicked = await page.evaluate(() => {
+            const card = document.querySelectorAll('.sub-card')[0];
+            if (!card) return false;
+            for (const b of card.querySelectorAll('.acts button')) {
+                if (b.title === 'Обновить') { b.click(); return true; }
+            }
+            return false;
+        });
+        assert(clicked, 'Fetch button exists on card');
         await wait(3000);
     });
 
@@ -279,14 +280,16 @@ async function main() {
         if (count === 0) { return; }
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < count + 2; i++) {
-            const cards = await page.$$('.sub-card');
-            if (cards.length === 0) break;
-            const last = cards[cards.length - 1];
-            const btns = await last.$$('.acts button');
-            for (const b of btns) {
-                const title = await page.evaluate(el => el.title, b);
-                if (title === 'Удалить') { await b.click(); break; }
-            }
+            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
+            if (remaining === 0) break;
+            await page.evaluate(() => {
+                const cards = document.querySelectorAll('.sub-card');
+                const last = cards[cards.length - 1];
+                if (!last) return;
+                for (const b of last.querySelectorAll('.acts button')) {
+                    if (b.title === 'Удалить') { b.click(); return; }
+                }
+            });
             await wait(600);
         }
         await page.evaluate(() => { window.confirm = window.__origConfirm; });

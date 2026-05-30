@@ -20,9 +20,10 @@ function subscriptions() {
             try {
                 const [d, f, s] = await Promise.all([api.listSubscriptions(), api.getFilters(), api.getStrategy()]);
                 this.subs = d.subscriptions || [];
-                if (f.filters) Object.assign(this.filters, f.filters);
-                if (s.strategy) this.strategy = s.strategy;
-            } catch {}
+                if (f) Object.assign(this.filters, f);
+                if (s) Object.assign(this.strategy, s);
+                console.log('[sub] init: subs:', this.subs.length, 'filters:', JSON.stringify(this.filters), 'strategy:', JSON.stringify(this.strategy));
+            } catch (e) { console.error('[sub] init error:', e); }
         },
 
         // -- Subscriptions --
@@ -58,23 +59,34 @@ function subscriptions() {
             this.busy = true;
             try {
                 const d = await api.fetchSubscription(id);
+                console.log('[sub] fetchOne response:', d.success, 'total:', d.total, 'proxy_count:', d.proxy_count, 'proxies:', d.proxies?.length);
                 await this._reload();
+                // Use proxies from fetch response directly (avoid extra API call)
+                if (d.proxies?.length) {
+                    this.proxies = d.proxies;
+                    this.markers = this._extractMarkers(d.proxies);
+                }
                 this._toast(d.error ? d.error : `+${d.total || d.proxy_count || 0} прокси`, d.error ? 'error' : 'success');
-                await this._loadProxies();
-            } finally { this.busy = false; }
+            } catch (e) { console.error('[sub] fetchOne error:', e); this._err(e); } finally { this.busy = false; }
         },
 
         async fetchAll() {
             this.busy = true;
             try {
+                let allProxies = [];
                 let n = 0;
                 for (const s of this.subs.filter(x => x.enabled)) {
-                    try { n += (await api.fetchSubscription(s.id)).total || 0; } catch {}
+                    try {
+                        const d = await api.fetchSubscription(s.id);
+                        n += d.total || 0;
+                        if (d.proxies) allProxies = allProxies.concat(d.proxies);
+                    } catch (e) { console.warn('[sub] fetchAll skip:', e.message); }
                 }
                 await this._reload();
-                await this._loadProxies();
-                this._toast(`Обновлено ${n} прокси`, 'success');
-            } finally { this.busy = false; }
+                this.proxies = allProxies;
+                this.markers = this._extractMarkers(allProxies);
+                this._toast(`Обновлено ${n} прокси (${allProxies.length} после фильтра)`, 'success');
+            } catch (e) { console.error('[sub] fetchAll error:', e); this._err(e); } finally { this.busy = false; }
         },
 
         // -- Markers --
@@ -136,9 +148,16 @@ function subscriptions() {
         async _loadProxies() {
             try {
                 const d = await api.getProxies();
+                console.log('[sub] _loadProxies: total:', d.total, 'filtered:', d.filtered, 'proxies:', d.proxies?.length, 'markers:', d.markers);
                 this.proxies = d.proxies || [];
                 if (d.markers) this.markers = d.markers;
-            } catch { this.proxies = []; }
+            } catch (e) { console.error('[sub] _loadProxies error:', e); this.proxies = []; }
+        },
+
+        _extractMarkers(proxies) {
+            const counts = {};
+            for (const p of proxies) { if (p.marker) counts[p.marker] = (counts[p.marker] || 0) + 1; }
+            return Object.keys(counts).filter(m => counts[m] >= 2).sort();
         },
 
         get filteredProxies() {
