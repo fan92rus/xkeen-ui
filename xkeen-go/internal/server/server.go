@@ -21,6 +21,7 @@ import (
 
 	"github.com/fan92rus/xkeen-ui/internal/config"
 	"github.com/fan92rus/xkeen-ui/internal/handlers"
+	"github.com/fan92rus/xkeen-ui/internal/subscription"
 	"github.com/fan92rus/xkeen-ui/internal/utils"
 )
 
@@ -41,8 +42,9 @@ type Server struct {
 	logsHandler        *handlers.LogsHandler
 	settingsHandler    *handlers.SettingsHandler
 	commandsHandler    *handlers.CommandsHandler
-	updateHandler      *handlers.UpdateHandler
-	interactiveHandler *handlers.InteractiveHandler
+	updateHandler        *handlers.UpdateHandler
+	interactiveHandler   *handlers.InteractiveHandler
+	subscriptionHandler  *handlers.SubscriptionHandler
 
 	// Shutdown state
 	shutdown bool
@@ -118,6 +120,17 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	s.interactiveHandler = handlers.NewInteractiveHandler(&handlers.InteractiveConfig{
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	})
+
+	// Subscription handler
+	subStorePath := filepath.Join(filepath.Dir(configPath), "subscriptions.json")
+	subStore, subErr := subscription.NewStore(subStorePath)
+	if subErr != nil {
+		log.Printf("Warning: failed to create subscription store: %v", subErr)
+	}
+	subFetcher := subscription.NewFetcher()
+	subScheduler := subscription.NewScheduler(subStore, subFetcher)
+	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
+	subScheduler.Start()
 
 	// Setup routes
 	s.setupRoutes()
@@ -235,6 +248,11 @@ func (s *Server) setupRoutes() {
 	handlers.RegisterCommandsRoutes(apiRouter, s.commandsHandler)
 	handlers.RegisterUpdateRoutes(apiRouter, s.updateHandler)
 
+	// Subscription routes
+	if s.subscriptionHandler != nil {
+		handlers.RegisterSubscriptionRoutes(apiRouter, s.subscriptionHandler)
+	}
+
 	// WebSocket routes (auth required, but no CSRF - WebSocket cannot send custom headers)
 	handlers.RegisterLogsWSRoute(s.router, s.logsHandler, s.middleware.AuthMiddleware)
 	handlers.RegisterInteractiveWSRoute(s.router, s.interactiveHandler, s.middleware.AuthMiddleware)
@@ -295,6 +313,11 @@ func (s *Server) Stop() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Stop subscription scheduler
+	if s.subscriptionHandler != nil {
+		s.subscriptionHandler.Stop()
+	}
 
 	// Stop logs handler (tail processes and broadcast goroutine)
 	if s.logsHandler != nil {

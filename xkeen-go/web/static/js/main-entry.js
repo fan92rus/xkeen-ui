@@ -19,6 +19,7 @@ import './services/update.js';
 import './services/status.js';
 import './services/mode.js';
 import './services/interactive.js';
+import './services/subscription.js';
 
 // Import store (registers Alpine.store on alpine:init)
 import './store.js';
@@ -31,6 +32,7 @@ import './components/editor.js';
 import './components/logs.js';
 import './components/service.js';
 import './components/commands.js';
+import './components/subscriptions.js';
 
 // Start Alpine.js after all modules are loaded
 Alpine.start();
