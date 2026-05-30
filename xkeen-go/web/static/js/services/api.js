@@ -77,6 +77,21 @@ export async function postStream(path, data, onMessage) {
     }
 }
 
+export async function put(path, data) {
+    const res = await request(path, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+    return res.json();
+}
+
+export async function del(path) {
+    const res = await request(path, {
+        method: 'DELETE'
+    });
+    return res.json().catch(() => ({}));
+}
+
 export class ApiError extends Error {
     constructor(status, message, data) {
         super(message);
