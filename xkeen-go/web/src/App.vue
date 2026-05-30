@@ -49,9 +49,11 @@ onMounted(() => {
         </button>
       </div>
       <div class="sidebar-bottom">
-        <div class="status-dot" :class="app.serviceStatus"
-             :title="'XKeen: ' + app.serviceStatus"
-             @click="app.serviceStatus === 'running' ? app.stopService() : app.startService()"></div>
+        <div class="xray-status" :class="app.serviceStatus"
+             @click="app.serviceStatus === 'running' ? app.stopService() : app.startService()">
+          <span class="status-dot" :class="app.serviceStatus"></span>
+          <span class="status-text">{{ app.serviceStatus === 'running' ? 'Запущен' : app.serviceStatus === 'stopped' ? 'Остановлен' : '…' }}</span>
+        </div>
         <button class="sidebar-btn" title="Выйти" @click="app.logout()">⏻</button>
       </div>
     </nav>

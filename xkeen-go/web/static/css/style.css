@@ -102,16 +102,28 @@ body {
     gap: 4px;
 }
 
+.xray-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    color: var(--text-dim);
+    font-size: 11px;
+    white-space: nowrap;
+}
+.xray-status:hover { opacity: 0.8; }
 .status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    cursor: pointer;
+    flex-shrink: 0;
     transition: background 0.2s;
 }
-.status-dot.running { background: var(--success); }
+.status-dot.running { background: var(--success); box-shadow: 0 0 4px var(--success); }
 .status-dot.stopped { background: var(--danger); }
-.status-dot:hover { filter: brightness(1.3); }
+.status-dot.unknown { background: var(--text-dim); }
 
 .sidebar-btn {
     width: 32px;
