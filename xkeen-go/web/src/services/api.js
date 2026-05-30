@@ -47,33 +47,33 @@ export async function postStream(path, data, onMessage) {
 
     try {
         while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
 
-        for (const line of lines) {
-            if (line.trim()) {
-                try {
-                    onMessage(JSON.parse(line));
-                } catch (e) {
-                    console.warn('Failed to parse stream line:', line);
+            for (const line of lines) {
+                if (line.trim()) {
+                    try {
+                        onMessage(JSON.parse(line));
+                    } catch (e) {
+                        console.warn('Failed to parse stream line:', line);
+                    }
                 }
             }
         }
-    }
 
-    if (buffer.trim()) {
-        try {
-            onMessage(JSON.parse(buffer));
-        } catch (e) {
-            console.warn('Failed to parse final buffer:', buffer);
+        if (buffer.trim()) {
+            try {
+                onMessage(JSON.parse(buffer));
+            } catch (e) {
+                console.warn('Failed to parse final buffer:', buffer);
+            }
         }
-    }
     } finally {
-    reader.releaseLock();
+        reader.releaseLock();
     }
 }
 

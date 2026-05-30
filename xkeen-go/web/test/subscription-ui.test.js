@@ -1,5 +1,5 @@
 // test/subscription-ui.test.js
-// E2E tests for subscription UI with Puppeteer
+// E2E tests for subscription UI with Puppeteer (Vue 3 version)
 // Usage: cd xkeen-go/web && npm run test:e2e
 
 import puppeteer from 'puppeteer';
@@ -28,17 +28,15 @@ function ensureConfig() {
     const xrayDir = path.join(TMP, 'xkeen-test', 'xray');
     fs.mkdirSync(configDir, { recursive: true });
     fs.mkdirSync(xrayDir, { recursive: true });
-    if (!fs.existsSync(CONFIG_PATH)) {
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify({
-            port: PORT,
-            xray_config_dir: xrayDir.replace(/\\/g, '/'),
-            allowed_roots: [xrayDir.replace(/\\/g, '/'), configDir.replace(/\\/g, '/')],
-            auth: {
-                password_hash: "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.qO.1BoWBPfGKWe",
-                session_timeout: 24, max_login_attempts: 100, lockout_duration: 1
-            }
-        }, null, 2));
-    }
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({
+        port: PORT,
+        xray_config_dir: xrayDir.replace(/\\/g, '/'),
+        allowed_roots: [xrayDir.replace(/\\/g, '/'), configDir.replace(/\\/g, '/')],
+        auth: {
+            password_hash: "$2a$12$oDp.vVnkWYsDjAuEWEKOgOR08sApErSrJFyRMbOE5d/GvccJKiNLe",
+            session_timeout: 24, max_login_attempts: 100, lockout_duration: 1
+        }
+    }, null, 2));
 }
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
@@ -52,17 +50,6 @@ async function waitFor(fn, timeout = 10000, interval = 300) {
         await wait(interval);
     }
     throw lastErr || new Error(`timeout (${timeout}ms)`);
-}
-
-// Click via page.evaluate (avoids stale element issues with Alpine re-renders)
-async function clickByTitle(selector, titleText) {
-    return page.evaluate((sel, title) => {
-        const btns = document.querySelectorAll(sel);
-        for (const btn of btns) {
-            if ((btn.title || btn.textContent).includes(title)) { btn.click(); return true; }
-        }
-        return false;
-    }, selector, titleText);
 }
 
 async function login() {
@@ -84,17 +71,15 @@ async function goToSubscriptions() {
     await wait(2000);
 }
 
-async function alpineState() {
-    return page.evaluate(() => {
-        const el = document.querySelector('[x-data="subscriptions"]');
-        if (!el?._x_dataStack) return null;
-        const d = el._x_dataStack[0];
-        return JSON.parse(JSON.stringify({
-            subs: d.subs?.map(s => ({ id: s.id, name: s.name, proxy_count: s.proxy_count })),
-            proxies: d.proxies?.length, markers: d.markers,
-            busy: d.busy, strategy: d.strategy, filters: d.filters,
-        }));
-    });
+// DOM-based helpers (no Alpine dependency)
+async function getSubCount() {
+    return page.evaluate(() => document.querySelectorAll('.sub-card').length);
+}
+
+async function getSubNames() {
+    return page.evaluate(() =>
+        [...document.querySelectorAll('.sub-card .name')].map(e => e.textContent)
+    );
 }
 
 async function test(name, fn) {
@@ -107,7 +92,7 @@ async function test(name, fn) {
 async function main() {
     console.log('\nE2E: Subscription UI Tests\n');
     console.log('Building...');
-    execSync('node build.js', { cwd: path.join(ROOT, 'web'), stdio: 'pipe' });
+    execSync('npx vite build', { cwd: path.join(ROOT, 'web'), stdio: 'pipe' });
     execSync(`go build -o "${SERVER_BIN}" .`, { cwd: ROOT, stdio: 'pipe' });
     ensureConfig();
 
@@ -140,29 +125,28 @@ async function main() {
         assert(await page.$('.sub-left'), 'Left panel');
     });
 
-    await test('Alpine component loads subs from API', async () => {
-        const s = await alpineState();
-        assert(s, 'Alpine state exists');
-        assert(Array.isArray(s.subs), 'subs is array');
+    await test('Vue app loads with no subs', async () => {
+        const count = await getSubCount();
+        assert(count === 0, `Should start with 0 subs, got ${count}`);
     });
 
-    await test('No Alpine JS errors on page load', async () => {
-        // Just check current page errors (no reload needed)
-        const bad = jsErrors.filter(e => /alpine|subscription|previewdata|duplicate key/i.test(e));
+    await test('No JS errors on page load', async () => {
+        const bad = jsErrors.filter(e => /vue|subscription|component/i.test(e));
         assert(bad.length === 0, `Errors: ${bad.join('; ')}`);
     });
 
-    await test('Add subscription', async () => {
-        const before = (await alpineState()).subs.length;
+    await test('Add subscription via Enter key', async () => {
         await page.evaluate(url => {
             const input = document.querySelector('.sub-toolbar input[type="url"]');
-            input.value = url;
+            // Set value and dispatch events (Vue v-model compatibility)
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(input, url);
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         }, 'https://example.com/e2e-test');
-        await waitFor(async () => (await alpineState())?.subs?.length > before, 5000);
-        const after = (await alpineState()).subs;
-        assert(after.length > before, `Count: ${before} → ${after.length}`);
+        await waitFor(async () => (await getSubCount()) > 0, 5000);
+        const count = await getSubCount();
+        assert(count === 1, `Should have 1 sub, got ${count}`);
     });
 
     await test('Subscription cards have name and action buttons', async () => {
@@ -182,9 +166,6 @@ async function main() {
     });
 
     await test('Edit toggles inline form', async () => {
-        const card = (await page.$$('.sub-card'))[0];
-        assert(card, 'First card exists');
-        // Find edit button fresh via evaluate click
         const clicked = await page.evaluate(() => {
             const card = document.querySelectorAll('.sub-card')[0];
             if (!card) return false;
@@ -221,9 +202,13 @@ async function main() {
     });
 
     await test('Load proxies button exists', async () => {
-        const found = await clickByTitle('.sub-toolbar button', 'Загрузить');
+        const found = await page.evaluate(() => {
+            for (const b of document.querySelectorAll('.sub-toolbar button')) {
+                if (b.title === 'Загрузить прокси') return true;
+            }
+            return false;
+        });
         assert(found, 'Load proxies button');
-        await wait(1000);
     });
 
     await test('Fetch button clicks without error', async () => {
@@ -240,14 +225,19 @@ async function main() {
     });
 
     await test('Delete subscription', async () => {
-        const before = (await alpineState()).subs.length;
-        page.once('dialog', d => d.accept());
-        const clicked = await clickByTitle('.sub-card:last-child .acts button', 'Удалить');
-        if (clicked) {
-            await wait(1000);
-            const after = (await alpineState()).subs.length;
-            assert(after < before, `Count: ${before} → ${after}`);
-        }
+        const before = await getSubCount();
+        await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
+        await page.evaluate(() => {
+            const card = document.querySelectorAll('.sub-card')[0];
+            if (!card) return;
+            for (const b of card.querySelectorAll('.acts button')) {
+                if (b.title === 'Удалить') { b.click(); return; }
+            }
+        });
+        await wait(1000);
+        const after = await getSubCount();
+        await page.evaluate(() => { window.confirm = window.__origConfirm; });
+        assert(after < before, `Count: ${before} → ${after}`);
     });
 
     await test('Two-column flex layout', async () => {
@@ -260,24 +250,20 @@ async function main() {
 
     await test('Strategy pills exist when settings visible', async () => {
         const count = await page.evaluate(() => document.querySelectorAll('.strat-pills .spill').length);
-        // Strategy pills always exist in DOM (may be hidden by x-show)
         assert(count >= 4, `Strategy pills: ${count}`);
     });
 
     await test('Marker pills render (may be hidden)', async () => {
-        const count = await page.evaluate(() => document.querySelectorAll('.marker-pills .mpill').length);
-        // May be 0 if no proxies loaded, that's OK
+        await page.evaluate(() => document.querySelectorAll('.marker-pills .mpill').length);
     });
 
     await test('Country cloud renders (may be hidden)', async () => {
-        const count = await page.evaluate(() => document.querySelectorAll('.country-cloud .cc').length);
-        // May be 0 if no proxies
+        await page.evaluate(() => document.querySelectorAll('.country-cloud .cc').length);
     });
 
     await test('Clean up: delete all subscriptions', async () => {
-        const s = await alpineState();
-        const count = s?.subs?.length || 0;
-        if (count === 0) { return; }
+        const count = await getSubCount();
+        if (count === 0) return;
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < count + 2; i++) {
             const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
@@ -293,8 +279,8 @@ async function main() {
             await wait(600);
         }
         await page.evaluate(() => { window.confirm = window.__origConfirm; });
-        const final = await alpineState();
-        assert(final.subs.length === 0, `Remaining: ${final.subs.length}`);
+        const final = await getSubCount();
+        assert(final === 0, `Remaining: ${final}`);
     });
 
     // ── Report ──

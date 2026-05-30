@@ -1,12 +1,7 @@
-// update.js - Update API service
+// services/update.js - Update API service
 
 const API_BASE = '/api';
 
-/**
- * Check for available updates
- * @param {boolean} prerelease - Check for dev/prerelease builds
- * @returns {Promise<Object>} Update info with current_version, latest_version, update_available, etc.
- */
 export async function checkUpdate(prerelease = false) {
     const url = prerelease
         ? `${API_BASE}/update/check?prerelease=true`
@@ -14,35 +9,17 @@ export async function checkUpdate(prerelease = false) {
 
     const response = await fetch(url, {
         method: 'GET',
-        headers: {
-            'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' }
     });
 
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
 }
 
-/**
- * Get CSRF token from cookie
- * @returns {string} CSRF token
- */
 function getCSRFToken() {
     return document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '';
 }
 
-/**
- * Start update and listen to SSE events
- * @param {Object} options - Options and callbacks
- * @param {boolean} options.prerelease - Download dev/prerelease build
- * @param {Function} options.onProgress - Called with {percent, status}
- * @param {Function} options.onComplete - Called with {success, message}
- * @param {Function} options.onError - Called with {error}
- * @returns {Promise<void>}
- */
 export function startUpdate(options) {
     const { prerelease = false, onProgress, onComplete, onError } = options;
 
@@ -51,7 +28,6 @@ export function startUpdate(options) {
             ? `${API_BASE}/update/start?prerelease=true`
             : `${API_BASE}/update/start`;
 
-        // Use fetch with POST and manually parse SSE
         fetch(url, {
             method: 'POST',
             headers: {
@@ -70,14 +46,9 @@ export function startUpdate(options) {
 
             function read() {
                 reader.read().then(({ done, value }) => {
-                    if (done) {
-                        resolve();
-                        return;
-                    }
+                    if (done) { resolve(); return; }
 
                     buffer += decoder.decode(value, { stream: true });
-
-                    // Parse SSE events
                     const lines = buffer.split('\n');
                     buffer = lines.pop() || '';
 
@@ -88,41 +59,20 @@ export function startUpdate(options) {
                         } else if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.substring(6));
-
                                 switch (currentEvent) {
-                                    case 'progress':
-                                        if (onProgress) {
-                                            onProgress(data);
-                                        }
-                                        break;
-                                    case 'complete':
-                                        if (onComplete) {
-                                            onComplete(data);
-                                        }
-                                        resolve(data);
-                                        return;
-                                    case 'error':
-                                        if (onError) {
-                                            onError(data);
-                                        }
-                                        reject(new Error(data.error));
-                                        return;
+                                    case 'progress': onProgress?.(data); break;
+                                    case 'complete': onComplete?.(data); resolve(data); return;
+                                    case 'error': onError?.(data); reject(new Error(data.error)); return;
                                 }
                             } catch (e) {
                                 console.error('Failed to parse SSE data:', e);
                             }
                         }
                     }
-
                     read();
-                }).catch(err => {
-                    reject(err);
-                });
+                }).catch(reject);
             }
-
             read();
-        }).catch(err => {
-            reject(err);
-        });
+        }).catch(reject);
     });
 }
