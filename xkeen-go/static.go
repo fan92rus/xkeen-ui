@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed web
+//go:embed web/index.html web/login.html web/static
 var webFS embed.FS
 
 //go:embed scripts/update.sh
