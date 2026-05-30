@@ -223,6 +223,105 @@ func TestScheduler_FetchWithCustomClient(t *testing.T) {
 	}
 }
 
+// ---------- Auto-Apply ----------
+
+func TestAutoApply_GetSet(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	enabled, cronExpr := store.GetAutoApply()
+	if enabled {
+		t.Error("expected disabled by default")
+	}
+	if cronExpr != "" {
+		t.Error("expected empty cron by default")
+	}
+
+	if err := store.SetAutoApply(true, "0 */6 * * *"); err != nil {
+		t.Fatalf("SetAutoApply: %v", err)
+	}
+
+	enabled, cronExpr = store.GetAutoApply()
+	if !enabled {
+		t.Error("expected enabled")
+	}
+	if cronExpr != "0 */6 * * *" {
+		t.Errorf("expected cron '0 */6 * * *', got %q", cronExpr)
+	}
+
+	// Disable
+	store.SetAutoApply(false, "")
+	enabled, _ = store.GetAutoApply()
+	if enabled {
+		t.Error("expected disabled")
+	}
+}
+
+func TestScheduler_UpdateAutoApply_InvalidCron(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+
+	err := sched.UpdateAutoApply(true, "invalid cron expression!!")
+	if err == nil {
+		t.Error("expected error for invalid cron")
+	}
+}
+
+func TestScheduler_UpdateAutoApply_Disable(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+
+	// Enable
+	if err := sched.UpdateAutoApply(true, "0 */6 * * *"); err != nil {
+		t.Fatalf("UpdateAutoApply enable: %v", err)
+	}
+
+	// Disable
+	if err := sched.UpdateAutoApply(false, ""); err != nil {
+		t.Fatalf("UpdateAutoApply disable: %v", err)
+	}
+
+	nextRun := sched.GetNextRun()
+	if !nextRun.IsZero() {
+		t.Error("expected zero next_run when disabled")
+	}
+}
+
+func TestScheduler_UpdateAutoApply_ValidCron(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+
+	if err := sched.UpdateAutoApply(true, "*/5 * * * *"); err != nil {
+		t.Fatalf("UpdateAutoApply: %v", err)
+	}
+
+	nextRun := sched.GetNextRun()
+	if nextRun.IsZero() {
+		t.Error("expected non-zero next_run")
+	}
+
+	// Clean up
+	sched.Stop()
+}
+
+func TestScheduler_SetXrayDir(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+
+	sched.SetXrayDir("/opt/etc/xray")
+	if sched.xrayDir != "/opt/etc/xray" {
+		t.Errorf("expected /opt/etc/xray, got %q", sched.xrayDir)
+	}
+}
+
 // ---------- Context timeout ----------
 
 func TestScheduler_FetcherContextCancellation(t *testing.T) {

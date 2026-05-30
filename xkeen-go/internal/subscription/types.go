@@ -81,6 +81,10 @@ type SubscriptionConfig struct {
 	GeneratedAt   time.Time       `json:"generated_at"`
 	OutboundsFile string          `json:"outbounds_file"` // path to 04_outbounds.json
 	RoutingFile   string          `json:"routing_file"`   // path to 05_routing.json
+
+	// AutoApply configures automatic proxy refresh + apply on a cron schedule.
+	AutoApplyEnabled bool   `json:"auto_apply_enabled"` // enable/disable
+	AutoApplyCron    string `json:"auto_apply_cron"`    // cron expression, e.g. "0 */6 * * *"
 }
 
 // KnownMarkers is the set of recognized markers in proxy remarks.

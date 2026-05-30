@@ -16,3 +16,5 @@ export const getStrategy = () => api.get(`${BASE}/strategy`);
 export const updateStrategy = (strategy) => api.put(`${BASE}/strategy`, strategy);
 export const applySubscriptions = () => api.post(`${BASE}/apply`);
 export const previewSubscriptions = () => api.get(`${BASE}/preview`);
+export const getAutoApply = () => api.get(`${BASE}/auto-apply`);
+export const updateAutoApply = (data) => api.put(`${BASE}/auto-apply`, data);

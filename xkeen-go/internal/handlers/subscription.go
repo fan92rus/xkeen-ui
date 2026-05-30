@@ -435,6 +435,60 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 // ---------- Registration ----------
 
+// ---------- Auto-Apply ----------
+
+// GetAutoApply returns the current auto-apply configuration.
+// GET /api/subscriptions/auto-apply
+func (h *SubscriptionHandler) GetAutoApply(w http.ResponseWriter, r *http.Request) {
+	enabled, cronExpr := h.store.GetAutoApply()
+	nextRun := h.scheduler.GetNextRun()
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled":   enabled,
+		"cron":      cronExpr,
+		"next_run":  nextRun,
+	})
+}
+
+// UpdateAutoApplyRequest is the request body for UpdateAutoApply.
+type UpdateAutoApplyRequest struct {
+	Enabled bool   `json:"enabled"`
+	Cron    string `json:"cron"`
+}
+
+// UpdateAutoApply updates the auto-apply configuration.
+// PUT /api/subscriptions/auto-apply
+func (h *SubscriptionHandler) UpdateAutoApply(w http.ResponseWriter, r *http.Request) {
+	var req UpdateAutoApplyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+
+	// Validate cron expression before saving
+	if req.Enabled && req.Cron != "" {
+		if err := h.scheduler.UpdateAutoApply(req.Enabled, req.Cron); err != nil {
+			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid cron expression: %v", err))
+			return
+		}
+	} else {
+		_ = h.scheduler.UpdateAutoApply(false, "")
+	}
+
+	// Persist to store
+	if err := h.store.SetAutoApply(req.Enabled, req.Cron); err != nil {
+		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save auto-apply: %v", err))
+		return
+	}
+
+	nextRun := h.scheduler.GetNextRun()
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled":  req.Enabled,
+		"cron":     req.Cron,
+		"next_run": nextRun,
+	})
+}
+
 // RegisterSubscriptionRoutes registers subscription-related routes.
 func RegisterSubscriptionRoutes(r *mux.Router, handler *SubscriptionHandler) {
 	// IMPORTANT: specific literal routes MUST be registered before {id} routes,
@@ -450,6 +504,10 @@ func RegisterSubscriptionRoutes(r *mux.Router, handler *SubscriptionHandler) {
 	r.HandleFunc("/subscriptions/strategy", handler.UpdateStrategy).Methods("PUT")
 	r.HandleFunc("/subscriptions/apply", handler.Apply).Methods("POST")
 	r.HandleFunc("/subscriptions/preview", handler.Preview).Methods("GET")
+
+	// Auto-apply cron settings
+	r.HandleFunc("/subscriptions/auto-apply", handler.GetAutoApply).Methods("GET")
+	r.HandleFunc("/subscriptions/auto-apply", handler.UpdateAutoApply).Methods("PUT")
 
 	// {id} routes last
 	r.HandleFunc("/subscriptions/{id}", handler.UpdateSubscription).Methods("PUT")

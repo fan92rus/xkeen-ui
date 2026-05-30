@@ -2,87 +2,264 @@ package subscription
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"os"
+	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
-// Scheduler handles periodic subscription refresh.
+// Scheduler handles periodic subscription refresh and auto-apply.
 type Scheduler struct {
 	mu      sync.RWMutex
 	store   *Store
 	fetcher *Fetcher
-	stopCh  chan struct{}
-	stopped bool
-	wg      sync.WaitGroup
+
+	// cron scheduler for auto-apply
+	cron      *cron.Cron
+	cronEntry cron.EntryID
 
 	// OnUpdate is called after a successful fetch cycle.
-	// Used to notify handlers/UI that proxy list changed.
 	OnUpdate func()
+
+	// RestartCmd is the command to restart xkeen (e.g. "xkeen -restart").
+	RestartCmd string
+
+	// xrayDir is the xray config directory for writing generated files.
+	xrayDir string
 }
 
-// NewScheduler creates a new scheduler. Call Start() to begin.
+// NewScheduler creates a new scheduler.
 func NewScheduler(store *Store, fetcher *Fetcher) *Scheduler {
 	return &Scheduler{
-		store:   store,
-		fetcher: fetcher,
-		stopCh:  make(chan struct{}),
-		stopped: false,
+		store:      store,
+		fetcher:    fetcher,
+		RestartCmd: "xkeen -restart",
 	}
 }
 
-// Start begins the scheduler loop. Safe to call multiple times;
-// subsequent calls are no-ops.
+// SetXrayDir sets the xray config directory for auto-apply file writes.
+func (s *Scheduler) SetXrayDir(dir string) {
+	s.xrayDir = dir
+}
+
+// Start begins the per-minute subscription interval checker
+// and restores auto-apply cron if enabled in config.
 func (s *Scheduler) Start() {
-	s.mu.Lock()
-	if s.stopCh != nil && !s.stopped {
-		// Already running
-		s.mu.Unlock()
-		return
-	}
-	s.stopCh = make(chan struct{})
-	s.stopped = false
-	s.mu.Unlock()
+	s.startIntervalChecker()
 
-	s.wg.Add(1)
-	go s.loop()
-	log.Println("[subscription] scheduler started")
-}
-
-// Stop gracefully stops the scheduler. Safe to call multiple times.
-func (s *Scheduler) Stop() {
-	s.mu.Lock()
-	if s.stopped {
-		s.mu.Unlock()
-		return
-	}
-	s.stopped = true
-	close(s.stopCh)
-	s.mu.Unlock()
-
-	s.wg.Wait()
-	log.Println("[subscription] scheduler stopped")
-}
-
-// loop is the main ticker goroutine. It checks every minute which
-// subscriptions need refresh.
-func (s *Scheduler) loop() {
-	defer s.wg.Done()
-
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	// Check immediately on start.
-	s.checkAndRefresh()
-
-	for {
-		select {
-		case <-s.stopCh:
-			return
-		case <-ticker.C:
-			s.checkAndRefresh()
+	enabled, cronExpr := s.store.GetAutoApply()
+	if enabled && cronExpr != "" {
+		if err := s.enableCron(cronExpr); err != nil {
+			log.Printf("[subscription] failed to restore auto-apply cron: %v", err)
+		} else {
+			log.Printf("[subscription] auto-apply cron restored: %s", cronExpr)
 		}
 	}
+}
+
+// Stop gracefully stops all schedulers.
+func (s *Scheduler) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cron != nil {
+		s.cron.Stop()
+		s.cron = nil
+		log.Println("[subscription] auto-apply cron stopped")
+	}
+}
+
+// UpdateAutoApply enables/disables the auto-apply cron and updates the expression.
+func (s *Scheduler) UpdateAutoApply(enabled bool, cronExpr string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Stop existing cron
+	if s.cron != nil {
+		s.cron.Stop()
+		s.cron = nil
+	}
+
+	if !enabled || cronExpr == "" {
+		log.Println("[subscription] auto-apply disabled")
+		return nil
+	}
+
+	return s.startCronLocked(cronExpr)
+}
+
+// enableCron starts the cron (acquires lock internally).
+func (s *Scheduler) enableCron(cronExpr string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startCronLocked(cronExpr)
+}
+
+// startCronLocked starts the cron scheduler (caller must hold the lock).
+func (s *Scheduler) startCronLocked(cronExpr string) error {
+	c := cron.New()
+
+	id, err := c.AddFunc(cronExpr, func() {
+		log.Println("[subscription] auto-apply cron triggered")
+		s.runAutoApply()
+	})
+	if err != nil {
+		return fmt.Errorf("invalid cron expression %q: %w", cronExpr, err)
+	}
+	_ = id
+
+	c.Start()
+	s.cron = c
+	s.cronEntry = id
+	log.Printf("[subscription] auto-apply cron started: %s", cronExpr)
+	return nil
+}
+
+// GetNextRun returns the next scheduled run time, or zero time if cron is not active.
+func (s *Scheduler) GetNextRun() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.cron == nil {
+		return time.Time{}
+	}
+	entries := s.cron.Entries()
+	if len(entries) == 0 {
+		return time.Time{}
+	}
+	return entries[0].Next
+}
+
+// runAutoApply executes the full cycle: fetch all → filter → generate files → restart.
+func (s *Scheduler) runAutoApply() {
+	// 1. Fetch all subscriptions
+	if err := s.RefreshAll(); err != nil {
+		log.Printf("[subscription] auto-apply: fetch failed: %v", err)
+		return
+	}
+
+	// 2. Check we have proxies
+	allProxies := s.store.GetProxies()
+	if len(allProxies) == 0 {
+		log.Println("[subscription] auto-apply: no proxies after fetch, skipping")
+		return
+	}
+
+	// 3. Filter
+	filters := s.store.GetFilters()
+	filtered := ApplyFilter(allProxies, filters)
+	if len(filtered) == 0 {
+		log.Println("[subscription] auto-apply: all proxies filtered out, skipping")
+		return
+	}
+
+	// 4. Generate and write config files
+	strategy := s.store.GetStrategy()
+	if err := s.writeConfigFiles(filtered, strategy); err != nil {
+		log.Printf("[subscription] auto-apply: write failed: %v", err)
+		return
+	}
+
+	// 5. Restart xkeen
+	if s.RestartCmd != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "sh", "-c", s.RestartCmd).CombinedOutput()
+		if err != nil {
+			log.Printf("[subscription] auto-apply: restart failed: %v (%s)", err, string(out))
+		} else {
+			log.Println("[subscription] auto-apply: xkeen restarted")
+		}
+	}
+
+	_ = s.store.SetGeneratedAt(time.Now())
+	log.Printf("[subscription] auto-apply complete: %d proxies applied", len(filtered))
+
+	if s.OnUpdate != nil {
+		s.OnUpdate()
+	}
+}
+
+// writeConfigFiles generates outbounds, routing, and observatory and writes them to xrayDir.
+func (s *Scheduler) writeConfigFiles(filtered []*ProxyEntry, strategy *RoutingStrategy) error {
+	dir := s.xrayDir
+	if dir == "" {
+		return fmt.Errorf("xray config dir not set")
+	}
+
+	// Generate outbounds
+	outboundsJSON, err := GenerateOutboundsJSON(filtered)
+	if err != nil {
+		return fmt.Errorf("generate outbounds: %w", err)
+	}
+
+	// Read existing routing for merge
+	var existingRouting json.RawMessage
+	routingPath := dir + "/05_routing.json"
+	if data, err := os.ReadFile(routingPath); err == nil {
+		existingRouting = data
+	}
+
+	// Generate routing
+	routingJSON, err := GenerateRoutingJSON(filtered, *strategy, existingRouting)
+	if err != nil {
+		return fmt.Errorf("generate routing: %w", err)
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	// Write outbounds
+	if err := os.WriteFile(dir+"/04_outbounds.json", outboundsJSON, 0644); err != nil {
+		return fmt.Errorf("write outbounds: %w", err)
+	}
+
+	// Write routing
+	if err := os.WriteFile(routingPath, routingJSON, 0644); err != nil {
+		return fmt.Errorf("write routing: %w", err)
+	}
+
+	// Observatory
+	obsPath := dir + "/07_observatory.json"
+	if NeedsObservatory(strategy.Type) {
+		obsJSON, err := GenerateObservatoryJSON()
+		if err != nil {
+			return fmt.Errorf("generate observatory: %w", err)
+		}
+		if err := os.WriteFile(obsPath, obsJSON, 0644); err != nil {
+			return fmt.Errorf("write observatory: %w", err)
+		}
+	} else {
+		os.Remove(obsPath)
+	}
+
+	return nil
+}
+
+// ---------- Per-subscription interval checker ----------
+
+// startIntervalChecker runs a goroutine that checks every minute
+// which subscriptions need refresh based on their individual interval.
+func (s *Scheduler) startIntervalChecker() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+
+		// Check immediately on start
+		s.checkAndRefresh()
+
+		for range ticker.C {
+			s.checkAndRefresh()
+		}
+	}()
+	log.Println("[subscription] interval checker started")
 }
 
 // checkAndRefresh iterates enabled subscriptions and refreshes those
@@ -124,7 +301,6 @@ func (s *Scheduler) RefreshAll() error {
 			continue
 		}
 
-		// Fetch raw entries
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		entries, err := s.fetcher.Fetch(ctx, sub.URL)
 		cancel()
@@ -136,22 +312,17 @@ func (s *Scheduler) RefreshAll() error {
 			continue
 		}
 
-		// Apply current filters
-		filters := s.store.GetFilters()
-		filtered := ApplyFilter(entries, filters)
-
 		sub.LastFetch = time.Now()
 		sub.LastError = ""
-		sub.ProxyCount = len(filtered)
+		sub.ProxyCount = len(entries)
 		_ = s.store.UpdateSubscription(&sub)
 
-		merged = append(merged, filtered...)
+		merged = append(merged, entries...)
 		anySuccess = true
 	}
 
 	if anySuccess {
 		s.store.SetProxies(merged)
-
 		if s.OnUpdate != nil {
 			s.OnUpdate()
 		}
@@ -160,7 +331,7 @@ func (s *Scheduler) RefreshAll() error {
 	return nil
 }
 
-// RefreshOne fetches a single subscription by ID, parses it, applies filters,
+// RefreshOne fetches a single subscription by ID, parses it,
 // updates the subscription metadata in the store, and rebuilds the proxy cache.
 func (s *Scheduler) RefreshOne(id string) error {
 	sub, err := s.store.GetSubscription(id)
@@ -173,30 +344,20 @@ func (s *Scheduler) RefreshOne(id string) error {
 
 	entries, err := s.fetcher.Fetch(ctx, sub.URL)
 	if err != nil {
-		// Update error state
 		sub.LastError = err.Error()
 		sub.LastFetch = time.Now()
 		_ = s.store.UpdateSubscription(sub)
 		return err
 	}
 
-	// Apply current filters
-	filters := s.store.GetFilters()
-	filtered := ApplyFilter(entries, filters)
-
-	// Update subscription metadata
 	sub.LastFetch = time.Now()
 	sub.LastError = ""
-	sub.ProxyCount = len(filtered)
+	sub.ProxyCount = len(entries)
 
 	if err := s.store.UpdateSubscription(sub); err != nil {
 		return err
 	}
 
-	// Store filtered proxies (replace entire cache for single-subscription case)
-	s.store.SetProxies(filtered)
-
+	s.store.SetProxies(entries)
 	return nil
 }
-
-

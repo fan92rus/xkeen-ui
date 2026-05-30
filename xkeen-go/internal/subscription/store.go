@@ -241,6 +241,24 @@ func (s *Store) GetProxies() []*ProxyEntry {
 	return cp
 }
 
+// ---------- Auto-Apply ----------
+
+// GetAutoApply returns the current auto-apply configuration.
+func (s *Store) GetAutoApply() (enabled bool, cronExpr string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config.AutoApplyEnabled, s.config.AutoApplyCron
+}
+
+// SetAutoApply updates the auto-apply configuration and saves.
+func (s *Store) SetAutoApply(enabled bool, cronExpr string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.AutoApplyEnabled = enabled
+	s.config.AutoApplyCron = cronExpr
+	return s.saveConfig(s.config)
+}
+
 // ---------- Generated state ----------
 
 // SetGeneratedAt records when outbounds/routing were last generated and saves.

@@ -595,6 +595,13 @@ details summary { cursor: pointer; padding: 3px 0; color: var(--accent); font-we
 }
 .setting-row select:hover { border-color: var(--accent); }
 .setting-row select:focus { outline: none; border-color: var(--accent); }
+.cron-input {
+    padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text-primary); font-size: 13px;
+    font-family: monospace; width: 200px;
+}
+.cron-input:focus { outline: none; border-color: var(--accent); }
+.cron-input:disabled { opacity: 0.5; }
 
 .setting-info {
     background: var(--bg-tertiary);

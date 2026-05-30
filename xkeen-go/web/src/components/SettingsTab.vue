@@ -1,6 +1,39 @@
 <script setup>
+import { ref, onMounted } from 'vue';
 import { useAppStore } from '../stores/app.js';
+import * as sub from '../services/subscription.js';
+
 const app = useAppStore();
+
+const autoApply = ref({ enabled: false, cron: '0 */6 * * *', next_run: '' });
+const autoApplySaving = ref(false);
+
+async function loadAutoApply() {
+  try {
+    const d = await sub.getAutoApply();
+    autoApply.value = { enabled: d.enabled, cron: d.cron || '0 */6 * * *', next_run: d.next_run || '' };
+  } catch { /* no subscriptions configured yet */ }
+}
+
+async function saveAutoApply() {
+  autoApplySaving.value = true;
+  try {
+    const d = await sub.updateAutoApply({ enabled: autoApply.value.enabled, cron: autoApply.value.cron });
+    autoApply.value.next_run = d.next_run || '';
+    app.showToast(autoApply.value.enabled ? `Автообновление: ${autoApply.value.cron}` : 'Автообновление отключено', 'success');
+  } catch (e) {
+    app.showToast(e.message || 'Ошибка', 'error');
+  } finally {
+    autoApplySaving.value = false;
+  }
+}
+
+function fmtNextRun(iso) {
+  if (!iso || iso === '0001-01-01T00:00:00Z') return '';
+  return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+onMounted(loadAutoApply);
 </script>
 
 <template>
@@ -151,6 +184,40 @@ const app = useAppStore();
             </button>
             <button @click="app.clearPasswordForm()" :disabled="app.passwordChange.loading" class="btn">Очистить</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Auto-Apply Subscriptions -->
+      <div class="settings-section">
+        <h3>Автообновление подписки</h3>
+        <div class="setting-row checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="autoApply.enabled">
+            <span>Включить автоматическое обновление</span>
+          </label>
+          <span class="setting-hint">Автоматически: обновить прокси → фильтровать → записать конфиги → перезапустить xkeen</span>
+        </div>
+        <div class="setting-row">
+          <label>Расписание (cron):</label>
+          <input type="text" v-model="autoApply.cron" placeholder="0 */6 * * *"
+                 :disabled="!autoApply.enabled" class="cron-input">
+        </div>
+        <div class="setting-info">
+          <p><strong>Формат:</strong> <code>мин час день месяц день_недели</code></p>
+          <ul>
+            <li><code>0 */6 * * *</code> — каждые 6 часов</li>
+            <li><code>0 0 * * *</code> — раз в сутки в полночь</li>
+            <li><code>*/30 * * * *</code> — каждые 30 минут</li>
+            <li><code>0 8,20 * * *</code> — в 08:00 и 20:00</li>
+          </ul>
+        </div>
+        <div v-if="autoApply.enabled && autoApply.next_run" class="setting-info">
+          <p>Следующий запуск: <strong>{{ fmtNextRun(autoApply.next_run) }}</strong></p>
+        </div>
+        <div class="update-actions">
+          <button @click="saveAutoApply()" :disabled="autoApplySaving" class="btn btn-primary">
+            {{ autoApplySaving ? 'Сохранение...' : 'Сохранить' }}
+          </button>
         </div>
       </div>
     </div>
