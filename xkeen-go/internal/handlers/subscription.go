@@ -171,7 +171,8 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	_ = h.store.UpdateSubscription(sub)
 
 	// Update proxy cache — merge with existing proxies from other subscriptions
-	h.scheduler.RefreshOne(id)
+	// Update proxy cache — replace all cached proxies with the fresh set
+	h.store.SetProxies(filtered)
 
 	h.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,

@@ -59,7 +59,7 @@ function subscriptions() {
             try {
                 const d = await api.fetchSubscription(id);
                 await this._reload();
-                this._toast(d.error ? d.error : `+${d.count || 0} прокси`, d.error ? 'error' : 'success');
+                this._toast(d.error ? d.error : `+${d.total || d.proxy_count || 0} прокси`, d.error ? 'error' : 'success');
                 await this._loadProxies();
             } finally { this.busy = false; }
         },
