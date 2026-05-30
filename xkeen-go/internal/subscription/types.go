@@ -5,8 +5,33 @@ package subscription
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
+
+// FlexibleInt is an int that can be unmarshalled from either a JSON number or a JSON string.
+// This allows the API to accept both `"interval": 10` and `"interval": "10"`.
+type FlexibleInt int
+
+func (fi *FlexibleInt) UnmarshalJSON(data []byte) error {
+	// Try number first
+	var n int
+	if err := json.Unmarshal(data, &n); err == nil {
+		*fi = FlexibleInt(n)
+		return nil
+	}
+	// Try string
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		var parsed int
+		if _, err := fmt.Sscanf(s, "%d", &parsed); err != nil {
+			return fmt.Errorf("cannot parse %q as int", s)
+		}
+		*fi = FlexibleInt(parsed)
+		return nil
+	}
+	return fmt.Errorf("expected number or string, got %s", string(data))
+}
 
 // Subscription represents a single subscription source (e.g., Hiddify panel URL).
 type Subscription struct {
@@ -14,7 +39,7 @@ type Subscription struct {
 	Name       string    `json:"name"`
 	URL        string    `json:"url"`
 	Enabled    bool      `json:"enabled"`
-	Interval   int       `json:"interval"`     // minutes, 0 = manual only
+	Interval   FlexibleInt `json:"interval"`     // minutes, 0 = manual only
 	LastFetch  time.Time `json:"last_fetch"`
 	LastError  string    `json:"last_error"`
 	ProxyCount int       `json:"proxy_count"`
