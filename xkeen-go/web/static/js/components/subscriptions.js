@@ -1,68 +1,55 @@
-// components/subscriptions.js - Subscriptions tab for managing proxy subscriptions
+// components/subscriptions.js - Subscriptions tab
 
 import * as sub from '../services/subscription.js';
 
-const KNOWN_MARKERS = ['⚡', '⭐', '🎮', '0.5X', '⬇️', '💎'];
-const MARKER_LABELS = {
-    '⚡': 'Быстрые',
-    '⭐': 'Стандарт',
-    '🎮': 'Гейминг',
-    '0.5X': 'Мобильные',
-    '⬇️': 'Загрузка',
-    '💎': 'Авто'
-};
+const MARKERS = [
+    { id: '⚡', label: 'Быстрые' },
+    { id: '⭐', label: 'Стандарт' },
+    { id: '🎮', label: 'Гейминг' },
+    { id: '0.5X', label: 'Мобильные' },
+    { id: '⬇️', label: 'Загрузка' },
+    { id: '💎', label: 'Авто' }
+];
 
-const STRATEGY_OPTIONS = [
-    { value: 'all', label: 'Все через первый', desc: 'Все routing rules → proxy' },
-    { value: 'random', label: 'Случайный', desc: 'Xray balancer: random' },
-    { value: 'roundrobin', label: 'По очереди', desc: 'Xray balancer: round-robin' },
-    { value: 'leastping', label: 'Мин. пинг', desc: 'Xray balancer: leastPing (нужен Observatory)' },
-    { value: 'leastload', label: 'Мин. нагрузка', desc: 'Xray balancer: leastLoad (нужен Observatory)' }
+const STRATEGIES = [
+    { value: 'all', label: 'Все через первый', icon: '📌' },
+    { value: 'random', label: 'Случайный', icon: '🎲' },
+    { value: 'roundrobin', label: 'По очереди', icon: '🔄' },
+    { value: 'leastping', label: 'Мин. пинг', icon: '🏓' },
+    { value: 'leastload', label: 'Мин. нагрузка', icon: '📊' }
 ];
 
 function subscriptionsComponent() {
     return {
-        // State
         subscriptions: [],
         proxies: [],
-        filteredProxies: [],
-        filters: {
-            include_markers: [],
-            exclude_markers: ['0.5X'],
-            include_countries: [],
-            exclude_countries: [],
-            include_regex: '',
-            exclude_regex: '',
-            max_proxies: 50
-        },
+        filters: { include_markers: [], exclude_markers: ['0.5X'], include_countries: [], exclude_countries: [], include_regex: '', exclude_regex: '', max_proxies: 50 },
         strategy: { type: 'all', fallback_tag: '' },
         preview: null,
 
-        // UI state
         loading: false,
         fetching: false,
         applying: false,
         showPreview: false,
-        showAddForm: false,
 
-        // Add form
+        // Add subscription inline
+        showAdd: false,
         newSub: { name: '', url: '', interval: 5, enabled: true },
 
-        // Filter UI helpers
-        newIncludeCountry: '',
-        newExcludeCountry: '',
-        newIncludeMarker: '',
-        newExcludeMarker: '',
-        countrySearch: '',
+        // Edit
+        editId: null,
+        editData: {},
 
-        // Constants exposed to template
-        markerOptions: KNOWN_MARKERS,
-        markerLabels: MARKER_LABELS,
-        strategyOptions: STRATEGY_OPTIONS,
+        // Country input
+        newIncCountry: '',
+        newExcCountry: '',
 
-        // Edit state
-        editingId: null,
-        editSub: {},
+        // Sections open/close
+        sections: { subs: true, filters: true, strategy: false, proxies: false },
+
+        // Proxy search
+        proxySearch: '',
+        proxySort: '',
 
         async init() {
             await this.loadAll();
@@ -71,124 +58,53 @@ function subscriptionsComponent() {
         async loadAll() {
             this.loading = true;
             try {
-                await Promise.all([
-                    this.loadSubscriptions(),
-                    this.loadFilters(),
-                    this.loadStrategy()
-                ]);
+                const [d, f, s] = await Promise.all([sub.listSubscriptions(), sub.getFilters(), sub.getStrategy()]);
+                this.subscriptions = d.subscriptions || [];
+                if (f.filters) Object.assign(this.filters, f.filters);
+                if (s.strategy) this.strategy = s.strategy;
+            } catch (e) {
+                console.error(e);
             } finally {
                 this.loading = false;
             }
         },
 
-        async loadSubscriptions() {
-            try {
-                const data = await sub.listSubscriptions();
-                this.subscriptions = data.subscriptions || [];
-            } catch (e) {
-                this.showToast('Ошибка загрузки подписок', 'error');
-            }
-        },
+        // === Subscriptions ===
 
-        async loadFilters() {
+        async addSub() {
+            if (!this.newSub.url) return;
             try {
-                const data = await sub.getFilters();
-                if (data.filters) {
-                    this.filters = { ...this.filters, ...data.filters };
-                }
-            } catch (e) {
-                // Use defaults
-            }
-        },
-
-        async loadStrategy() {
-            try {
-                const data = await sub.getStrategy();
-                if (data.strategy) {
-                    this.strategy = data.strategy;
-                }
-            } catch (e) {
-                // Use defaults
-            }
-        },
-
-        // === Subscription CRUD ===
-
-        async addSubscription() {
-            if (!this.newSub.url) {
-                this.showToast('URL обязателен', 'error');
-                return;
-            }
-            try {
-                await sub.addSubscription({
-                    name: this.newSub.name || 'Новая подписка',
-                    url: this.newSub.url,
-                    interval: this.newSub.interval || 0,
-                    enabled: this.newSub.enabled
-                });
+                await sub.addSubscription({ name: this.newSub.name || 'Новая подписка', url: this.newSub.url, interval: this.newSub.interval || 0, enabled: this.newSub.enabled });
                 this.newSub = { name: '', url: '', interval: 5, enabled: true };
-                this.showAddForm = false;
-                await this.loadSubscriptions();
-                this.showToast('Подписка добавлена', 'success');
-            } catch (e) {
-                this.showToast('Ошибка: ' + (e.message || 'не удалось добавить'), 'error');
-            }
+                this.showAdd = false;
+                await this._reloadSubs();
+            } catch (e) { this._toast('Ошибка: ' + e.message, 'error'); }
         },
 
-        startEdit(s) {
-            this.editingId = s.id;
-            this.editSub = { ...s };
-        },
+        editStart(s) { this.editId = s.id; this.editData = { ...s }; },
+        editCancel() { this.editId = null; this.editData = {}; },
 
-        cancelEdit() {
-            this.editingId = null;
-            this.editSub = {};
-        },
-
-        async saveEdit() {
+        async editSave() {
             try {
-                await sub.updateSubscription(this.editingId, {
-                    name: this.editSub.name,
-                    url: this.editSub.url,
-                    interval: this.editSub.interval,
-                    enabled: this.editSub.enabled
-                });
-                this.editingId = null;
-                this.editSub = {};
-                await this.loadSubscriptions();
-                this.showToast('Подписка обновлена', 'success');
-            } catch (e) {
-                this.showToast('Ошибка: ' + (e.message || 'не удалось обновить'), 'error');
-            }
+                await sub.updateSubscription(this.editId, { name: this.editData.name, url: this.editData.url, interval: this.editData.interval, enabled: this.editData.enabled });
+                this.editId = null;
+                await this._reloadSubs();
+            } catch (e) { this._toast('Ошибка: ' + e.message, 'error'); }
         },
 
-        async deleteSubscription(id) {
+        async removeSub(id) {
             if (!confirm('Удалить подписку?')) return;
-            try {
-                await sub.deleteSubscription(id);
-                await this.loadSubscriptions();
-                this.showToast('Подписка удалена', 'success');
-            } catch (e) {
-                this.showToast('Ошибка удаления', 'error');
-            }
+            try { await sub.deleteSubscription(id); await this._reloadSubs(); } catch (e) { this._toast('Ошибка', 'error'); }
         },
 
         async fetchOne(id) {
             this.fetching = true;
             try {
-                const data = await sub.fetchSubscription(id);
-                await this.loadSubscriptions();
-                await this.loadProxies();
-                if (data.error) {
-                    this.showToast('Ошибка: ' + data.error, 'error');
-                } else {
-                    this.showToast(`Получено ${data.count || 0} прокси`, 'success');
-                }
-            } catch (e) {
-                this.showToast('Ошибка fetch: ' + (e.message || ''), 'error');
-            } finally {
-                this.fetching = false;
-            }
+                const d = await sub.fetchSubscription(id);
+                await this._reloadSubs();
+                this._toast(d.error ? ('Ошибка: ' + d.error) : (`+${d.count || 0} прокси`), d.error ? 'error' : 'success');
+                if (this.proxies.length) await this._loadProxies();
+            } finally { this.fetching = false; }
         },
 
         async fetchAll() {
@@ -196,176 +112,129 @@ function subscriptionsComponent() {
             try {
                 let total = 0;
                 for (const s of this.subscriptions.filter(s => s.enabled)) {
-                    try {
-                        const data = await sub.fetchSubscription(s.id);
-                        total += data.count || 0;
-                    } catch (e) {
-                        console.warn('Failed to fetch', s.name, e);
-                    }
+                    try { const d = await sub.fetchSubscription(s.id); total += d.count || 0; } catch {}
                 }
-                await this.loadSubscriptions();
-                await this.loadProxies();
-                this.showToast(`Обновлено ${total} прокси из ${this.subscriptions.filter(s => s.enabled).length} подписок`, 'success');
-            } finally {
-                this.fetching = false;
-            }
-        },
-
-        // === Proxies ===
-
-        async loadProxies() {
-            try {
-                const data = await sub.getProxies();
-                this.proxies = data.proxies || [];
-                this.applyLocalFilter();
-            } catch (e) {
-                this.proxies = [];
-                this.filteredProxies = [];
-            }
-        },
-
-        applyLocalFilter() {
-            this.filteredProxies = this.proxies;
+                await this._reloadSubs();
+                this._toast(`Обновлено ${total} прокси`, 'success');
+                if (this.proxies.length) await this._loadProxies();
+            } finally { this.fetching = false; }
         },
 
         // === Filters ===
 
+        toggleMarker(marker, list) {
+            const arr = list === 'include' ? this.filters.include_markers : this.filters.exclude_markers;
+            const idx = arr.indexOf(marker);
+            if (idx >= 0) arr.splice(idx, 1);
+            else arr.push(marker);
+        },
+
+        markerActive(marker, list) {
+            return list === 'include' ? this.filters.include_markers.includes(marker) : this.filters.exclude_markers.includes(marker);
+        },
+
+        addCountry(list) {
+            const key = list === 'include' ? 'newIncCountry' : 'newExcCountry';
+            const arr = list === 'include' ? this.filters.include_countries : this.filters.exclude_countries;
+            const v = this[key].trim();
+            if (v && !arr.includes(v)) arr.push(v);
+            this[key] = '';
+        },
+
+        removeCountry(list, c) {
+            const arr = list === 'include' ? this.filters.include_countries : this.filters.exclude_countries;
+            const idx = arr.indexOf(c);
+            if (idx >= 0) arr.splice(idx, 1);
+        },
+
         async saveFilters() {
-            try {
-                await sub.updateFilters(this.filters);
-                this.showToast('Фильтры сохранены', 'success');
-                await this.loadProxies();
-            } catch (e) {
-                this.showToast('Ошибка сохранения фильтров', 'error');
-            }
+            try { await sub.updateFilters(this.filters); this._toast('Фильтры сохранены', 'success'); } catch { this._toast('Ошибка', 'error'); }
         },
 
-        addIncludeMarker(m) {
-            if (m && !this.filters.include_markers.includes(m)) {
-                this.filters.include_markers.push(m);
-            }
-            this.newIncludeMarker = '';
-        },
-
-        removeIncludeMarker(m) {
-            this.filters.include_markers = this.filters.include_markers.filter(x => x !== m);
-        },
-
-        addExcludeMarker(m) {
-            if (m && !this.filters.exclude_markers.includes(m)) {
-                this.filters.exclude_markers.push(m);
-            }
-            this.newExcludeMarker = '';
-        },
-
-        removeExcludeMarker(m) {
-            this.filters.exclude_markers = this.filters.exclude_markers.filter(x => x !== m);
-        },
-
-        addIncludeCountry() {
-            const c = this.newIncludeCountry.trim();
-            if (c && !this.filters.include_countries.includes(c)) {
-                this.filters.include_countries.push(c);
-            }
-            this.newIncludeCountry = '';
-        },
-
-        removeIncludeCountry(c) {
-            this.filters.include_countries = this.filters.include_countries.filter(x => x !== c);
-        },
-
-        addExcludeCountry() {
-            const c = this.newExcludeCountry.trim();
-            if (c && !this.filters.exclude_countries.includes(c)) {
-                this.filters.exclude_countries.push(c);
-            }
-            this.newExcludeCountry = '';
-        },
-
-        removeExcludeCountry(c) {
-            this.filters.exclude_countries = this.filters.exclude_countries.filter(x => x !== c);
+        // Unique countries from current proxies
+        get proxyCountries() {
+            const s = new Set(this.proxies.map(p => p.country).filter(Boolean));
+            return [...s].sort();
         },
 
         // === Strategy ===
 
         async saveStrategy() {
-            try {
-                await sub.updateStrategy(this.strategy);
-                this.showToast('Стратегия сохранена', 'success');
-            } catch (e) {
-                this.showToast('Ошибка сохранения стратегии', 'error');
-            }
+            try { await sub.updateStrategy(this.strategy); this._toast('Стратегия сохранена', 'success'); } catch { this._toast('Ошибка', 'error'); }
         },
 
         strategyLabel(type) {
-            const opt = STRATEGY_OPTIONS.find(o => o.value === type);
-            return opt ? opt.label : type;
+            return STRATEGIES.find(o => o.value === (type || this.strategy.type))?.label || type;
         },
 
-        // === Apply / Preview ===
+        strategyIcon(type) {
+            return STRATEGIES.find(o => o.value === (type || this.strategy.type))?.icon || '📌';
+        },
+
+        // === Proxies ===
+
+        async loadProxies() {
+            await this._loadProxies();
+            if (this.proxies.length) this.sections.proxies = true;
+        },
+
+        async _loadProxies() {
+            try { const d = await sub.getProxies(); this.proxies = d.proxies || []; } catch { this.proxies = []; }
+        },
+
+        get filteredProxies() {
+            let list = this.proxies;
+            if (this.proxySearch) {
+                const q = this.proxySearch.toLowerCase();
+                list = list.filter(p =>
+                    (p.tag || '').toLowerCase().includes(q) ||
+                    (p.remarks || '').toLowerCase().includes(q) ||
+                    (p.country || '').toLowerCase().includes(q) ||
+                    (p.protocol || '').toLowerCase().includes(q)
+                );
+            }
+            return list;
+        },
+
+        // === Apply ===
 
         async previewApply() {
             this.loading = true;
-            try {
-                const data = await sub.previewSubscriptions();
-                this.preview = data;
-                this.showPreview = true;
-            } catch (e) {
-                this.showToast('Ошибка предпросмотра: ' + (e.message || ''), 'error');
-            } finally {
-                this.loading = false;
-            }
+            try { this.preview = await sub.previewSubscriptions(); this.showPreview = true; } catch (e) { this._toast('Ошибка: ' + e.message, 'error'); }
+            finally { this.loading = false; }
         },
 
         async apply() {
-            if (!confirm('Применить изменения? Будут перезаписаны 04_outbounds.json и 05_routing.json, затем перезапущен Xkeen.')) return;
+            if (!confirm('Перезаписать outbounds, routing и перезапустить Xkeen?')) return;
             this.applying = true;
             try {
-                const data = await sub.applySubscriptions();
-                if (data.error) {
-                    this.showToast('Ошибка: ' + data.error, 'error');
-                } else {
-                    this.showToast('Настройки применены, Xkeen перезапускается', 'success');
-                    this.showPreview = false;
-                    // Refresh service status
-                    this.$store.app.fetchServiceStatus();
-                }
-            } catch (e) {
-                this.showToast('Ошибка применения: ' + (e.message || ''), 'error');
-            } finally {
-                this.applying = false;
-            }
-        },
-
-        closePreview() {
-            this.showPreview = false;
+                const d = await sub.applySubscriptions();
+                if (d.error) this._toast('Ошибка: ' + d.error, 'error');
+                else { this._toast('Применено, Xkeen перезапускается', 'success'); this.showPreview = false; }
+            } catch (e) { this._toast('Ошибка: ' + e.message, 'error'); }
+            finally { this.applying = false; }
         },
 
         // === Helpers ===
 
-        formatTime(t) {
-            if (!t || t === '0001-01-01T00:00:00Z') return '—';
-            return new Date(t).toLocaleString();
+        toggleSection(key) { this.sections[key] = !this.sections[key]; },
+
+        fmtTime(t) {
+            if (!t || t === '0001-01-01T00:00:00Z') return '';
+            return new Date(t).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         },
 
-        showToast(msg, type) {
-            this.$store.app.showToast(msg, type);
+        async _reloadSubs() {
+            const d = await sub.listSubscriptions();
+            this.subscriptions = d.subscriptions || [];
         },
 
-        getProxyCount(sub) {
-            return sub.proxy_count || 0;
-        },
-
-        totalProxies() {
-            return this.proxies.length;
-        },
-
-        filteredCount() {
-            return this.filteredProxies.length;
-        }
+        _toast(msg, type) { this.$store.app.showToast(msg, type); }
     };
 }
 
 document.addEventListener('alpine:init', () => {
     Alpine.data('subscriptions', subscriptionsComponent);
 });
+
+export { MARKERS, STRATEGIES };
