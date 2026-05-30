@@ -38,11 +38,54 @@ const allCountries = computed(() => {
 });
 
 const filteredProxies = computed(() => {
+    let list = proxies.value;
+
+    // Exclude markers
+    if (filters.exclude_markers.length) {
+        const ex = new Set(filters.exclude_markers);
+        list = list.filter(p => !ex.has(p.marker));
+    }
+    // Include markers (empty = all)
+    if (filters.include_markers.length) {
+        const inc = new Set(filters.include_markers);
+        list = list.filter(p => inc.has(p.marker));
+    }
+    // Exclude countries
+    if (filters.exclude_countries.length) {
+        const ex = new Set(filters.exclude_countries.map(c => c.toUpperCase()));
+        list = list.filter(p => !ex.has((p.country || '').toUpperCase()));
+    }
+    // Include countries (empty = all)
+    if (filters.include_countries.length) {
+        const inc = new Set(filters.include_countries.map(c => c.toUpperCase()));
+        list = list.filter(p => inc.has((p.country || '').toUpperCase()));
+    }
+    // Include regex
+    if (filters.include_regex) {
+        try {
+            const re = new RegExp(filters.include_regex, 'i');
+            list = list.filter(p => re.test(p.remarks || ''));
+        } catch { /* invalid regex, skip */ }
+    }
+    // Exclude regex
+    if (filters.exclude_regex) {
+        try {
+            const re = new RegExp(filters.exclude_regex, 'i');
+            list = list.filter(p => !re.test(p.remarks || ''));
+        } catch { /* invalid regex, skip */ }
+    }
+    // Max proxies
+    if (filters.max_proxies > 0 && list.length > filters.max_proxies) {
+        list = list.slice(0, filters.max_proxies);
+    }
+    // Text search
     const q = proxyQ.value.toLowerCase();
-    if (!q) return proxies.value;
-    return proxies.value.filter(p =>
-        [p.tag, p.remarks, p.country, p.protocol].some(v => (v || '').toLowerCase().includes(q))
-    );
+    if (q) {
+        list = list.filter(p =>
+            [p.tag, p.remarks, p.country, p.protocol].some(v => (v || '').toLowerCase().includes(q))
+        );
+    }
+    return list;
 });
 
 /* ---- helpers ---- */
