@@ -10,7 +10,7 @@ const STRATS = [
 
 function subscriptions() {
     return {
-        subs: [], proxies: [], preview: null,
+        subs: [], proxies: [], previewData: null,
         filters: { include_markers: [], exclude_markers: [], include_countries: [], exclude_countries: [], include_regex: '', exclude_regex: '', max_proxies: 50 },
         strategy: { type: 'all' },
         busy: false, editId: null, edit: {}, newUrl: '', proxyQ: '', showPreview: false,
@@ -158,7 +158,7 @@ function subscriptions() {
             this.busy = true;
             try {
                 await this._persist();
-                this.preview = await api.previewSubscriptions();
+                this.previewData = await api.previewSubscriptions();
                 this.showPreview = true;
             } catch (e) { this._err(e); } finally { this.busy = false; }
         },

@@ -231,20 +231,20 @@
                         </div>
                         <div class="modal-body">
                             <div class="preview-summary">
-                                <span>Прокси: <strong x-text="preview?.proxy_count || 0"></strong></span>
-                                <span>Стратегия: <strong x-text="stratLabel(preview?.strategy)"></strong></span>
+                                <span>Прокси: <strong x-text="previewData?.proxy_count || 0"></strong></span>
+                                <span>Стратегия: <strong x-text="stratLabel(previewData?.strategy)"></strong></span>
                             </div>
-                            <details x-show="preview?.outbounds" open>
+                            <details x-show="previewData?.outbounds" open>
                                 <summary>04_outbounds.json</summary>
-                                <pre class="preview-json" x-text="preview?.outbounds"></pre>
+                                <pre class="preview-json" x-text="previewData?.outbounds"></pre>
                             </details>
-                            <details x-show="preview?.routing">
+                            <details x-show="previewData?.routing">
                                 <summary>05_routing.json</summary>
-                                <pre class="preview-json" x-text="preview?.routing"></pre>
+                                <pre class="preview-json" x-text="previewData?.routing"></pre>
                             </details>
-                            <details x-show="preview?.observatory">
+                            <details x-show="previewData?.observatory">
                                 <summary>07_observatory.json</summary>
-                                <pre class="preview-json" x-text="preview?.observatory"></pre>
+                                <pre class="preview-json" x-text="previewData?.observatory"></pre>
                             </details>
                         </div>
                         <div class="modal-footer">
