@@ -181,7 +181,7 @@ onMounted(async () => {
     <button @click="apply()" :disabled="busy || !proxies.length" class="btn btn-primary btn-sm">✅ Применить</button>
   </div>
 
-  <div class="sub-scroll sub-2col">
+  <div class="sub-body">
     <!-- LEFT -->
     <div class="sub-left">
       <div v-for="s in subs" :key="s.id" class="sub-card" :class="{ editing: editId === s.id }">

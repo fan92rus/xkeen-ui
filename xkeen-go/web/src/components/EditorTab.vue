@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
@@ -48,20 +48,14 @@ async function save() {
     await app.saveFile(getContent());
 }
 
-function showDiff() {
-    app.openDiffModal(getContent(), app.lastSavedContent || '');
-}
-
-function showBackups() {
-    app.showBackups();
-}
-
-// Keyboard shortcut handler
 function onSaveShortcut() { save(); }
 function onLoadContent(e) {
     if (instance && e.detail) {
         instance.dispatch({ changes: { from: 0, to: instance.state.doc.length, insert: e.detail } });
     }
+}
+function onDiffEvent() {
+    app.openDiffModal(getContent(), app.lastSavedContent || '');
 }
 
 watch(() => app.currentFile, (file) => {
@@ -77,42 +71,21 @@ onMounted(() => {
 
     window.addEventListener('editor:save', onSaveShortcut);
     window.addEventListener('editor:loadContent', onLoadContent);
+    window.addEventListener('editor:diff', onDiffEvent);
 });
 
 onUnmounted(() => {
     window.removeEventListener('editor:save', onSaveShortcut);
     window.removeEventListener('editor:loadContent', onLoadContent);
+    window.removeEventListener('editor:diff', onDiffEvent);
     if (instance) instance.destroy();
 });
 
-// Expose for parent (header save button dispatches editor:save event, so this is for programmatic use)
 defineExpose({ getContent, save });
 </script>
 
 <template>
-  <div class="editor-wrapper">
-  <aside class="sidebar">
-    <h2>Файлы конфигурации</h2>
-    <ul class="file-list">
-      <li v-for="file in app.files" :key="file.path"
-          :class="{ active: app.currentFile?.path === file.path }"
-          @click="app.loadFile(file.path)">
-        {{ file.name }}
-      </li>
-    </ul>
-  </aside>
-  <section class="editor-container">
-    <div class="editor-header">
-      <span>{{ app.currentFile?.path || 'Файл не выбран' }}</span>
-      <div class="editor-actions">
-        <span :class="app.isValidJson === false ? 'error' : ''">
-          {{ app.isValidJson === false ? 'Invalid JSON' : 'Valid JSON' }}
-        </span>
-        <button v-show="app.currentFile" @click="showDiff()" class="btn btn-sm">Diff</button>
-        <button v-show="app.currentFile" @click="showBackups()" class="btn btn-sm">Резервные копии</button>
-      </div>
-    </div>
+  <div class="editor-container">
     <div ref="editorRef" id="editor"></div>
-  </section>
   </div>
 </template>

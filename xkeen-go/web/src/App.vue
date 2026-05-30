@@ -10,12 +10,23 @@ import CommandsTab from './components/CommandsTab.vue';
 
 const app = useAppStore();
 
-// Keyboard shortcut
+const tabs = [
+    { id: 'editor', icon: '📝', label: 'Редактор' },
+    { id: 'subscriptions', icon: '⭐', label: 'Подписки' },
+    { id: 'logs', icon: '📋', label: 'Логи' },
+    { id: 'settings', icon: '⚙', label: 'Настройки' },
+    { id: 'commands', icon: '💻', label: 'Команды' },
+];
+
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('editor:save'));
     }
+}
+
+function doSave() {
+    window.dispatchEvent(new CustomEvent('editor:save'));
 }
 
 onMounted(() => {
@@ -26,40 +37,75 @@ onMounted(() => {
 
 <template>
   <div class="app">
-    <!-- Header -->
-    <header class="header">
-      <h1>XKEEN Редактор конфигураций</h1>
-      <div class="actions">
-        <ServiceCtrl />
-        <button @click="window.dispatchEvent(new CustomEvent('editor:save'))" class="btn btn-primary">Сохранить</button>
-        <button @click="app.restartService()" class="btn btn-danger">Перезапуск Xkeen</button>
-        <button @click="app.logout()" class="btn">Выход</button>
+    <!-- Sidebar Nav -->
+    <nav class="sidebar-nav">
+      <div class="sidebar-logo">⚙</div>
+      <div class="sidebar-nav-items">
+        <button v-for="t in tabs" :key="t.id"
+                class="nav-btn" :class="{ active: app.activeTab === t.id }"
+                :title="t.label"
+                @click="app.activeTab = t.id">
+          {{ t.icon }}
+        </button>
       </div>
-    </header>
-
-    <!-- Tabs -->
-    <nav class="tabs">
-      <button class="tab" :class="{ active: app.activeTab === 'editor' }" @click="app.activeTab = 'editor'">Редактор</button>
-      <button class="tab" :class="{ active: app.activeTab === 'subscriptions' }" @click="app.activeTab = 'subscriptions'">⭐ Подписки</button>
-      <button class="tab" :class="{ active: app.activeTab === 'logs' }" @click="app.activeTab = 'logs'">Логи</button>
-      <button class="tab" :class="{ active: app.activeTab === 'settings' }" @click="app.activeTab = 'settings'">Настройки</button>
-      <button class="tab" :class="{ active: app.activeTab === 'commands' }" @click="app.activeTab = 'commands'">Команды</button>
+      <div class="sidebar-bottom">
+        <div class="status-dot" :class="app.serviceStatus"
+             :title="'XKeen: ' + app.serviceStatus"
+             @click="app.serviceStatus === 'running' ? app.stopService() : app.startService()"></div>
+        <button class="sidebar-btn" title="Выйти" @click="app.logout()">⏻</button>
+      </div>
     </nav>
 
-    <!-- Main Content -->
-    <main class="main">
-      <EditorTab v-if="app.activeTab === 'editor'" class="tab-content active" />
-      <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content tab-subscriptions" />
-      <LogsTab v-if="app.activeTab === 'logs'" class="tab-content tab-logs" />
-      <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content tab-settings" />
-      <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content tab-commands" />
-    </main>
+    <!-- Main Area -->
+    <div class="main-area">
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <!-- Editor: file selector -->
+          <template v-if="app.activeTab === 'editor'">
+            <select class="file-select" :value="app.currentFile?.path || ''"
+                    @change="app.loadFile($event.target.value)">
+              <option value="" disabled>Выберите файл…</option>
+              <option v-for="f in app.files" :key="f.path" :value="f.path">{{ f.name }}</option>
+            </select>
+            <span class="toolbar-title">{{ app.currentFile?.path || '' }}</span>
+          </template>
+          <!-- Other tabs: label -->
+          <template v-else>
+            <span class="toolbar-title">{{ tabs.find(t => t.id === app.activeTab)?.label || '' }}</span>
+          </template>
+        </div>
+        <div class="toolbar-right">
+          <!-- Editor actions -->
+          <template v-if="app.activeTab === 'editor' && app.currentFile">
+            <span class="status-badge" :class="app.isValidJson === false ? 'invalid' : 'valid'">
+              {{ app.isValidJson === false ? '✗ JSON' : '✓ JSON' }}
+            </span>
+            <button class="btn btn-sm" @click="window.dispatchEvent(new CustomEvent('editor:diff'))">Diff</button>
+            <button class="btn btn-sm" @click="app.showBackups()">Бэкапы</button>
+            <button class="btn btn-sm btn-primary" @click="doSave()">Сохранить</button>
+          </template>
+          <!-- Service actions (non-editor) -->
+          <template v-if="app.activeTab !== 'editor'">
+            <button @click="app.restartService()" class="btn btn-sm btn-danger" title="Перезапуск Xkeen">↻ Xkeen</button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Tab Content -->
+      <EditorTab v-if="app.activeTab === 'editor'" class="tab-content" />
+      <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content" />
+      <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
+      <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />
+      <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content" />
+
+    </div>
 
     <!-- Output Modal -->
     <div class="modal-overlay" v-show="app.modal.show" @click.self="app.closeModal()">
       <div class="modal">
         <div class="modal-header">
-          <h3>Вывод команды: <span>{{ app.modal.command }}</span></h3>
+          <h3>Вывод: <span>{{ app.modal.command }}</span></h3>
           <button class="modal-close" @click="app.closeModal()">&times;</button>
         </div>
         <div class="modal-body">
@@ -80,8 +126,8 @@ onMounted(() => {
 
     <!-- Confirmation Dialog -->
     <div class="modal-overlay" v-show="app.confirm.show" @click.self="app.cancelConfirm()">
-      <div class="modal confirm-dialog">
-        <div class="modal-header"><h3>Подтверждение команды</h3></div>
+      <div class="modal">
+        <div class="modal-header"><h3>Подтверждение</h3></div>
         <div class="modal-body">
           <p>Вы уверены, что хотите выполнить эту команду?</p>
           <p class="confirm-description">{{ app.confirm.description }}</p>

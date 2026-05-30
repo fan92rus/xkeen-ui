@@ -1,5 +1,5 @@
 // test/subscription-ui.test.js
-// E2E tests for subscription UI with Puppeteer (Vue 3 version)
+// E2E tests for subscription UI with Puppeteer (Vue 3 sidebar layout)
 // Usage: cd xkeen-go/web && npm run test:e2e
 
 import puppeteer from 'puppeteer';
@@ -63,23 +63,18 @@ async function login() {
     }
 }
 
+// Navigate to subscriptions via sidebar nav buttons
 async function goToSubscriptions() {
+    // Nav buttons: 0=editor, 1=subs, 2=logs, 3=settings, 4=commands
     await page.evaluate(() => {
-        const tabs = document.querySelectorAll('.tab');
-        for (const t of tabs) { if (t.textContent.includes('Подписки')) { t.click(); return; } }
+        const btns = document.querySelectorAll('.nav-btn');
+        if (btns[1]) btns[1].click();
     });
-    await wait(2000);
+    await wait(1000);
 }
 
-// DOM-based helpers (no Alpine dependency)
 async function getSubCount() {
     return page.evaluate(() => document.querySelectorAll('.sub-card').length);
-}
-
-async function getSubNames() {
-    return page.evaluate(() =>
-        [...document.querySelectorAll('.sub-card .name')].map(e => e.textContent)
-    );
 }
 
 async function test(name, fn) {
@@ -118,8 +113,23 @@ async function main() {
         assert(!page.url().includes('/login'), 'Should redirect from login');
     });
 
-    await test('Subscriptions tab renders toolbar + left panel', async () => {
+    await test('Sidebar nav renders', async () => {
+        const info = await page.evaluate(() => {
+            const btns = document.querySelectorAll('.nav-btn');
+            const dot = document.querySelector('.status-dot');
+            return {
+                btnCount: btns.length,
+                activeIcon: [...btns].find(b => b.classList.contains('active'))?.textContent?.trim(),
+                dotClass: dot?.className,
+            };
+        });
+        assert(info.btnCount === 5, `5 nav buttons, got ${info.btnCount}`);
+        assert(info.activeIcon === '📝', `Editor should be active`);
+    });
+
+    await test('Subscriptions tab renders via sidebar nav', async () => {
         await goToSubscriptions();
+        // Check that sub-toolbar exists
         assert(await page.$('.sub-toolbar'), 'Toolbar');
         assert(await page.$('.sub-toolbar input[type="url"]'), 'URL input');
         assert(await page.$('.sub-left'), 'Left panel');
@@ -138,7 +148,6 @@ async function main() {
     await test('Add subscription via Enter key', async () => {
         await page.evaluate(url => {
             const input = document.querySelector('.sub-toolbar input[type="url"]');
-            // Set value and dispatch events (Vue v-model compatibility)
             const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
             nativeInputValueSetter.call(input, url);
             input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -178,7 +187,6 @@ async function main() {
         await wait(500);
         const hasForm = await page.evaluate(() => !!document.querySelector('.sub-card.editing .sub-edit'));
         assert(hasForm, 'Edit form visible after click');
-        // Cancel edit
         await page.evaluate(() => {
             const btns = document.querySelectorAll('.sub-card.editing button');
             for (const b of btns) { if (b.textContent.includes('✕')) { b.click(); return; } }
@@ -221,7 +229,7 @@ async function main() {
             return false;
         });
         assert(clicked, 'Fetch button exists on card');
-        await wait(3000);
+        await wait(2000);
     });
 
     await test('Delete subscription', async () => {
@@ -240,24 +248,24 @@ async function main() {
         assert(after < before, `Count: ${before} → ${after}`);
     });
 
-    await test('Two-column flex layout', async () => {
+    await test('Two-column body layout', async () => {
         const display = await page.evaluate(() => {
-            const el = document.querySelector('.sub-scroll.sub-2col');
+            const el = document.querySelector('.sub-body');
             return el ? getComputedStyle(el).display : null;
         });
         assert(display === 'flex', `Layout should be flex, got ${display}`);
     });
 
-    await test('Strategy pills exist when settings visible', async () => {
+    await test('Strategy pills exist', async () => {
         const count = await page.evaluate(() => document.querySelectorAll('.strat-pills .spill').length);
         assert(count >= 4, `Strategy pills: ${count}`);
     });
 
-    await test('Marker pills render (may be hidden)', async () => {
+    await test('Marker pills render', async () => {
         await page.evaluate(() => document.querySelectorAll('.marker-pills .mpill').length);
     });
 
-    await test('Country cloud renders (may be hidden)', async () => {
+    await test('Country cloud renders', async () => {
         await page.evaluate(() => document.querySelectorAll('.country-cloud .cc').length);
     });
 

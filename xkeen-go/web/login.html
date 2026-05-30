@@ -4,233 +4,133 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
-    <title>XKEEN-UI Login</title>
+    <title>XKEEN-UI</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .change-password-form {
-            display: none;
-        }
-        .change-password-form.active {
-            display: block;
-        }
-        .login-form.hidden {
-            display: none;
-        }
+        .change-password-form { display: none; }
+        .change-password-form.active { display: block; }
+        .login-form.hidden { display: none; }
         .warning-box {
-            background: #ff6b6b;
-            color: white;
-            padding: 12px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-            font-size: 14px;
+            background: rgba(249,226,175,0.12); border: 1px solid #f9e2af;
+            color: #f9e2af; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;
         }
-        .password-requirements {
-            font-size: 12px;
-            color: #888;
-            margin-top: 4px;
-        }
-        .password-strength {
-            height: 4px;
-            margin-top: 8px;
-            border-radius: 2px;
-            transition: background 0.3s;
-        }
-        .strength-weak { background: #ff6b6b; }
-        .strength-medium { background: #ffa500; }
-        .strength-strong { background: #51cf66; }
+        .password-requirements { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+        .password-strength { height: 3px; margin-top: 8px; border-radius: 2px; transition: all 0.3s; }
+        .strength-weak { background: #f38ba8; }
+        .strength-medium { background: #f9e2af; }
+        .strength-strong { background: #a6e3a1; }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <!-- Login Form -->
-        <form class="login-form" id="loginForm">
-            <h1>XKEEN-UI</h1>
-            <input type="password" name="password" placeholder="Пароль" required autofocus>
-            <button type="submit">Войти</button>
-        </form>
+    <div class="login-page">
+        <div class="login-card">
+            <div class="login-logo">⚙</div>
+            <form class="login-form" id="loginForm">
+                <input type="password" name="password" placeholder="Пароль" required autofocus>
+                <button type="submit">Войти</button>
+            </form>
 
-        <!-- Change Password Form (shown after login with default credentials) -->
-        <form class="login-form change-password-form" id="changePasswordForm">
-            <h1>🔐 Смена пароля</h1>
-            <div class="warning-box" id="securityWarning">
-                ⚠️ Обнаружены стандартные учётные данные!<br>
-                Необходимо сменить пароль перед продолжением.
-            </div>
-
-            <input type="password" name="current_password" placeholder="Текущий пароль (admin)" required>
-            <input type="password" name="new_password" placeholder="Новый пароль" required id="newPassword">
-            <div class="password-strength" id="passwordStrength"></div>
-            <div class="password-requirements" id="passwordRequirements">
-                Минимум 8 символов, рекомендуется: 12+ с разным регистром, цифрами, символами
-            </div>
-
-            <input type="password" name="confirm_password" placeholder="Подтверждение нового пароля" required>
-            <button type="submit" id="changePasswordBtn">Изменить пароль</button>
-        </form>
+            <form class="login-form change-password-form" id="changePasswordForm">
+                <div class="login-title">Смена пароля</div>
+                <div class="warning-box" id="securityWarning">
+                    Обнаружены стандартные учётные данные. Смените пароль.
+                </div>
+                <input type="password" name="current_password" placeholder="Текущий пароль" required>
+                <input type="password" name="new_password" placeholder="Новый пароль" required id="newPassword">
+                <div class="password-strength" id="passwordStrength"></div>
+                <div class="password-requirements" id="passwordRequirements">Минимум 8 символов</div>
+                <input type="password" name="confirm_password" placeholder="Подтверждение" required>
+                <button type="submit" id="changePasswordBtn">Изменить пароль</button>
+            </form>
+        </div>
     </div>
-
     <div id="toast" class="toast hidden"></div>
 
     <script>
     let sessionToken = null;
     let csrfToken = null;
 
-    // Login form handler
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const form = e.target;
         const password = form.password.value;
-
         try {
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password })
             });
-
             const data = await response.json();
-
             if (data.ok) {
-                // Store CSRF token
                 csrfToken = data.csrf_token;
                 localStorage.setItem('csrfToken', data.csrf_token);
-
-                // Check if password change is required
                 if (data.require_password_change) {
-                    // Show change password form
                     document.getElementById('loginForm').classList.add('hidden');
                     document.getElementById('changePasswordForm').classList.add('active');
                     document.getElementById('changePasswordForm').querySelector('[name="current_password"]').value = password;
-                    showToast(data.message || 'Необходимо сменить стандартный пароль', 'warning');
+                    showToast(data.message || 'Смените стандартный пароль', 'warning');
                 } else {
-                    // Normal login - redirect to main page
                     window.location.href = '/';
                 }
             } else {
                 showToast(data.error || 'Ошибка входа', 'error');
             }
-        } catch (error) {
-            showToast('Ошибка сети', 'error');
-        }
+        } catch (error) { showToast('Ошибка сети', 'error'); }
     });
 
-    // Password strength checker
     document.getElementById('newPassword').addEventListener('input', (e) => {
-        const password = e.target.value;
-        const strengthBar = document.getElementById('passwordStrength');
-        const requirements = document.getElementById('passwordRequirements');
-
-        // Calculate strength
-        let strength = 0;
-        if (password.length >= 8) strength += 1;
-        if (password.length >= 12) strength += 1;
-        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 1;
-        if (/\d/.test(password)) strength += 1;
-        if (/[^a-zA-Z0-9]/.test(password)) strength += 1;
-
-        // Update UI
-        strengthBar.className = 'password-strength';
-        if (password.length === 0) {
-            strengthBar.style.width = '0';
-        } else if (strength <= 2) {
-            strengthBar.classList.add('strength-weak');
-            strengthBar.style.width = '33%';
-            requirements.textContent = 'Слабый: добавьте заглавные буквы, цифры или символы';
-        } else if (strength <= 3) {
-            strengthBar.classList.add('strength-medium');
-            strengthBar.style.width = '66%';
-            requirements.textContent = 'Средний: рекомендуется добавить сложность';
-        } else {
-            strengthBar.classList.add('strength-strong');
-            strengthBar.style.width = '100%';
-            requirements.textContent = '✓ Надёжный пароль';
-        }
+        const pw = e.target.value;
+        const bar = document.getElementById('passwordStrength');
+        const hint = document.getElementById('passwordRequirements');
+        let s = 0;
+        if (pw.length >= 8) s++;
+        if (pw.length >= 12) s++;
+        if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+        if (/\d/.test(pw)) s++;
+        if (/[^a-zA-Z0-9]/.test(pw)) s++;
+        bar.className = 'password-strength';
+        if (!pw.length) { bar.style.width = '0'; return; }
+        if (s <= 2) { bar.classList.add('strength-weak'); bar.style.width = '33%'; hint.textContent = 'Слабый'; }
+        else if (s <= 3) { bar.classList.add('strength-medium'); bar.style.width = '66%'; hint.textContent = 'Средний'; }
+        else { bar.classList.add('strength-strong'); bar.style.width = '100%'; hint.textContent = '✓ Надёжный'; }
     });
 
-    // Change password form handler
     document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const form = e.target;
-        const currentPassword = form.current_password.value;
-        const newPassword = form.new_password.value;
-        const confirmPassword = form.confirm_password.value;
-
-        // Client-side validation
-        if (newPassword.length < 8) {
-            showToast('Пароль должен содержать минимум 8 символов', 'error');
-            return;
-        }
-
-        if (newPassword === currentPassword) {
-            showToast('Новый пароль должен отличаться от текущего', 'error');
-            return;
-        }
-
-        if (newPassword !== confirmPassword) {
-            showToast('Пароли не совпадают', 'error');
-            return;
-        }
-
+        const cur = form.current_password.value, nw = form.new_password.value, cnf = form.confirm_password.value;
+        if (nw.length < 8) { showToast('Минимум 8 символов', 'error'); return; }
+        if (nw === cur) { showToast('Пароль должен отличаться', 'error'); return; }
+        if (nw !== cnf) { showToast('Пароли не совпадают', 'error'); return; }
         const btn = document.getElementById('changePasswordBtn');
-        btn.disabled = true;
-        btn.textContent = 'Изменение...';
-
+        btn.disabled = true; btn.textContent = 'Изменение...';
         try {
-            const response = await fetch('/api/auth/change-password', {
+            const r = await fetch('/api/auth/change-password', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
-                },
-                body: JSON.stringify({
-                    current_password: currentPassword,
-                    new_password: newPassword
-                })
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({ current_password: cur, new_password: nw })
             });
-
-            const data = await response.json();
-
-            if (data.ok) {
-                showToast('Пароль изменён! Перенаправление...', 'success');
-
-                // Re-login with new password
+            const d = await r.json();
+            if (d.ok) {
+                showToast('Пароль изменён', 'success');
                 setTimeout(async () => {
-                    const loginResponse = await fetch('/api/auth/login', {
+                    const lr = await fetch('/api/auth/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password: newPassword })
+                        body: JSON.stringify({ password: nw })
                     });
-
-                    const loginData = await loginResponse.json();
-
-                    if (loginData.ok) {
-                        localStorage.setItem('csrfToken', loginData.csrf_token);
-                        window.location.href = '/';
-                    } else {
-                        showToast('Автоматический вход не удался, войдите вручную', 'error');
-                        // Show login form again
-                        document.getElementById('changePasswordForm').classList.remove('active');
-                        document.getElementById('loginForm').classList.remove('hidden');
-                    }
-                }, 1000);
-            } else {
-                showToast(data.error || 'Не удалось изменить пароль', 'error');
-                btn.disabled = false;
-                btn.textContent = 'Изменить пароль';
-            }
-        } catch (error) {
-            showToast('Ошибка сети', 'error');
-            btn.disabled = false;
-            btn.textContent = 'Изменить пароль';
-        }
+                    const ld = await lr.json();
+                    if (ld.ok) { localStorage.setItem('csrfToken', ld.csrf_token); window.location.href = '/'; }
+                    else { document.getElementById('changePasswordForm').classList.remove('active'); document.getElementById('loginForm').classList.remove('hidden'); }
+                }, 800);
+            } else { showToast(d.error || 'Ошибка', 'error'); btn.disabled = false; btn.textContent = 'Изменить пароль'; }
+        } catch { showToast('Ошибка сети', 'error'); btn.disabled = false; btn.textContent = 'Изменить пароль'; }
     });
 
     function showToast(message, type = 'info') {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.className = 'toast ' + type;
-        toast.classList.remove('hidden');
-        setTimeout(() => toast.classList.add('hidden'), 5000);
+        const t = document.getElementById('toast');
+        t.textContent = message; t.className = 'toast ' + type; t.classList.remove('hidden');
+        setTimeout(() => t.classList.add('hidden'), 4000);
     }
     </script>
 </body>

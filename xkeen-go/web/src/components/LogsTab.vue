@@ -33,31 +33,28 @@ onUnmounted(disconnect);
 
 <template>
   <div class="logs-wrapper">
-  <div class="logs-header">
-    <select v-model="app.logFile" @change="app.loadLogs()">
-      <option value="/opt/var/log/xray/access.log" v-show="app.currentMode === 'xray'">Access Log</option>
-      <option value="/opt/var/log/xray/error.log" v-show="app.currentMode === 'xray'">Error Log</option>
-      <option value="/opt/var/log/mihomo/access.log" v-show="app.currentMode === 'mihomo'">Access Log</option>
-      <option value="/opt/var/log/mihomo/error.log" v-show="app.currentMode === 'mihomo'">Error Log</option>
-    </select>
-    <div class="logs-filters">
-      <input type="text" v-model="app.logSearch" placeholder="Поиск в логах...">
-      <select v-model="app.logFilter">
-        <option value="all">Все уровни</option>
-        <option value="error">Ошибки</option>
-        <option value="warn">Предупреждения</option>
-        <option value="info">Информация</option>
+    <div class="logs-toolbar">
+      <select v-model="app.logFile" @change="app.loadLogs()">
+        <option value="/opt/var/log/xray/access.log" v-show="app.currentMode === 'xray'">Access</option>
+        <option value="/opt/var/log/xray/error.log" v-show="app.currentMode === 'xray'">Error</option>
+        <option value="/opt/var/log/mihomo/access.log" v-show="app.currentMode === 'mihomo'">Access</option>
+        <option value="/opt/var/log/mihomo/error.log" v-show="app.currentMode === 'mihomo'">Error</option>
       </select>
+      <input type="text" v-model="app.logSearch" placeholder="Поиск…">
+      <select v-model="app.logFilter">
+        <option value="all">Все</option>
+        <option value="error">Ошибки</option>
+        <option value="warn">Warning</option>
+        <option value="info">Info</option>
+      </select>
+      <button @click="app.clearLogs()" class="btn btn-sm">Очистить</button>
     </div>
-    <button @click="app.clearLogs()" class="btn">Очистить</button>
-    <button @click="app.loadLogs()" class="btn">Обновить</button>
-  </div>
-  <div class="logs-container">
-    <div v-for="(log, index) in app.filteredLogs" :key="index" :class="'log-entry log-' + log.level">
-      <span class="log-time">{{ log.timestamp }}</span>
-      <span class="log-level">{{ log.level.toUpperCase() }}</span>
-      <span class="log-message">{{ log.message }}</span>
+    <div class="logs-container">
+      <div v-for="(log, index) in app.filteredLogs" :key="index" :class="'log-entry log-' + log.level">
+        <span class="log-time">{{ log.timestamp }}</span>
+        <span class="log-level">{{ log.level.toUpperCase() }}</span>
+        <span class="log-message">{{ log.message }}</span>
+      </div>
     </div>
-  </div>
   </div>
 </template>
