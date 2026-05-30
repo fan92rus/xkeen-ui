@@ -72,3 +72,4 @@ logs/
 *.bak
 tmp/
 temp/
+*_output.md
