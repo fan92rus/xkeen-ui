@@ -190,7 +190,7 @@
 
                     <!-- Actions -->
                     <div class="sub-footer" x-show="subs.length">
-                        <button @click="fetchAll(); await _loadProxies()" :disabled="busy" class="btn btn-sm"
+                        <button @click="fetchAll()" :disabled="busy" class="btn btn-sm"
                                 x-text="proxies.length ? '📋 ' + filteredProxies.length + ' / ' + proxies.length + ' прокси' : '📋 Загрузить прокси'"></button>
                         <div class="sub-footer-r">
                             <button @click="preview()" :disabled="busy" class="btn btn-sm">Предпросмотр</button>
@@ -230,19 +230,19 @@
                         <div class="modal-body">
                             <div class="preview-summary">
                                 <span>Прокси: <strong x-text="preview?.proxy_count || 0"></strong></span>
-                                <span>Стратегия: <strong x-text="stratLabel(preview?.strategy?.type)"></strong></span>
+                                <span>Стратегия: <strong x-text="stratLabel(preview?.strategy)"></strong></span>
                             </div>
-                            <details x-show="preview?.outbounds_preview" open>
+                            <details x-show="preview?.outbounds" open>
                                 <summary>04_outbounds.json</summary>
-                                <pre class="preview-json" x-text="preview?.outbounds_preview"></pre>
+                                <pre class="preview-json" x-text="preview?.outbounds"></pre>
                             </details>
-                            <details x-show="preview?.routing_preview">
+                            <details x-show="preview?.routing">
                                 <summary>05_routing.json</summary>
-                                <pre class="preview-json" x-text="preview?.routing_preview"></pre>
+                                <pre class="preview-json" x-text="preview?.routing"></pre>
                             </details>
-                            <details x-show="preview?.observatory_preview">
+                            <details x-show="preview?.observatory">
                                 <summary>07_observatory.json</summary>
-                                <pre class="preview-json" x-text="preview?.observatory_preview"></pre>
+                                <pre class="preview-json" x-text="preview?.observatory"></pre>
                             </details>
                         </div>
                         <div class="modal-footer">
