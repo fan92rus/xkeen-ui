@@ -15,7 +15,7 @@ const filters = reactive({
     include_countries: [], exclude_countries: [],
     include_regex: '', exclude_regex: '', max_proxies: 0
 });
-const strategy = reactive({ type: 'all' });
+const strategy = reactive({ type: 'all', replace_balancer_tag: false });
 const busy = ref(false);
 const editId = ref(null);
 const edit = reactive({ name: '', url: '', interval: 0, enabled: true });
@@ -280,6 +280,10 @@ onMounted(async () => {
       <button v-for="s in STRATS" :key="s.v" class="spill" :class="{ active: strategy.type === s.v }"
               @click="strategy.type = s.v" :title="s.tip">{{ s.l }}</button>
     </div>
+    <label class="chk-label" v-if="strategy.type !== 'all'">
+      <input type="checkbox" v-model="strategy.replace_balancer_tag" />
+      Заменить balancer-tag
+    </label>
   </div>
 
   <!-- Body: two columns -->

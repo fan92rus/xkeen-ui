@@ -69,8 +69,9 @@ type Filter struct {
 
 // RoutingStrategy defines how traffic is distributed across proxies.
 type RoutingStrategy struct {
-	Type        string `json:"type"`         // "all", "random", "roundrobin", "leastping", "leastload"
-	FallbackTag string `json:"fallback_tag"` // fallback outbound tag
+	Type               string `json:"type"`                // "all", "random", "roundrobin", "leastping", "leastload"
+	FallbackTag        string `json:"fallback_tag"`        // fallback outbound tag
+	ReplaceBalancerTag bool   `json:"replace_balancer_tag"` // if true, replace existing balancerTag rules with new ones
 }
 
 // SubscriptionConfig is the persisted subscription configuration.

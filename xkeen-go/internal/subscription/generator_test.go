@@ -708,3 +708,94 @@ func TestGenerateRoutingJSON_NoExistingRules(t *testing.T) {
 		t.Errorf("expected 1 balancer, got %d", len(balancers))
 	}
 }
+
+func TestReplaceBalancerRules(t *testing.T) {
+	existing := json.RawMessage(`[
+		{"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
+		{"type": "field", "ip": ["geoip:private"], "outboundTag": "direct"},
+		{"type": "field", "balancerTag": "old-balancer", "network": "tcp,udp"},
+		{"type": "field", "outboundTag": "proxy", "network": "tcp,udp"},
+		{"type": "field", "port": [80, 443], "outboundTag": "proxy"}
+	]`)
+
+	result := replaceBalancerRules(existing)
+
+	var rules []map[string]interface{}
+	if err := json.Unmarshal(result, &rules); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have 5 rules
+	if len(rules) != 5 {
+		t.Errorf("expected 5 rules, got %d", len(rules))
+	}
+
+	// Rule 0: ad-block — preserved as-is
+	if rules[0]["outboundTag"] != "block" {
+		t.Errorf("rule 0 should be block, got %v", rules[0]["outboundTag"])
+	}
+
+	// Rule 2: balancerTag replaced
+	if rules[2]["balancerTag"] != "proxy-balancer" {
+		t.Errorf("rule 2 should have balancerTag 'proxy-balancer', got %v", rules[2]["balancerTag"])
+	}
+
+	// Rule 3: outboundTag proxy — preserved
+	if rules[3]["outboundTag"] != "proxy" {
+		t.Errorf("rule 3 should be proxy, got %v", rules[3]["outboundTag"])
+	}
+
+	// Rule 4: port rule — preserved
+	if rules[4]["outboundTag"] != "proxy" {
+		t.Errorf("rule 4 should be proxy, got %v", rules[4]["outboundTag"])
+	}
+}
+
+func TestGenerateRoutingJSON_WithReplaceBalancerTag(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de", Outbound: json.RawMessage(`{"tag":"proxy-de","protocol":"vless"}`)},
+	}
+
+	// Existing routing with custom balancer rule
+	existing := json.RawMessage(`{
+		"routing": {
+			"domainStrategy": "IPIfNonMatch",
+			"rules": [
+				{"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
+				{"type": "field", "balancerTag": "old-proxy-balancer", "network": "tcp,udp"},
+				{"type": "field", "outboundTag": "proxy", "network": "tcp,udp"}
+			]
+		}
+	}`)
+
+	strat := RoutingStrategy{Type: "random", FallbackTag: "direct", ReplaceBalancerTag: true}
+	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	routing := result["routing"].(map[string]interface{})
+
+	// Rules should have balancerTag replaced
+	rules := routing["rules"].([]interface{})
+	if len(rules) != 3 {
+		t.Errorf("expected 3 rules, got %d", len(rules))
+	}
+
+	// Rule 1 should have new balancerTag
+	rule1 := rules[1].(map[string]interface{})
+	if rule1["balancerTag"] != "proxy-balancer" {
+		t.Errorf("rule 1 balancerTag should be 'proxy-balancer', got %v", rule1["balancerTag"])
+	}
+
+	// Balancer should exist
+	balancers := routing["balancers"].([]interface{})
+	if len(balancers) != 1 {
+		t.Errorf("expected 1 balancer, got %d", len(balancers))
+	}
+}

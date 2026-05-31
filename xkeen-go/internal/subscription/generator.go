@@ -76,7 +76,7 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 		DomainStrategy: "IPIfNonMatch",
 	}
 
-	// Parse existing routing if provided — preserve rules as raw JSON (no roundtrip)
+	// Parse existing routing if provided
 	if len(existingRouting) > 0 {
 		var wrapper map[string]json.RawMessage
 		innerRouting := existingRouting
@@ -94,9 +94,15 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 					routing.DomainStrategy = dsStr
 				}
 			}
-			// Keep ALL existing rules as raw JSON — preserves exact formatting, key order, types
+
 			if rulesRaw, ok := existing["rules"]; ok {
-				routing.RulesRaw = rulesRaw
+				if strategy.ReplaceBalancerTag {
+					// Parse rules, replace balancerTag rules, preserve others as raw
+					routing.RulesRaw = replaceBalancerRules(rulesRaw)
+				} else {
+					// Keep ALL existing rules as raw JSON — preserves exact formatting
+					routing.RulesRaw = rulesRaw
+				}
 			}
 		}
 	}
@@ -143,6 +149,37 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 	}
 
 	return json.MarshalIndent(result, "", "  ")
+}
+
+// replaceBalancerRules parses the existing rules array, replaces rules with
+// balancerTag with a new rule pointing to "proxy-balancer", and keeps all
+// other rules as raw JSON bytes (no re-serialization).
+func replaceBalancerRules(rulesRaw json.RawMessage) json.RawMessage {
+	var rules []json.RawMessage
+	if err := json.Unmarshal(rulesRaw, &rules); err != nil {
+		return rulesRaw // if we can't parse, return as-is
+	}
+
+	newRule, _ := json.Marshal(map[string]interface{}{
+		"type":        "field",
+		"balancerTag": "proxy-balancer",
+		"network":     "tcp,udp",
+	})
+
+	var result []json.RawMessage
+	for _, raw := range rules {
+		var m map[string]interface{}
+		if json.Unmarshal(raw, &m) == nil && m["balancerTag"] != nil {
+			// Replace this rule with our balancer rule
+			result = append(result, newRule)
+		} else {
+			// Keep as-is (raw JSON bytes — preserves formatting, key order, types)
+			result = append(result, raw)
+		}
+	}
+
+	out, _ := json.Marshal(result)
+	return out
 }
 
 // GenerateObservatoryJSON generates 07_observatory.json for leastping/leastload strategies.
