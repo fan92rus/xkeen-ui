@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as api from '../services/subscription.js';
+import { fmtTime } from '../utils/format.js';
 
 const app = useAppStore();
 
@@ -113,10 +114,7 @@ async function _reload() {
 }
 function countByMarker(m) { return proxies.value.filter(p => p.marker === m).length; }
 function countByCountry(c) { return proxies.value.filter(p => p.country === c).length; }
-function fmtTime(t) {
-    if (!t || t === '0001-01-01T00:00:00Z') return '';
-    return new Date(t).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
+/* fmtTime imported from utils */
 
 /* ---- subscription CRUD ---- */
 async function add() {

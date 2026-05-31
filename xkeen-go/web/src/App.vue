@@ -1,11 +1,12 @@
 <script setup>
+import { defineAsyncComponent } from 'vue';
 import { onMounted, onUnmounted, ref, computed, provide } from 'vue';
 import { useAppStore } from './stores/app.js';
-import EditorTab from './components/EditorTab.vue';
+const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
 import SettingsTab from './components/SettingsTab.vue';
-import CommandsTab from './components/CommandsTab.vue';
+const CommandsTab = defineAsyncComponent(() => import('./components/CommandsTab.vue'));
 
 const app = useAppStore();
 
@@ -67,7 +68,7 @@ onUnmounted(() => {
 <template>
   <div class="app">
     <!-- Sidebar -->
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" role="navigation" aria-label="Основная навигация">
       <div class="sidebar-logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path v-for="(d, i) in icons.logo.split('M').filter(Boolean)" :key="i" :d="'M' + d" />
@@ -76,24 +77,24 @@ onUnmounted(() => {
       <div class="sidebar-nav-items">
         <button v-for="t in tabs" :key="t.id"
                 class="nav-btn" :class="{ active: app.activeTab === t.id }"
-                :title="t.label"
+                :title="t.label" :aria-label="t.label" :aria-current="app.activeTab === t.id ? 'page' : undefined"
                 @click="app.activeTab = t.id">
           <svg viewBox="0 0 24 24"><path :d="icons[t.id]" /></svg>
         </button>
       </div>
       <div class="sidebar-bottom">
-        <button class="sidebar-btn theme-toggle" :title="isDark ? 'Светлая тема' : 'Тёмная тема'" @click="toggleTheme">
+        <button class="sidebar-btn theme-toggle" :title="isDark ? 'Светлая тема' : 'Тёмная тема'" :aria-label="isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'" @click="toggleTheme">
           <svg v-if="isDark" viewBox="0 0 24 24"><path :d="icons.sun" /></svg>
           <svg v-else viewBox="0 0 24 24"><path :d="icons.moon" /></svg>
         </button>
-        <button class="sidebar-btn" title="Выйти" @click="app.logout()">
+        <button class="sidebar-btn" title="Выйти" aria-label="Выйти" @click="app.logout()">
           <svg viewBox="0 0 24 24"><path :d="icons.logout" /></svg>
         </button>
       </div>
     </nav>
 
     <!-- Main Area -->
-    <div class="main-area">
+    <div class="main-area" role="main">
       <!-- Toolbar -->
       <div class="toolbar">
         <div class="toolbar-left">
@@ -114,13 +115,13 @@ onUnmounted(() => {
           <div class="service-bar">
             <span class="status-dot" :class="app.serviceStatus"></span>
             <span class="service-label">{{ app.serviceStatus === 'running' ? 'Запущен' : app.serviceStatus === 'stopped' ? 'Остановлен' : '…' }}</span>
-            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" title="Запустить">
+            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" title="Запустить" aria-label="Запустить XKeen">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path :d="icons.play" /></svg>
             </button>
-            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" title="Остановить">
+            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" title="Остановить" aria-label="Остановить XKeen">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path :d="icons.stop" /></svg>
             </button>
-            <button class="btn btn-sm" @click="app.restartService()" title="Перезапустить">
+            <button class="btn btn-sm" @click="app.restartService()" title="Перезапустить" aria-label="Перезапустить XKeen">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.restart" /></svg>
             </button>
           </div>

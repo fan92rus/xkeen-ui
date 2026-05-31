@@ -28,10 +28,7 @@ async function saveAutoApply() {
   }
 }
 
-function fmtNextRun(iso) {
-  if (!iso || iso === '0001-01-01T00:00:00Z') return '';
-  return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
+import { fmtTime as fmtNextRun } from '../utils/format.js';
 
 onMounted(loadAutoApply);
 </script>
