@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as api from '../services/subscription.js';
 import { fmtTime } from '../utils/format.js';
@@ -17,8 +17,10 @@ const edit = reactive({ name: '', url: '', interval: 0, enabled: true });
 const newUrl = ref('');
 const proxyQ = ref('');
 const showPreview = ref(false);
-const showProfileModal = ref(false);
 const markers = ref([]);
+
+/* ---- active profile ---- */
+const activeProfileId = ref(null);
 
 const STRATS = [
     { v: 'all', l: 'Все', tip: 'Все прокси через первый' },
@@ -28,26 +30,31 @@ const STRATS = [
     { v: 'leastload', l: 'Мин. нагр.', tip: 'Требует observatory' }
 ];
 
-/* ---- default profile computed ---- */
-const dp = computed(() => profiles.value.find(p => p.is_default) || null);
-const filters = computed(() => dp.value?.filter || {
-    include_markers: [], exclude_markers: [],
-    include_countries: [], exclude_countries: [],
-    include_regex: '', exclude_regex: '', max_proxies: 0
+/* ---- active profile computed ---- */
+const activeProfile = computed(() => {
+    if (!activeProfileId.value) return profiles.value.find(p => p.is_default) || null;
+    return profiles.value.find(p => p.id === activeProfileId.value) || profiles.value.find(p => p.is_default) || null;
 });
-const strategy = computed(() => dp.value?.strategy || { type: 'all', replace_balancer_tag: false });
 
-/* ---- profile editor state ---- */
-const pe = reactive({
-    id: '', name: '', enabled: true, is_default: false,
-    filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regex: '', exclude_regex: '', max_proxies: 0 },
-    strategy: { type: 'random' }
+const dp = computed(() => profiles.value.find(p => p.is_default) || null);
+
+const filters = computed(() => {
+    const p = activeProfile.value;
+    return p?.filter || {
+        include_markers: [], exclude_markers: [],
+        include_countries: [], exclude_countries: [],
+        include_regex: '', exclude_regex: '', max_proxies: 0
+    };
 });
-// String representations for filter arrays
-const peStr = reactive({
-    exclude_markers: '', include_markers: '',
-    exclude_countries: '', include_countries: ''
+
+const strategy = computed(() => {
+    const p = activeProfile.value;
+    return p?.strategy || { type: 'all', replace_balancer_tag: false };
 });
+
+/* ---- new profile inline ---- */
+const showNewProfileInput = ref(false);
+const newProfileName = ref('');
 
 /* ---- computed ---- */
 const allCountries = computed(() => {
@@ -123,13 +130,18 @@ async function _reload() {
 function countByMarker(m) { return proxies.value.filter(p => p.marker === m).length; }
 function countByCountry(c) { return proxies.value.filter(p => p.country === c).length; }
 
-/* ---- persist default profile ---- */
-async function _persistDefault() {
-    if (!dp.value) return;
-    await Promise.all([
-        api.updateFilters(dp.value.filter),
-        api.updateStrategy(dp.value.strategy)
-    ]);
+/* ---- persist active profile ---- */
+async function _persistProfile() {
+    const p = activeProfile.value;
+    if (!p) return;
+    if (p.is_default) {
+        await Promise.all([
+            api.updateFilters(p.filter),
+            api.updateStrategy(p.strategy)
+        ]);
+    } else {
+        await api.updateProfile(p.id, p);
+    }
 }
 
 /* ---- subscription CRUD ---- */
@@ -215,12 +227,13 @@ async function loadProxies() {
 /* ---- markers ---- */
 function markerExcl(id) { return filters.value?.exclude_markers?.includes(id); }
 async function toggleMarker(id) {
-    if (!dp.value) return;
-    const arr = dp.value.filter.exclude_markers || [];
+    const p = activeProfile.value;
+    if (!p) return;
+    const arr = p.filter.exclude_markers || [];
     const i = arr.indexOf(id);
     if (i >= 0) arr.splice(i, 1);
     else arr.push(id);
-    await api.updateFilters(dp.value.filter);
+    await _persistProfile();
     await loadProfiles();
 }
 
@@ -233,8 +246,9 @@ function countryState(c) {
     return 'off';
 }
 async function toggleCountry(c) {
-    if (!dp.value) return;
-    const f = dp.value.filter;
+    const p = activeProfile.value;
+    if (!p) return;
+    const f = p.filter;
     if (!f.include_countries) f.include_countries = [];
     if (!f.exclude_countries) f.exclude_countries = [];
     const ii = f.include_countries.indexOf(c);
@@ -242,15 +256,16 @@ async function toggleCountry(c) {
     if (ii >= 0) { f.include_countries.splice(ii, 1); }
     else if (ei >= 0) { f.exclude_countries.splice(ei, 1); f.include_countries.push(c); }
     else { f.exclude_countries.push(c); }
-    await api.updateFilters(f);
+    await _persistProfile();
     await loadProfiles();
 }
 
 /* ---- strategy ---- */
 async function setStrategy(type) {
-    if (!dp.value) return;
-    dp.value.strategy.type = type;
-    await api.updateStrategy(dp.value.strategy);
+    const p = activeProfile.value;
+    if (!p) return;
+    p.strategy.type = type;
+    await _persistProfile();
     await loadProfiles();
 }
 
@@ -258,7 +273,7 @@ async function setStrategy(type) {
 async function preview() {
     busy.value = true;
     try {
-        await _persistDefault();
+        await _persistProfile();
         previewData.value = await api.previewSubscriptions();
         showPreview.value = true;
     } catch (e) { _err(e); } finally { busy.value = false; }
@@ -267,7 +282,7 @@ async function applySubs() {
     if (!confirm('Применить и перезапустить Xkeen?')) return;
     busy.value = true;
     try {
-        await _persistDefault();
+        await _persistProfile();
         const d = await api.applySubscriptions();
         if (d.error) _toast(d.error, 'error');
         else { _toast('Применено. Xkeen перезапускается.', 'success'); showPreview.value = false; }
@@ -281,63 +296,67 @@ async function loadProfiles() {
     } catch (e) { console.error('[sub] loadProfiles:', e); }
 }
 
+function switchProfile(id) {
+    activeProfileId.value = id;
+}
+
 function openNewProfile() {
-    Object.assign(pe, {
-        id: '', name: '', enabled: true, is_default: false,
-        filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regex: '', exclude_regex: '', max_proxies: 0 },
-        strategy: { type: 'random' }
+    showNewProfileInput.value = true;
+    newProfileName.value = '';
+    nextTick(() => {
+        const input = document.querySelector('.profile-tabs .ptab-new-input');
+        if (input) input.focus();
     });
-    Object.assign(peStr, { exclude_markers: '', include_markers: '', exclude_countries: '', include_countries: '' });
-    showProfileModal.value = true;
 }
 
-function editProfile(p) {
-    Object.assign(pe, JSON.parse(JSON.stringify(p)));
-    // Pre-fill string fields from arrays
-    Object.assign(peStr, {
-        exclude_markers: (p.filter?.exclude_markers || []).join(', '),
-        include_markers: (p.filter?.include_markers || []).join(', '),
-        exclude_countries: (p.filter?.exclude_countries || []).join(', '),
-        include_countries: (p.filter?.include_countries || []).join(', '),
-    });
-    showProfileModal.value = true;
-}
-
-function syncStrToArrays() {
-    const split = s => (s || '').split(',').map(x => x.trim()).filter(Boolean);
-    pe.filter.exclude_markers = split(peStr.exclude_markers);
-    pe.filter.include_markers = split(peStr.include_markers);
-    pe.filter.exclude_countries = split(peStr.exclude_countries);
-    pe.filter.include_countries = split(peStr.include_countries);
-}
-
-async function saveProfile() {
-    if (!pe.is_default && !pe.name?.trim()) {
-        _toast('Введите название профиля', 'error');
+async function confirmNewProfile() {
+    const name = newProfileName.value.trim();
+    if (!name) {
+        showNewProfileInput.value = false;
         return;
     }
-    syncStrToArrays();
     busy.value = true;
     try {
-        if (pe.is_default) {
-            await Promise.all([
-                api.updateStrategy(pe.strategy),
-                api.updateFilters(pe.filter)
-            ]);
-        } else if (pe.id) {
-            await api.updateProfile(pe.id, pe);
-        } else {
-            await api.createProfile(pe);
-        }
-        showProfileModal.value = false;
+        await api.createProfile({
+            name,
+            enabled: true,
+            filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regex: '', exclude_regex: '', max_proxies: 0 },
+            strategy: { type: 'random' }
+        });
+        showNewProfileInput.value = false;
         await loadProfiles();
-        _toast('Профиль сохранён');
+        // Switch to the new profile
+        const newP = profiles.value.find(p => p.name === name);
+        if (newP) activeProfileId.value = newP.id;
+        _toast('Профиль создан');
     } catch (e) { _err(e); } finally { busy.value = false; }
+}
+
+function cancelNewProfile() {
+    showNewProfileInput.value = false;
+    newProfileName.value = '';
 }
 
 async function removeProfile(id) {
     if (!confirm('Удалить профиль?')) return;
-    try { await api.deleteProfile(id); await loadProfiles(); _toast('Профиль удалён'); } catch (e) { _err(e); }
+    try {
+        await api.deleteProfile(id);
+        // If deleting active profile, switch to default
+        if (activeProfileId.value === id) {
+            const def = profiles.value.find(p => p.is_default);
+            activeProfileId.value = def?.id || null;
+        }
+        await loadProfiles();
+        _toast('Профиль удалён');
+    } catch (e) { _err(e); }
+}
+
+async function toggleProfileEnabled(p) {
+    p.enabled = !p.enabled;
+    if (!p.is_default) {
+        await api.updateProfile(p.id, p);
+    }
+    await loadProfiles();
 }
 
 /* ---- virtual scroll ---- */
@@ -417,30 +436,33 @@ onMounted(async () => {
         <p class="sub-empty-hint">Вставьте URL подписки в поле выше</p>
       </div>
 
-      <!-- Profiles section -->
-      <div class="sub-divider" v-if="profiles.length"></div>
-      <div class="sub-row-label" v-if="profiles.length">
-        Профили
-        <button class="btn btn-sm" style="margin-left:auto" @click="openNewProfile()" :disabled="busy || profiles.length >= 10">+ Профиль</button>
-      </div>
-      <div v-for="p in profiles" :key="p.id" class="sub-card profile-card" :class="{ 'profile-default': p.is_default }">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">
-          <span class="dot" :class="p.enabled ? 'on' : 'off'"></span>
-          <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</strong>
-          <span class="badge">{{ p.proxy_count }}/{{ p.total_proxy }}</span>
-          <span class="strat-badge">{{ STRATS.find(s => s.v === p.strategy?.type)?.l || p.strategy?.type }}</span>
-        </div>
-        <div style="display:flex;gap:4px;flex-shrink:0">
-          <button class="btn btn-sm" @click="editProfile(p)" :disabled="busy">Ред.</button>
-          <button class="btn btn-sm" @click="removeProfile(p.id)" :disabled="busy || p.is_default" v-if="!p.is_default">Удалить</button>
-        </div>
+      <!-- Profile Tabs -->
+      <div class="sub-divider"></div>
+      <div class="profile-tabs">
+        <button v-for="p in profiles" :key="p.id"
+                class="ptab" :class="{ active: activeProfile?.id === p.id }"
+                @click="switchProfile(p.id)">
+          <span class="dot" :class="p.enabled ? 'on' : 'off'" @click.stop="toggleProfileEnabled(p)"></span>
+          <span class="ptab-name">{{ p.name }}</span>
+          <button v-if="!p.is_default" class="ptab-delete" @click.stop="removeProfile(p.id)" :disabled="busy" title="Удалить профиль">&times;</button>
+        </button>
+        <button v-if="!showNewProfileInput && profiles.length < 10"
+                class="ptab ptab-add" @click="openNewProfile()" :disabled="busy" title="Новый профиль">+</button>
+        <template v-if="showNewProfileInput">
+          <input class="ptab-new-input new-profile-name"
+                 v-model="newProfileName"
+                 @keydown.enter="confirmNewProfile()"
+                 @keydown.escape="cancelNewProfile()"
+                 @blur="cancelNewProfile()"
+                 placeholder="Название…" maxlength="30">
+        </template>
       </div>
 
-      <!-- Filters for default profile (visible when proxies exist) -->
-      <div class="sub-filters" v-if="proxies.length && dp">
+      <!-- Filters for active profile -->
+      <div class="sub-filters" v-if="activeProfile">
         <div class="sub-divider"></div>
 
-        <!-- Default profile strategy pills -->
+        <!-- Strategy pills -->
         <div style="margin-bottom:6px">
           <div class="sub-row-label">Стратегия</div>
           <div class="strat-pills">
@@ -481,9 +503,9 @@ onMounted(async () => {
 
         <!-- Regex + max -->
         <div class="sub-row-compact">
-          <input type="text" v-model="dp.filter.include_regex" @change="_persistDefault()" placeholder="Regex +" class="sub-input sm">
-          <input type="text" v-model="dp.filter.exclude_regex" @change="_persistDefault()" placeholder="Regex −" class="sub-input sm">
-          <input type="number" v-model.number="dp.filter.max_proxies" @change="_persistDefault()" min="0" class="sub-input xs"
+          <input type="text" v-model="activeProfile.filter.include_regex" @change="_persistProfile()" placeholder="Regex +" class="sub-input sm">
+          <input type="text" v-model="activeProfile.filter.exclude_regex" @change="_persistProfile()" placeholder="Regex −" class="sub-input sm">
+          <input type="number" v-model.number="activeProfile.filter.max_proxies" @change="_persistProfile()" min="0" class="sub-input xs"
                  title="Макс прокси (0 = без лимита)" placeholder="Лимит">
         </div>
       </div>
@@ -544,71 +566,6 @@ onMounted(async () => {
       <div class="modal-footer">
         <button @click="applySubs()" :disabled="busy" class="btn btn-primary">Применить</button>
         <button @click="showPreview = false" class="btn">Закрыть</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Profile editor modal -->
-  <div v-if="showProfileModal" class="modal-overlay" @click.self="showProfileModal = false">
-    <div class="modal-box">
-      <div class="modal-header">
-        <h3>{{ pe.is_default ? 'Профиль по умолчанию' : (pe.id ? 'Редактировать профиль' : 'Новый профиль') }}</h3>
-        <button @click="showProfileModal = false" class="btn btn-sm">Закрыть</button>
-      </div>
-      <div class="modal-body">
-        <!-- Name -->
-        <div class="pe-field" v-if="!pe.is_default">
-          <label>Название</label>
-          <input v-model="pe.name" placeholder="Название профиля" />
-        </div>
-
-        <!-- Strategy -->
-        <div class="pe-field">
-          <label>Стратегия</label>
-          <div class="strat-pills">
-            <button v-for="s in STRATS" :key="s.v" class="spill" :class="{ active: pe.strategy.type === s.v }"
-                    @click="pe.strategy.type = s.v">{{ s.l }}</button>
-          </div>
-        </div>
-
-        <!-- Filters -->
-        <div class="pe-field">
-          <label>Фильтры</label>
-          <div class="pe-grid">
-            <div>
-              <span class="pe-label">Исключить маркеры</span>
-              <input v-model="peStr.exclude_markers" placeholder="⚡, 🎮 через запятую" />
-            </div>
-            <div>
-              <span class="pe-label">Включить маркеры</span>
-              <input v-model="peStr.include_markers" placeholder="⚡, ⭐ через запятую" />
-            </div>
-            <div>
-              <span class="pe-label">Исключить страны</span>
-              <input v-model="peStr.exclude_countries" placeholder="DE, NL через запятую" />
-            </div>
-            <div>
-              <span class="pe-label">Включить страны</span>
-              <input v-model="peStr.include_countries" placeholder="US, UK через запятую" />
-            </div>
-            <div>
-              <span class="pe-label">Regex включения</span>
-              <input v-model="pe.filter.include_regex" placeholder="напр. Fast" />
-            </div>
-            <div>
-              <span class="pe-label">Regex исключения</span>
-              <input v-model="pe.filter.exclude_regex" placeholder="напр. LTE|Mobile" />
-            </div>
-            <div>
-              <span class="pe-label">Макс прокси (0=все)</span>
-              <input type="number" v-model.number="pe.filter.max_proxies" min="0" style="width:80px" />
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button @click="saveProfile()" :disabled="busy" class="btn btn-primary">Сохранить</button>
-        <button @click="showProfileModal = false" class="btn">Отмена</button>
       </div>
     </div>
   </div>

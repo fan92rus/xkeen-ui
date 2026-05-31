@@ -28,6 +28,8 @@ function ensureConfig() {
     const xrayDir = path.join(TMP, 'xkeen-test', 'xray');
     fs.mkdirSync(configDir, { recursive: true });
     fs.mkdirSync(xrayDir, { recursive: true });
+    // Clean up stale subscription store to avoid leaking state between runs
+    try { fs.unlinkSync(path.join(configDir, 'subscriptions.json')); } catch {}
     fs.writeFileSync(CONFIG_PATH, JSON.stringify({
         port: PORT,
         xray_config_dir: xrayDir.replace(/\\/g, '/'),
@@ -74,7 +76,7 @@ async function goToSubscriptions() {
 }
 
 async function getSubCount() {
-    return page.evaluate(() => document.querySelectorAll('.sub-card:not(.profile-card)').length);
+    return page.evaluate(() => document.querySelectorAll('.sub-card').length);
 }
 
 async function test(name, fn) {
@@ -133,10 +135,10 @@ async function main() {
     await test('Clean slate', async () => {
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < 10; i++) {
-            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card:not(.profile-card)').length);
+            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
             if (remaining === 0) break;
             await page.evaluate(() => {
-                const cards = document.querySelectorAll('.sub-card:not(.profile-card)');
+                const cards = document.querySelectorAll('.sub-card');
                 const last = cards[cards.length - 1];
                 if (!last) return;
                 for (const b of last.querySelectorAll('.acts button')) {
@@ -170,7 +172,7 @@ async function main() {
 
     await test('Subscription cards have name and action buttons', async () => {
         const info = await page.evaluate(() => {
-            const cards = document.querySelectorAll('.sub-card:not(.profile-card)');
+            const cards = document.querySelectorAll('.sub-card');
             return Array.from(cards).map(c => ({
                 name: c.querySelector('.name')?.textContent,
                 btnCount: c.querySelectorAll('.acts button').length,
@@ -186,7 +188,7 @@ async function main() {
 
     await test('Edit toggles inline form', async () => {
         const clicked = await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card:not(.profile-card)')[0];
+            const card = document.querySelectorAll('.sub-card')[0];
             if (!card) return false;
             for (const b of card.querySelectorAll('.acts button')) {
                 if (b.title === 'Редактировать') { b.click(); return true; }
@@ -229,7 +231,7 @@ async function main() {
 
     await test('Fetch button clicks without error', async () => {
         const result = await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card:not(.profile-card)')[0];
+            const card = document.querySelectorAll('.sub-card')[0];
             if (!card) return { clicked: false, reason: 'no card' };
             const btns = card.querySelectorAll('.acts button');
             const titles = Array.from(btns).map(b => b.title);
@@ -247,7 +249,7 @@ async function main() {
         const before = await getSubCount();
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card:not(.profile-card)')[0];
+            const card = document.querySelectorAll('.sub-card')[0];
             if (!card) return;
             for (const b of card.querySelectorAll('.acts button')) {
                 if (b.title === 'Удалить') { b.click(); return; }
@@ -268,17 +270,18 @@ async function main() {
     });
 
     await test('Strategy pills exist when proxies loaded', async () => {
-        // Strategy pills are in filters section, visible only with proxies
+        // Strategy pills are in filters section, always visible for active profile
         const count = await page.evaluate(() => document.querySelectorAll('.sub-filters .strat-pills .spill').length);
-        // Without proxies loaded, filters section is hidden, so count may be 0
-        // Verify the strat-pills component exists in the template instead
-        if (count === 0) {
-            // Check that at least one profile-card shows a strategy badge
-            const badges = await page.evaluate(() => document.querySelectorAll('.strat-badge').length);
-            assert(badges >= 1, `Strategy badge or pills: badges=${badges}`);
-        } else {
-            assert(count >= 4, `Strategy pills in filters: ${count}`);
-        }
+        assert(count >= 4, `Strategy pills in filters: ${count}`);
+    });
+
+    await test('Profile tabs bar renders', async () => {
+        const bar = await page.$('.profile-tabs');
+        assert(bar, 'Profile tabs bar should exist');
+        const tabCount = await page.evaluate(() =>
+            document.querySelectorAll('.profile-tabs .ptab:not(.ptab-add)').length
+        );
+        assert(tabCount >= 1, `Should have 1+ profile tabs, got ${tabCount}`);
     });
 
     await test('Marker pills render', async () => {
@@ -294,10 +297,10 @@ async function main() {
         if (count === 0) return;
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < count + 2; i++) {
-            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card:not(.profile-card)').length);
+            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
             if (remaining === 0) break;
             await page.evaluate(() => {
-                const cards = document.querySelectorAll('.sub-card:not(.profile-card)');
+                const cards = document.querySelectorAll('.sub-card');
                 const last = cards[cards.length - 1];
                 if (!last) return;
                 for (const b of last.querySelectorAll('.acts button')) {

@@ -6,7 +6,8 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "test:e2e": "node test/subscription-ui.test.js"
+        "test:e2e": "node test/subscription-ui.test.js",
+        "test:profiles": "node test/profiles-ui.test.js"
     },
     "dependencies": {
         "@codemirror/lang-json": "^6.0.1",

@@ -875,14 +875,107 @@ details summary { cursor: pointer; padding: 3px 0; color: var(--primary-color); 
     .sub-row .name { max-width: 120px; }
 }
 
-/* ===== Profile cards ===== */
-.profile-card { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 8px; }
-.profile-default { background: var(--menu-hover); border: 1px solid var(--primary-color); }
-.strat-badge { font-size: var(--text-small); color: var(--text-gray); background: var(--menu-bg); padding: 1px 6px; border-radius: var(--radius-sm); }
+/* ===== Profile Tabs ===== */
+.profile-tabs {
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 2px 0;
+}
+.ptab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    background: none;
+    color: var(--text-gray);
+    cursor: pointer;
+    font-size: var(--text-small);
+    font-family: var(--font);
+    transition: all 0.05s;
+    white-space: nowrap;
+    max-width: 160px;
+}
+.ptab:hover {
+    background: var(--menu-hover);
+    border-color: var(--stroke);
+    color: var(--primary-text);
+}
+.ptab.active {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+    font-weight: 600;
+}
+.ptab.active .dot { background: rgba(255,255,255,0.5) !important; }
+.ptab .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: background 0.05s;
+}
+.ptab .dot.on { background: var(--indicator-online); }
+.ptab .dot.off { background: var(--indicator-offline); }
+.ptab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ptab-delete {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0.5;
+    transition: opacity 0.05s;
+}
+.ptab-delete:hover { opacity: 1; }
+.ptab-add {
+    padding: 4px 8px;
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--text-gray);
+    background: none;
+    border: 1px dashed var(--stroke);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.05s;
+}
+.ptab-add:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: var(--status-special-background);
+}
+.ptab-add:disabled { opacity: 0.3; cursor: not-allowed; }
+.ptab-new-input {
+    padding: 4px 8px;
+    background: var(--background);
+    border: 1px solid var(--primary-color);
+    border-radius: var(--radius);
+    color: var(--primary-text);
+    font-size: var(--text-small);
+    font-family: var(--font);
+    width: 120px;
+    outline: none;
+}
+.ptab-new-input:focus { border-color: var(--primary-color); }
 
-/* ===== Profile Editor ===== */
-.pe-field { margin-bottom: 12px; }
-.pe-field > label { display: block; font-weight: 600; margin-bottom: 4px; font-size: var(--text-body); }
-.pe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pe-label { display: block; font-size: var(--text-small); color: var(--text-gray); margin-bottom: 2px; }
-.pe-grid input { width: 100%; }
+/* Profile delete button in filters section */
+.profile-delete-btn {
+    font-size: var(--text-small);
+    color: var(--error);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: background 0.05s;
+}
+.profile-delete-btn:hover { background: var(--status-warning-background); }
