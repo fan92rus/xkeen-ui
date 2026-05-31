@@ -122,7 +122,8 @@ func TestFetcher_InvalidSubscriptionContent(t *testing.T) {
 
 func TestFetcher_MixedProtocols(t *testing.T) {
 	lines := "vless://uuid1@1.2.3.4:443?encryption=none&type=tcp&security=none#VLESS\n" +
-		"trojan://password@5.6.7.8:443?security=tls&type=tcp#TROJAN\n" + // skipped: not vless
+		"trojan://password@5.6.7.8:443?security=tls&type=tcp#TROJAN\n" + // parsed as trojan
+		"hysteria2://password@9.10.11.12:443?sni=host#HY2\n" + // parsed as hysteria2
 		"invalid-protocol://something\n" // should be skipped
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -136,13 +137,19 @@ func TestFetcher_MixedProtocols(t *testing.T) {
 		t.Fatalf("Fetch failed: %v", err)
 	}
 
-	// Only vless is supported, trojan and invalid are skipped
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 vless entry (2 skipped), got %d", len(entries))
+	// vless + trojan + hysteria2 parsed, invalid skipped
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries (vless+trojan+hysteria2), got %d", len(entries))
 	}
 
 	if entries[0].Protocol != "vless" {
-		t.Errorf("expected vless, got %q", entries[0].Protocol)
+		t.Errorf("entry[0] expected vless, got %q", entries[0].Protocol)
+	}
+	if entries[1].Protocol != "trojan" {
+		t.Errorf("entry[1] expected trojan, got %q", entries[1].Protocol)
+	}
+	if entries[2].Protocol != "hysteria2" {
+		t.Errorf("entry[2] expected hysteria2, got %q", entries[2].Protocol)
 	}
 }
 

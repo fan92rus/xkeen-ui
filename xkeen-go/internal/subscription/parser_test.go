@@ -400,18 +400,18 @@ func TestParseURI_Unsupported(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for vmess scheme")
 	}
-	if !strings.Contains(err.Error(), "only vless") {
-		t.Errorf("error should mention only vless, got: %v", err)
+	if !strings.Contains(err.Error(), "unsupported protocol") {
+		t.Errorf("error should mention unsupported protocol, got: %v", err)
 	}
 
-	_, err2 := ParseURI("trojan://pass@host:443")
+	_, err2 := ParseURI("ss://creds@host:8388")
 	if err2 == nil {
-		t.Error("expected error for trojan scheme")
+		t.Error("expected error for ss scheme")
 	}
 
-	_, err3 := ParseURI("ss://creds@host:8388")
+	_, err3 := ParseURI("naive://uuid:host@host:443")
 	if err3 == nil {
-		t.Error("expected error for ss scheme")
+		t.Error("expected error for naive scheme")
 	}
 }
 
@@ -589,5 +589,349 @@ func TestBase64Decode_Variants(t *testing.T) {
 	decoded, err = base64Decode(encodedURL)
 	if err != nil || string(decoded) != original {
 		t.Errorf("url base64: decoded=%q, err=%v", decoded, err)
+	}
+}
+
+// --- TROJAN ---
+
+func TestParseTrojan_TLS_TCP(t *testing.T) {
+	uri := "trojan://my-password@example.com:443?security=tls&type=tcp&sni=example.com&fp=chrome#Example%20TLS%20Trojan"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Protocol != "trojan" {
+		t.Errorf("expected protocol trojan, got %s", entry.Protocol)
+	}
+	if entry.Remarks != "Example TLS Trojan" {
+		t.Errorf("expected remarks 'Example TLS Trojan', got %q", entry.Remarks)
+	}
+
+	// Verify outbound JSON structure
+	var outbound map[string]interface{}
+	if err := json.Unmarshal(entry.Outbound, &outbound); err != nil {
+		t.Fatalf("failed to unmarshal outbound: %v", err)
+	}
+	if outbound["protocol"] != "trojan" {
+		t.Errorf("expected protocol trojan in outbound, got %v", outbound["protocol"])
+	}
+	settings := outbound["settings"].(map[string]interface{})
+	servers := settings["servers"].([]interface{})
+	server := servers[0].(map[string]interface{})
+	if server["password"] != "my-password" {
+		t.Errorf("expected password my-password, got %v", server["password"])
+	}
+	if server["address"] != "example.com" {
+		t.Errorf("expected address example.com, got %v", server["address"])
+	}
+	if int(server["port"].(float64)) != 443 {
+		t.Errorf("expected port 443, got %v", server["port"])
+	}
+
+	// Check stream settings
+	ss := outbound["streamSettings"].(map[string]interface{})
+	if ss["network"] != "tcp" {
+		t.Errorf("expected network tcp, got %v", ss["network"])
+	}
+	if ss["security"] != "tls" {
+		t.Errorf("expected security tls, got %v", ss["security"])
+	}
+}
+
+func TestParseTrojan_GRPC(t *testing.T) {
+	uri := "trojan://pass@manil.space:443?security=tls&type=grpc&serviceName=my-service&sni=manil.space&alpn=h2#manil.space%20grpc%20trojan"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Protocol != "trojan" {
+		t.Errorf("expected protocol trojan, got %s", entry.Protocol)
+	}
+
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	ss := outbound["streamSettings"].(map[string]interface{})
+	if ss["network"] != "grpc" {
+		t.Errorf("expected network grpc, got %v", ss["network"])
+	}
+	grpc := ss["grpcSettings"].(map[string]interface{})
+	if grpc["serviceName"] != "my-service" {
+		t.Errorf("expected serviceName my-service, got %v", grpc["serviceName"])
+	}
+}
+
+func TestParseTrojan_DefaultTLS(t *testing.T) {
+	// trojan without security param should default to tls
+	uri := "trojan://pass@host:443?sni=host#test"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	ss := outbound["streamSettings"].(map[string]interface{})
+	if ss["security"] != "tls" {
+		t.Errorf("trojan should default to tls security, got %v", ss["security"])
+	}
+}
+
+// --- HYSTERIA2 ---
+
+func TestParseHysteria2_Basic(t *testing.T) {
+	uri := "hysteria2://my-password@example.com:443?sni=example.com#Hysteria2%20Node"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Protocol != "hysteria2" {
+		t.Errorf("expected protocol hysteria2, got %s", entry.Protocol)
+	}
+	if entry.Remarks != "Hysteria2 Node" {
+		t.Errorf("expected remarks 'Hysteria2 Node', got %q", entry.Remarks)
+	}
+
+	var outbound map[string]interface{}
+	if err := json.Unmarshal(entry.Outbound, &outbound); err != nil {
+		t.Fatalf("failed to unmarshal outbound: %v", err)
+	}
+	if outbound["protocol"] != "hysteria2" {
+		t.Errorf("expected protocol hysteria2, got %v", outbound["protocol"])
+	}
+	settings := outbound["settings"].(map[string]interface{})
+	servers := settings["servers"].([]interface{})
+	server := servers[0].(map[string]interface{})
+	if server["password"] != "my-password" {
+		t.Errorf("expected password my-password, got %v", server["password"])
+	}
+	if server["address"] != "example.com" {
+		t.Errorf("expected address example.com, got %v", server["address"])
+	}
+}
+
+func TestParseHysteria2_WithObfs(t *testing.T) {
+	uri := "hysteria2://pass@host:443?sni=host&obfs=salamander&obfs-password=secret#Obfs%20Node"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	settings := outbound["settings"].(map[string]interface{})
+	servers := settings["servers"].([]interface{})
+	server := servers[0].(map[string]interface{})
+	obfs := server["obfs"].(map[string]interface{})
+	if obfs["type"] != "salamander" {
+		t.Errorf("expected obfs type salamander, got %v", obfs["type"])
+	}
+	if obfs["password"] != "secret" {
+		t.Errorf("expected obfs password secret, got %v", obfs["password"])
+	}
+}
+
+func TestParseSubscriptionContent_MixedProtocols(t *testing.T) {
+	content := `vless://uuid@host1:443?security=tls&type=tcp&sni=host1#Node%201
+trojan://pass@host2:443?security=tls&type=tcp&sni=host2#Node%202
+hysteria2://pass@host3:443?sni=host3#Node%203
+naive://ignored
+`
+	entries, err := ParseSubscriptionContent([]byte(content))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries (vless+trojan+hysteria2), got %d", len(entries))
+	}
+	if entries[0].Protocol != "vless" {
+		t.Errorf("entry[0] expected vless, got %s", entries[0].Protocol)
+	}
+	if entries[1].Protocol != "trojan" {
+		t.Errorf("entry[1] expected trojan, got %s", entries[1].Protocol)
+	}
+	if entries[2].Protocol != "hysteria2" {
+		t.Errorf("entry[2] expected hysteria2, got %s", entries[2].Protocol)
+	}
+}
+
+func TestParseTrojan_Reality(t *testing.T) {
+	uri := "trojan://pass@10.0.0.1:443?security=reality&type=tcp&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#Trojan%20Reality"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Protocol != "trojan" {
+		t.Fatalf("expected trojan, got %s", entry.Protocol)
+	}
+
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	ss := outbound["streamSettings"].(map[string]interface{})
+	if ss["security"] != "reality" {
+		t.Errorf("expected security reality, got %v", ss["security"])
+	}
+	rs := ss["realitySettings"].(map[string]interface{})
+	if rs["publicKey"] != "fakePublicKeyBase64EncodedHere_a1b2c3" {
+		t.Errorf("expected publicKey, got %v", rs["publicKey"])
+	}
+	if rs["fingerprint"] != "chrome" {
+		t.Errorf("expected fingerprint chrome, got %v", rs["fingerprint"])
+	}
+	if rs["serverName"] != "example.com" {
+		t.Errorf("expected serverName example.com, got %v", rs["serverName"])
+	}
+	if rs["shortId"] != "aabb112233445566" {
+		t.Errorf("expected shortId, got %v", rs["shortId"])
+	}
+}
+
+func TestParseTrojan_WS(t *testing.T) {
+	uri := "trojan://pass@host:443?security=tls&type=ws&path=/ws&host=ws-host&sni=host#WS%20Trojan"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	ss := outbound["streamSettings"].(map[string]interface{})
+	if ss["network"] != "ws" {
+		t.Errorf("expected network ws, got %v", ss["network"])
+	}
+	ws := ss["wsSettings"].(map[string]interface{})
+	if ws["path"] != "/ws" {
+		t.Errorf("expected path /ws, got %v", ws["path"])
+	}
+	headers := ws["headers"].(map[string]interface{})
+	if headers["Host"] != "ws-host" {
+		t.Errorf("expected host ws-host, got %v", headers["Host"])
+	}
+}
+
+func TestParseTrojan_CountryMarker(t *testing.T) {
+	uri := "trojan://pass@host:443?security=tls&sni=host#%F0%9F%87%A9%F0%9F%87%AA%20%E2%9A%A1%20Fast%20Trojan"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Country != "DE" {
+		t.Errorf("expected country DE, got %q", entry.Country)
+	}
+	if entry.Marker != "\u26A1" {
+		t.Errorf("expected marker ⚡, got %q", entry.Marker)
+	}
+}
+
+func TestParseTrojan_MissingAt(t *testing.T) {
+	_, err := ParseURI("trojan://no-at-separator:443")
+	if err == nil {
+		t.Error("expected error for missing @ separator")
+	}
+	if !strings.Contains(err.Error(), "missing @") {
+		t.Errorf("error should mention missing @, got: %v", err)
+	}
+}
+
+func TestParseTrojan_InvalidPort(t *testing.T) {
+	_, err := ParseURI("trojan://pass@host:notaport")
+	if err == nil {
+		t.Error("expected error for invalid port")
+	}
+	if !strings.Contains(err.Error(), "port") {
+		t.Errorf("error should mention port, got: %v", err)
+	}
+}
+
+func TestParseHysteria2_Insecure(t *testing.T) {
+	uri := "hysteria2://pass@host:443?sni=host&insecure=true#Insecure%20HY2"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	ss := outbound["streamSettings"].(map[string]interface{})
+	tls := ss["tlsSettings"].(map[string]interface{})
+	if tls["allowInsecure"] != true {
+		t.Errorf("expected allowInsecure true, got %v", tls["allowInsecure"])
+	}
+}
+
+func TestParseHysteria2_WithALPN(t *testing.T) {
+	uri := "hysteria2://pass@host:443?sni=host&alpn=h3,h2#ALPN%20HY2"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var outbound map[string]interface{}
+	json.Unmarshal(entry.Outbound, &outbound)
+	ss := outbound["streamSettings"].(map[string]interface{})
+	tls := ss["tlsSettings"].(map[string]interface{})
+	alpn := tls["alpn"].([]interface{})
+	if len(alpn) != 2 || alpn[0] != "h3" || alpn[1] != "h2" {
+		t.Errorf("expected alpn [h3,h2], got %v", alpn)
+	}
+}
+
+func TestParseHysteria2_CountryMarker(t *testing.T) {
+	uri := "hysteria2://pass@host:443?sni=host#%F0%9F%87%BA%F0%9F%87%B8%20%F0%9F%8E%AE%20Gaming"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Country != "US" {
+		t.Errorf("expected country US, got %q", entry.Country)
+	}
+	// Game emoji \U0001F3AE
+	if entry.Marker != "\U0001F3AE" {
+		t.Errorf("expected marker 🎮, got %q", entry.Marker)
+	}
+}
+
+func TestParseHysteria2_NoSNI(t *testing.T) {
+	uri := "hysteria2://pass@host:443#NoSNI"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.Protocol != "hysteria2" {
+		t.Errorf("expected hysteria2, got %s", entry.Protocol)
+	}
+}
+
+func TestParseHysteria2_MissingAt(t *testing.T) {
+	_, err := ParseURI("hysteria2://no-at-separator:443")
+	if err == nil {
+		t.Error("expected error for missing @ separator")
+	}
+}
+
+func TestParseHysteria2_InvalidPort(t *testing.T) {
+	_, err := ParseURI("hysteria2://pass@host:notaport")
+	if err == nil {
+		t.Error("expected error for invalid port")
+	}
+}
+
+func TestParseSubscriptionContent_Base64MixedProtocols(t *testing.T) {
+	lines := "vless://uuid@host1:443?type=tcp&security=reality&pbk=key&fp=chrome&sni=host1&sid=abcd#VLESS%20Node\n" +
+		"trojan://pass@host2:443?security=tls&type=tcp&sni=host2#Trojan%20Node\n" +
+		"hysteria2://pass@host3:443?sni=host3#HY2%20Node\n"
+	encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+
+	entries, err := ParseSubscriptionContent([]byte(encoded))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	protocols := make(map[string]bool)
+	for _, e := range entries {
+		protocols[e.Protocol] = true
+	}
+	if !protocols["vless"] || !protocols["trojan"] || !protocols["hysteria2"] {
+		t.Errorf("expected all 3 protocols, got %v", protocols)
 	}
 }

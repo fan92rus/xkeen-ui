@@ -18,10 +18,16 @@ func ParseURI(rawURI string) (*ProxyEntry, error) {
 		return nil, fmt.Errorf("empty URI")
 	}
 
-	if !strings.HasPrefix(rawURI, "vless://") {
-		return nil, fmt.Errorf("unsupported protocol: only vless is supported, got %s", rawURI[:min(20, len(rawURI))])
+	switch {
+	case strings.HasPrefix(rawURI, "vless://"):
+		return parseVless(rawURI)
+	case strings.HasPrefix(rawURI, "trojan://"):
+		return parseTrojan(rawURI)
+	case strings.HasPrefix(rawURI, "hysteria2://"):
+		return parseHysteria2(rawURI)
+	default:
+		return nil, fmt.Errorf("unsupported protocol: got %s", rawURI[:min(20, len(rawURI))])
 	}
-	return parseVless(rawURI)
 }
 
 // --- VLESS ---
@@ -217,7 +223,264 @@ func buildTLSSettings(params url.Values) map[string]interface{} {
 	if alpn := params.Get("alpn"); alpn != "" {
 		tls["alpn"] = strings.Split(alpn, ",")
 	}
+	if allowInsecure := params.Get("allowInsecure"); allowInsecure == "true" {
+		tls["allowInsecure"] = true
+	}
 	return tls
+}
+
+// --- TROJAN ---
+
+func parseTrojan(rawURI string) (*ProxyEntry, error) {
+	// trojan://password@host:port?params#fragment
+	withoutFragment := rawURI
+	fragment := ""
+	if idx := strings.LastIndex(rawURI, "#"); idx != -1 {
+		withoutFragment = rawURI[:idx]
+		fragment = rawURI[idx+1:]
+	}
+
+	rest := strings.TrimPrefix(withoutFragment, "trojan://")
+
+	atIdx := strings.Index(rest, "@")
+	if atIdx == -1 {
+		return nil, fmt.Errorf("invalid trojan URI: missing @ separator")
+	}
+	password := rest[:atIdx]
+	hostPortParams := rest[atIdx+1:]
+
+	var hostPort, queryStr string
+	qIdx := strings.Index(hostPortParams, "?")
+	if qIdx == -1 {
+		hostPort = hostPortParams
+	} else {
+		hostPort = hostPortParams[:qIdx]
+		queryStr = hostPortParams[qIdx+1:]
+	}
+
+	host, portStr, err := parseHostPort(hostPort)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trojan host:port: %w", err)
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trojan port %q: %w", portStr, err)
+	}
+
+	params, _ := url.ParseQuery(queryStr)
+	remarks := extractRemarks(fragment)
+
+	outbound, err := buildTrojanOutbound(password, host, port, params, "")
+	if err != nil {
+		return nil, err
+	}
+
+	country := extractCountry(remarks)
+	marker := extractMarker(remarks)
+
+	return &ProxyEntry{
+		Protocol: "trojan",
+		Outbound: outbound,
+		RawURI:   rawURI,
+		Remarks:  remarks,
+		Country:  country,
+		Marker:   marker,
+	}, nil
+}
+
+func buildTrojanOutbound(password, host string, port int, params url.Values, tag string) (json.RawMessage, error) {
+	// Trojan server entry
+	server := map[string]interface{}{
+		"address":  host,
+		"port":     port,
+		"password": password,
+	}
+
+	// Stream settings — same structure as vless
+	network := params.Get("type")
+	if network == "" {
+		network = "tcp"
+	}
+	security := params.Get("security")
+	if security == "" {
+		// Trojan typically uses TLS
+		security = "tls"
+	}
+
+	streamSettings := map[string]interface{}{
+		"network":  network,
+		"security": security,
+	}
+
+	switch security {
+	case "reality":
+		streamSettings["realitySettings"] = buildRealitySettings(params)
+	case "tls":
+		streamSettings["tlsSettings"] = buildTLSSettings(params)
+	}
+
+	switch network {
+	case "ws":
+		wsSettings := map[string]interface{}{}
+		if p := params.Get("path"); p != "" {
+			wsSettings["path"] = p
+		}
+		if h := params.Get("host"); h != "" {
+			wsSettings["headers"] = map[string]interface{}{"Host": h}
+		}
+		streamSettings["wsSettings"] = wsSettings
+	case "grpc":
+		grpcSettings := map[string]interface{}{}
+		if sn := params.Get("serviceName"); sn != "" {
+			grpcSettings["serviceName"] = sn
+		}
+		streamSettings["grpcSettings"] = grpcSettings
+	case "tcp":
+		if ht := params.Get("headerType"); ht != "" && ht != "none" {
+			tcpSettings := map[string]interface{}{
+				"header": map[string]interface{}{"type": ht},
+			}
+			streamSettings["tcpSettings"] = tcpSettings
+		}
+	}
+
+	outbound := map[string]interface{}{
+		"protocol": "trojan",
+		"settings": map[string]interface{}{
+			"servers": []interface{}{server},
+		},
+		"streamSettings": streamSettings,
+	}
+	outbound["mux"] = DefaultMux
+	if tag != "" {
+		outbound["tag"] = tag
+	}
+
+	data, err := json.Marshal(outbound)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal trojan outbound: %w", err)
+	}
+	return data, nil
+}
+
+// --- HYSTERIA2 ---
+
+func parseHysteria2(rawURI string) (*ProxyEntry, error) {
+	// hysteria2://password@host:port?params#fragment
+	withoutFragment := rawURI
+	fragment := ""
+	if idx := strings.LastIndex(rawURI, "#"); idx != -1 {
+		withoutFragment = rawURI[:idx]
+		fragment = rawURI[idx+1:]
+	}
+
+	rest := strings.TrimPrefix(withoutFragment, "hysteria2://")
+
+	atIdx := strings.Index(rest, "@")
+	if atIdx == -1 {
+		return nil, fmt.Errorf("invalid hysteria2 URI: missing @ separator")
+	}
+	password := rest[:atIdx]
+	hostPortParams := rest[atIdx+1:]
+
+	var hostPort, queryStr string
+	qIdx := strings.Index(hostPortParams, "?")
+	if qIdx == -1 {
+		hostPort = hostPortParams
+	} else {
+		hostPort = hostPortParams[:qIdx]
+		queryStr = hostPortParams[qIdx+1:]
+	}
+
+	host, portStr, err := parseHostPort(hostPort)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hysteria2 host:port: %w", err)
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hysteria2 port %q: %w", portStr, err)
+	}
+
+	params, _ := url.ParseQuery(queryStr)
+	remarks := extractRemarks(fragment)
+
+	outbound, err := buildHysteria2Outbound(password, host, port, params, "")
+	if err != nil {
+		return nil, err
+	}
+
+	country := extractCountry(remarks)
+	marker := extractMarker(remarks)
+
+	return &ProxyEntry{
+		Protocol: "hysteria2",
+		Outbound: outbound,
+		RawURI:   rawURI,
+		Remarks:  remarks,
+		Country:  country,
+		Marker:   marker,
+	}, nil
+}
+
+func buildHysteria2Outbound(password, host string, port int, params url.Values, tag string) (json.RawMessage, error) {
+	server := map[string]interface{}{
+		"address":  host,
+		"port":     port,
+		"password": password,
+	}
+
+	// Obfs
+	if obfs := params.Get("obfs"); obfs != "" {
+		server["obfs"] = map[string]interface{}{
+			"type": obfs,
+			"password": params.Get("obfs-password"),
+		}
+	}
+
+	outbound := map[string]interface{}{
+		"protocol": "hysteria2",
+		"settings": map[string]interface{}{
+			"servers": []interface{}{server},
+		},
+	}
+
+	// TLS is built-in for hysteria2, but we pass sni/port-hopping via sockopt
+	sockopt := map[string]interface{}{}
+	if sni := params.Get("sni"); sni != "" {
+		sockopt["dialer"] = map[string]interface{}{
+			"domainStrategy": "AsIs",
+		}
+	}
+
+	streamSettings := map[string]interface{}{
+		"network":  "tcp",
+		"security": "tls",
+		"tlsSettings": map[string]interface{}{
+			"serverName":   params.Get("sni"),
+			"allowInsecure": params.Get("insecure") == "true" || params.Get("allowInsecure") == "true",
+		},
+	}
+	if alpn := params.Get("alpn"); alpn != "" {
+		streamSettings["tlsSettings"].(map[string]interface{})["alpn"] = strings.Split(alpn, ",")
+	}
+	outbound["streamSettings"] = streamSettings
+
+	if len(sockopt) > 0 {
+		outbound["sockopt"] = sockopt
+	}
+
+	outbound["mux"] = DefaultMux
+	if tag != "" {
+		outbound["tag"] = tag
+	}
+
+	data, err := json.Marshal(outbound)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal hysteria2 outbound: %w", err)
+	}
+	return data, nil
 }
 
 // --- VMESS ---
