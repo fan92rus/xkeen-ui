@@ -1,47 +1,17 @@
 // services/update.js - Update API service
-
-const API_BASE = '/api';
+import * as api from './api.js';
 
 export async function checkUpdate(prerelease = false) {
-    const url = prerelease
-        ? `${API_BASE}/update/check?prerelease=true`
-        : `${API_BASE}/update/check`;
-
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-    });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-}
-
-function getCSRFToken() {
-    return document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '';
+    const url = prerelease ? '/api/update/check?prerelease=true' : '/api/update/check';
+    return api.get(url);
 }
 
 export function startUpdate(options) {
     const { prerelease = false, onProgress, onComplete, onError } = options;
+    const url = prerelease ? '/api/update/start?prerelease=true' : '/api/update/start';
 
     return new Promise((resolve, reject) => {
-        const url = prerelease
-            ? `${API_BASE}/update/start?prerelease=true`
-            : `${API_BASE}/update/start`;
-
-        fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': getCSRFToken()
-            }
-        }).then(response => {
-            if (!response.ok) {
-                reject(new Error(`HTTP ${response.status}`));
-                return;
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
+        api.postStream(url).then(({ reader, decoder }) => {
             let buffer = '';
 
             function read() {

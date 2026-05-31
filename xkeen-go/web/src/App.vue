@@ -41,21 +41,25 @@ const icons = {
     logo: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
 };
 
+const editorRef = ref(null);
+
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent('editor:save'));
+        editorRef.value?.save();
     }
 }
 
-function doSave() {
-    window.dispatchEvent(new CustomEvent('editor:save'));
-}
+function doSave() { editorRef.value?.save(); }
+function doDiff() { editorRef.value?.diff(); }
 
 onMounted(() => {
     document.documentElement.classList.toggle('light', theme.value === 'light');
     window.addEventListener('keydown', onKeydown);
     app.init();
+});
+onUnmounted(() => {
+    window.removeEventListener('keydown', onKeydown);
 });
 </script>
 
@@ -124,7 +128,7 @@ onMounted(() => {
             <span class="status-badge" :class="app.isValidJson === false ? 'invalid' : 'valid'">
               {{ app.isValidJson === false ? '✗ JSON' : '✓ JSON' }}
             </span>
-            <button class="btn btn-sm" @click="window.dispatchEvent(new CustomEvent('editor:diff'))">Diff</button>
+            <button class="btn btn-sm" @click="doDiff()">Diff</button>
             <button class="btn btn-sm" @click="app.showBackups()">Бэкапы</button>
             <button class="btn btn-sm btn-primary" @click="doSave()">Сохранить</button>
           </template>
@@ -132,7 +136,7 @@ onMounted(() => {
       </div>
 
       <!-- Tabs -->
-      <EditorTab v-if="app.activeTab === 'editor'" class="tab-content" />
+      <EditorTab v-if="app.activeTab === 'editor'" ref="editorRef" class="tab-content" />
       <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content" />
       <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
       <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />

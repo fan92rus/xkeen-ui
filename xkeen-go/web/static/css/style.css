@@ -736,6 +736,14 @@ details summary { cursor: pointer; padding: 3px 0; color: var(--primary-color); 
     font-family: var(--font-mono); font-size: var(--text-small); color: var(--error);
     white-space: pre-wrap; line-height: var(--lh-small);
 }
+.modal-output {
+    font-family: var(--font-mono); font-size: var(--text-small); line-height: var(--lh-small);
+    max-height: 300px; overflow-y: auto;
+}
+.confirm-description {
+    font-size: var(--text-body); line-height: var(--lh-body);
+    color: var(--text-gray); margin-top: 4px;
+}
 .modal-footer {
     display: flex; justify-content: flex-end; gap: 8px;
     padding: 10px 16px; border-top: 1px solid var(--menu-border);

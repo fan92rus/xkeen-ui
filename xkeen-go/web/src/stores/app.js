@@ -33,6 +33,7 @@ export const useAppStore = defineStore('app', () => {
     const currentFile = ref(null);
     const isValidJson = ref(true);
     const lastSavedContent = ref('');
+    const editorLoadContent = ref(null);
 
     // ── Logs ──
     const logs = ref([]);
@@ -291,7 +292,7 @@ export const useAppStore = defineStore('app', () => {
     async function loadBackupToEditor(backup) {
         try {
             const content = await configService.getBackupContent(backup.path);
-            window.dispatchEvent(new CustomEvent('editor:loadContent', { detail: content }));
+            editorLoadContent.value = content;
             closeBackupsModal();
             showToast('Резервная копия загружена в редактор', 'success');
         } catch { showToast('Не удалось загрузить', 'error'); }
@@ -424,7 +425,7 @@ export const useAppStore = defineStore('app', () => {
         // State
         activeTab, loading, toast,
         currentMode, xrayAvailable, mihomoAvailable,
-        files, currentFile, isValidJson, lastSavedContent,
+        files, currentFile, isValidJson, lastSavedContent, editorLoadContent,
         logs, logFilter, logSearch, logFile, filteredLogs,
         serviceStatus,
         xraySettings,

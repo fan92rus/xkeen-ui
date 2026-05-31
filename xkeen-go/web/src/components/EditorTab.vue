@@ -48,14 +48,14 @@ async function save() {
     await app.saveFile(getContent());
 }
 
-function onSaveShortcut() { save(); }
-function onLoadContent(e) {
-    if (instance && e.detail) {
-        instance.dispatch({ changes: { from: 0, to: instance.state.doc.length, insert: e.detail } });
-    }
-}
-function onDiffEvent() {
+function diff() {
     app.openDiffModal(getContent(), app.lastSavedContent || '');
+}
+
+function loadText(content) {
+    if (instance && content) {
+        instance.dispatch({ changes: { from: 0, to: instance.state.doc.length, insert: content } });
+    }
 }
 
 watch(() => app.currentFile, (file) => {
@@ -64,24 +64,21 @@ watch(() => app.currentFile, (file) => {
     else pendingFile = file;
 });
 
+watch(() => app.editorLoadContent, (content) => {
+    if (content) loadText(content);
+});
+
 onMounted(() => {
     createEditor('// Select a file to edit', editorRef.value);
     ready = true;
     if (pendingFile) { loadContent(pendingFile); pendingFile = null; }
-
-    window.addEventListener('editor:save', onSaveShortcut);
-    window.addEventListener('editor:loadContent', onLoadContent);
-    window.addEventListener('editor:diff', onDiffEvent);
 });
 
 onUnmounted(() => {
-    window.removeEventListener('editor:save', onSaveShortcut);
-    window.removeEventListener('editor:loadContent', onLoadContent);
-    window.removeEventListener('editor:diff', onDiffEvent);
     if (instance) instance.destroy();
 });
 
-defineExpose({ getContent, save });
+defineExpose({ getContent, save, diff, loadText });
 </script>
 
 <template>

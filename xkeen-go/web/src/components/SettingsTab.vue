@@ -38,11 +38,6 @@ onMounted(loadAutoApply);
 
 <template>
   <div class="settings-container">
-    <div class="settings-header">
-      <div class="settings-actions">
-        <button @click="app.loadXraySettings()" class="btn">Обновить настройки</button>
-      </div>
-    </div>
     <div class="settings-grid">
       <!-- Mode -->
       <div class="settings-section">
