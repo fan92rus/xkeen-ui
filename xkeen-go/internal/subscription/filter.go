@@ -14,21 +14,8 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 	}
 
 	// Compile regexes once before the loop
-	var includeRe, excludeRe *regexp.Regexp
-	if filter.IncludeRegex != "" {
-		var err error
-		includeRe, err = regexp.Compile(filter.IncludeRegex)
-		if err != nil {
-			includeRe = nil // invalid regex → pass through
-		}
-	}
-	if filter.ExcludeRegex != "" {
-		var err error
-		excludeRe, err = regexp.Compile(filter.ExcludeRegex)
-		if err != nil {
-			excludeRe = nil // invalid regex → don't exclude
-		}
-	}
+	includeRes := compileRegexes(filter.IncludeRegexes)
+	excludeRes := compileRegexes(filter.ExcludeRegexes)
 
 	result := make([]*ProxyEntry, 0, len(proxies))
 
@@ -45,10 +32,10 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 		if isExcludedCountry(p, filter) {
 			continue
 		}
-		if !passesCompiledIncludeRegex(p, includeRe) {
+		if !passesAllIncludeRegexes(p, includeRes) {
 			continue
 		}
-		if isExcludedByCompiledRegex(p, excludeRe) {
+		if isExcludedByAnyRegex(p, excludeRes) {
 			continue
 		}
 		result = append(result, p)
@@ -60,6 +47,22 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 	}
 
 	return result
+}
+
+// compileRegexes compiles a list of regex pattern strings.
+// Invalid patterns are silently skipped.
+func compileRegexes(patterns []string) []*regexp.Regexp {
+	var res []*regexp.Regexp
+	for _, p := range patterns {
+		if p == "" {
+			continue
+		}
+		re, err := regexp.Compile(p)
+		if err == nil {
+			res = append(res, re)
+		}
+	}
+	return res
 }
 
 // passesIncludeMarkers returns true if the proxy's marker is in IncludeMarkers
@@ -110,19 +113,26 @@ func isExcludedCountry(p *ProxyEntry, f *Filter) bool {
 	return false
 }
 
-// passesCompiledIncludeRegex returns true if includeRe is nil (no filter or invalid regex)
-// or the proxy's remarks match.
-func passesCompiledIncludeRegex(p *ProxyEntry, includeRe *regexp.Regexp) bool {
-	if includeRe == nil {
+// passesAllIncludeRegexes returns true if the proxy's remarks match ALL include regexes (AND).
+// Empty list means no filter (pass through).
+func passesAllIncludeRegexes(p *ProxyEntry, includeRes []*regexp.Regexp) bool {
+	if len(includeRes) == 0 {
 		return true
 	}
-	return includeRe.MatchString(p.Remarks)
+	for _, re := range includeRes {
+		if !re.MatchString(p.Remarks) {
+			return false
+		}
+	}
+	return true
 }
 
-// isExcludedByCompiledRegex returns true if excludeRe is non-nil and the proxy's remarks match.
-func isExcludedByCompiledRegex(p *ProxyEntry, excludeRe *regexp.Regexp) bool {
-	if excludeRe == nil {
-		return false
+// isExcludedByAnyRegex returns true if the proxy's remarks match ANY exclude regex (OR).
+func isExcludedByAnyRegex(p *ProxyEntry, excludeRes []*regexp.Regexp) bool {
+	for _, re := range excludeRes {
+		if re.MatchString(p.Remarks) {
+			return true
+		}
 	}
-	return excludeRe.MatchString(p.Remarks)
+	return false
 }

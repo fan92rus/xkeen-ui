@@ -105,8 +105,8 @@ func TestApplyFilter_IncludeAndExcludeMarkers(t *testing.T) {
 		makeProxy("0.5X", "DE", "Mobile"),
 	}
 	filter := &Filter{
-		IncludeMarkers:   []string{"⚡", "⭐", "0.5X"},
-		ExcludeMarkers:   []string{"0.5X"},
+		IncludeMarkers: []string{"⚡", "⭐", "0.5X"},
+		ExcludeMarkers: []string{"0.5X"},
 	}
 	// Include passes all three, then exclude removes mobile
 	result := ApplyFilter(proxies, filter)
@@ -162,16 +162,16 @@ func TestApplyFilter_ExcludeCountries(t *testing.T) {
 	}
 }
 
-// --- IncludeRegex ---
+// --- IncludeRegexes (multiple, AND logic) ---
 
-func TestApplyFilter_IncludeRegex(t *testing.T) {
+func TestApplyFilter_IncludeRegexes_Single(t *testing.T) {
 	proxies := []*ProxyEntry{
 		makeProxy("⚡", "DE", "Germany Fast"),
 		makeProxy("⭐", "NL", "Netherlands Standard"),
 		makeProxy("⚡", "US", "USA Premium"),
 	}
 	filter := &Filter{
-		IncludeRegex: "Fast|Premium",
+		IncludeRegexes: []string{"Fast|Premium"},
 	}
 	result := ApplyFilter(proxies, filter)
 	if len(result) != 2 {
@@ -179,29 +179,64 @@ func TestApplyFilter_IncludeRegex(t *testing.T) {
 	}
 }
 
-func TestApplyFilter_IncludeRegex_InvalidRegex(t *testing.T) {
+func TestApplyFilter_IncludeRegexes_Multiple(t *testing.T) {
+	// AND logic: proxy must match ALL include regexes
+	proxies := []*ProxyEntry{
+		makeProxy("⚡", "DE", "Germany Fast Server"),
+		makeProxy("⭐", "NL", "Netherlands Fast"),
+		makeProxy("⚡", "US", "USA Premium Server"),
+		makeProxy("⚡", "DE", "Germany Premium"),
+	}
+	filter := &Filter{
+		IncludeRegexes: []string{"Fast|Premium", "Server"},
+	}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 (must match both regexes), got %d", len(result))
+	}
+	for _, p := range result {
+		if !contains(p.Remarks, "Server") {
+			t.Errorf("expected remarks to contain 'Server', got %q", p.Remarks)
+		}
+	}
+}
+
+func TestApplyFilter_IncludeRegexes_InvalidRegex(t *testing.T) {
 	proxies := []*ProxyEntry{
 		makeProxy("⚡", "DE", "Germany"),
 	}
 	filter := &Filter{
-		IncludeRegex: "[invalid", // invalid regex
+		IncludeRegexes: []string{"[invalid"}, // invalid regex — skipped
 	}
 	result := ApplyFilter(proxies, filter)
 	if len(result) != 1 {
-		t.Fatalf("invalid include regex should pass all, got %d", len(result))
+		t.Fatalf("invalid include regex should be skipped, got %d", len(result))
 	}
 }
 
-// --- ExcludeRegex ---
+func TestApplyFilter_IncludeRegexes_EmptyArray(t *testing.T) {
+	proxies := []*ProxyEntry{
+		makeProxy("⚡", "DE", "Germany"),
+	}
+	filter := &Filter{
+		IncludeRegexes: []string{},
+	}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 {
+		t.Fatalf("empty include regexes should pass all, got %d", len(result))
+	}
+}
 
-func TestApplyFilter_ExcludeRegex(t *testing.T) {
+// --- ExcludeRegexes (multiple, OR logic) ---
+
+func TestApplyFilter_ExcludeRegexes_Single(t *testing.T) {
 	proxies := []*ProxyEntry{
 		makeProxy("⚡", "DE", "Germany Fast"),
 		makeProxy("⭐", "NL", "Netherlands Standard"),
 		makeProxy("⚡", "US", "USA Gaming"),
 	}
 	filter := &Filter{
-		ExcludeRegex: "(?i)gaming|mobile",
+		ExcludeRegexes: []string{"(?i)gaming|mobile"},
 	}
 	result := ApplyFilter(proxies, filter)
 	if len(result) != 2 {
@@ -209,16 +244,38 @@ func TestApplyFilter_ExcludeRegex(t *testing.T) {
 	}
 }
 
-func TestApplyFilter_ExcludeRegex_InvalidRegex(t *testing.T) {
+func TestApplyFilter_ExcludeRegexes_Multiple(t *testing.T) {
+	// OR logic: proxy excluded if it matches ANY exclude regex
+	proxies := []*ProxyEntry{
+		makeProxy("⚡", "DE", "Germany Fast"),
+		makeProxy("⭐", "NL", "Netherlands LTE"),
+		makeProxy("⚡", "US", "USA Gaming"),
+		makeProxy("⚡", "DE", "Germany Premium"),
+	}
+	filter := &Filter{
+		ExcludeRegexes: []string{"LTE", "Gaming"},
+	}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 (LTE and Gaming excluded), got %d", len(result))
+	}
+	for _, p := range result {
+		if contains(p.Remarks, "LTE") || contains(p.Remarks, "Gaming") {
+			t.Errorf("should not have LTE or Gaming: %q", p.Remarks)
+		}
+	}
+}
+
+func TestApplyFilter_ExcludeRegexes_InvalidRegex(t *testing.T) {
 	proxies := []*ProxyEntry{
 		makeProxy("⚡", "DE", "Germany"),
 	}
 	filter := &Filter{
-		ExcludeRegex: "[invalid",
+		ExcludeRegexes: []string{"[invalid"},
 	}
 	result := ApplyFilter(proxies, filter)
 	if len(result) != 1 {
-		t.Fatalf("invalid exclude regex should exclude none, got %d", len(result))
+		t.Fatalf("invalid exclude regex should be skipped, got %d", len(result))
 	}
 }
 
@@ -274,7 +331,6 @@ func TestApplyFilter_CombinedMarkersAndCountries(t *testing.T) {
 	if len(result) != 2 {
 		t.Fatalf("expected 2 (DE+NL fast/standard, no mobile, no RU), got %d", len(result))
 	}
-	// Should be DE-Fast and NL-Fast (first two matching)
 	for _, p := range result {
 		if p.Country == "RU" {
 			t.Error("RU should be excluded")
@@ -295,13 +351,13 @@ func TestApplyFilter_AllRulesCombined(t *testing.T) {
 		makeProxy("🎮", "DE", "Germany Gaming"),
 	}
 	filter := &Filter{
-		IncludeMarkers:    []string{"⚡"},
-		ExcludeMarkers:    []string{"0.5X", "🎮"},
-		IncludeCountries:  []string{"DE"},
-		ExcludeCountries:  []string{"RU"},
-		IncludeRegex:      "Server",
-		ExcludeRegex:      "",
-		MaxProxies:        10,
+		IncludeMarkers:   []string{"⚡"},
+		ExcludeMarkers:   []string{"0.5X", "🎮"},
+		IncludeCountries: []string{"DE"},
+		ExcludeCountries: []string{"RU"},
+		IncludeRegexes:   []string{"Server"},
+		ExcludeRegexes:   []string{},
+		MaxProxies:       10,
 	}
 	result := ApplyFilter(proxies, filter)
 	if len(result) != 2 {

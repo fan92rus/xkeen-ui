@@ -62,9 +62,13 @@ type Filter struct {
 	ExcludeMarkers   []string `json:"exclude_markers"`
 	IncludeCountries []string `json:"include_countries"`
 	ExcludeCountries []string `json:"exclude_countries"`
-	IncludeRegex     string   `json:"include_regex"`
-	ExcludeRegex     string   `json:"exclude_regex"`
+	IncludeRegexes   []string `json:"include_regexes"`
+	ExcludeRegexes   []string `json:"exclude_regexes"`
 	MaxProxies       int      `json:"max_proxies"`
+
+	// Legacy fields — migrated to slices on load.
+	LegacyIncludeRegex string `json:"include_regex,omitempty"`
+	LegacyExcludeRegex string `json:"exclude_regex,omitempty"`
 }
 
 // RoutingStrategy defines how traffic is distributed across proxies.

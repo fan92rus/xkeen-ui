@@ -183,17 +183,47 @@ async function main() {
         assert(isActive, 'Random strategy should be active after click');
     });
 
-    await test('Regex inputs visible in filters section', async () => {
-        const inputs = await page.evaluate(() => {
-            const regexInc = document.querySelector('.sub-filters input[placeholder*="Regex"]') ||
-                             document.querySelector('.sub-filters input[placeholder*="regex"]') ||
-                             document.querySelector('.sub-filters input[placeholder*="+"]');
+    await test('Regex sections visible in filters section', async () => {
+        const result = await page.evaluate(() => {
+            const incLabel = [...document.querySelectorAll('.sub-filters .sub-row-label')]
+                .some(el => el.textContent.includes('Regex включения'));
+            const excLabel = [...document.querySelectorAll('.sub-filters .sub-row-label')]
+                .some(el => el.textContent.includes('Regex исключения'));
+            const addBtns = document.querySelectorAll('.sub-filters .rpill-add').length;
             const maxInput = document.querySelector('.sub-filters input[placeholder*="Лимит"]') ||
                              document.querySelector('.sub-filters input[type="number"]');
-            return { hasRegex: !!regexInc, hasMax: !!maxInput };
+            return { incLabel, excLabel, addBtns, hasMax: !!maxInput };
         });
-        assert(inputs.hasRegex, 'Should have regex input');
-        assert(inputs.hasMax, 'Should have max proxies input');
+        assert(result.incLabel, 'Should have include regex label');
+        assert(result.excLabel, 'Should have exclude regex label');
+        assert(result.addBtns >= 2, `Should have 2+ regex add buttons, got ${result.addBtns}`);
+        assert(result.hasMax, 'Should have max proxies input');
+    });
+
+    await test('Can add regex rule via pill button', async () => {
+        // Click the first rpill-add button (include regex)
+        await page.evaluate(() => {
+            const btn = document.querySelector('.sub-filters .rpill-add');
+            if (btn) btn.click();
+        });
+        await wait(200);
+        // Type a regex pattern and press Enter
+        const typed = await page.evaluate(() => {
+            const input = document.querySelector('.sub-filters .rpill-input');
+            if (!input) return false;
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(input, 'Fast');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            return true;
+        });
+        assert(typed, 'Should type regex and press Enter');
+        await wait(500);
+        // Check that a pill appeared
+        const pillCount = await page.evaluate(() =>
+            document.querySelectorAll('.sub-filters .rpill:not(.rpill-excl)').length
+        );
+        assert(pillCount >= 1, `Should have 1+ include regex pill, got ${pillCount}`);
     });
 
     // ── Create Profile Inline ──

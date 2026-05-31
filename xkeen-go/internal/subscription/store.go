@@ -28,7 +28,7 @@ func NewStore(path string) (*Store, error) {
 		path: path,
 		config: &SubscriptionConfig{
 			Subscriptions: []Subscription{},
-			Profiles: []Profile{},
+			Profiles:      []Profile{},
 		},
 	}
 
@@ -43,6 +43,9 @@ func NewStore(path string) (*Store, error) {
 
 	// Migrate legacy Filters/Strategy into default profile
 	s.migrateProfiles()
+
+	// Migrate legacy string regex fields to slices
+	s.migrateRegexFields()
 
 	return s, nil
 }
@@ -207,6 +210,8 @@ func cloneFilter(f *Filter) *Filter {
 	cp.ExcludeMarkers = safeSlice(f.ExcludeMarkers)
 	cp.IncludeCountries = safeSlice(f.IncludeCountries)
 	cp.ExcludeCountries = safeSlice(f.ExcludeCountries)
+	cp.IncludeRegexes = safeSlice(f.IncludeRegexes)
+	cp.ExcludeRegexes = safeSlice(f.ExcludeRegexes)
 	return &cp
 }
 
@@ -263,7 +268,7 @@ func (s *Store) AddProfile(p *Profile) error {
 		if err != nil {
 			return err
 		}
-			p.ID = id
+		p.ID = id
 	}
 	if p.ID == "default" {
 		return fmt.Errorf("'default' id is reserved")
@@ -325,8 +330,10 @@ func (s *Store) defaultProfile() *Profile {
 			ExcludeMarkers:   []string{},
 			IncludeCountries: []string{},
 			ExcludeCountries: []string{},
+			IncludeRegexes:   []string{},
+			ExcludeRegexes:   []string{},
 		},
-		Strategy:  RoutingStrategy{Type: "all", FallbackTag: "direct"},
+		Strategy: RoutingStrategy{Type: "all", FallbackTag: "direct"},
 	})
 	return &s.config.Profiles[len(s.config.Profiles)-1]
 }
@@ -358,6 +365,8 @@ func (s *Store) migrateProfiles() {
 			ExcludeMarkers:   []string{},
 			IncludeCountries: []string{},
 			ExcludeCountries: []string{},
+			IncludeRegexes:   []string{},
+			ExcludeRegexes:   []string{},
 		}
 	}
 	if st != nil {
@@ -372,6 +381,38 @@ func (s *Store) migrateProfiles() {
 	s.config.Filters = nil
 	s.config.Strategy = nil
 	s.saveConfig(s.config)
+}
+
+// migrateRegexFields converts legacy single-string regex fields to string slices.
+// Called once after loading the config. After migration, the legacy fields are cleared.
+func (s *Store) migrateRegexFields() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dirty := false
+	for i := range s.config.Profiles {
+		p := &s.config.Profiles[i]
+		if p.Filter.LegacyIncludeRegex != "" && len(p.Filter.IncludeRegexes) == 0 {
+			p.Filter.IncludeRegexes = []string{p.Filter.LegacyIncludeRegex}
+			p.Filter.LegacyIncludeRegex = ""
+			dirty = true
+		}
+		if p.Filter.LegacyExcludeRegex != "" && len(p.Filter.ExcludeRegexes) == 0 {
+			p.Filter.ExcludeRegexes = []string{p.Filter.LegacyExcludeRegex}
+			p.Filter.LegacyExcludeRegex = ""
+			dirty = true
+		}
+		// Ensure non-nil slices
+		if p.Filter.IncludeRegexes == nil {
+			p.Filter.IncludeRegexes = []string{}
+		}
+		if p.Filter.ExcludeRegexes == nil {
+			p.Filter.ExcludeRegexes = []string{}
+		}
+	}
+	if dirty {
+		s.saveConfig(s.config)
+	}
 }
 
 // ---------- Proxies (in-memory cache) ----------

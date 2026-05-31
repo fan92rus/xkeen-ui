@@ -43,7 +43,7 @@ const filters = computed(() => {
     return p?.filter || {
         include_markers: [], exclude_markers: [],
         include_countries: [], exclude_countries: [],
-        include_regex: '', exclude_regex: '', max_proxies: 0
+        include_regexes: [], exclude_regexes: [], max_proxies: 0
     };
 });
 
@@ -55,6 +55,43 @@ const strategy = computed(() => {
 /* ---- new profile inline ---- */
 const showNewProfileInput = ref(false);
 const newProfileName = ref('');
+
+/* ---- regex inline input state ---- */
+const newIncRegex = ref('');
+const showIncRegexInput = ref(false);
+const newExcRegex = ref('');
+const showExcRegexInput = ref(false);
+
+async function addIncludeRegex() {
+    const v = newIncRegex.value.trim();
+    if (!v || !activeProfile.value) return;
+    if (!activeProfile.value.filter.include_regexes) activeProfile.value.filter.include_regexes = [];
+    activeProfile.value.filter.include_regexes.push(v);
+    newIncRegex.value = '';
+    showIncRegexInput.value = false;
+    await _persistProfile();
+    await loadProfiles();
+}
+async function removeIncludeRegex(i) {
+    activeProfile.value?.filter.include_regexes?.splice(i, 1);
+    await _persistProfile();
+    await loadProfiles();
+}
+async function addExcludeRegex() {
+    const v = newExcRegex.value.trim();
+    if (!v || !activeProfile.value) return;
+    if (!activeProfile.value.filter.exclude_regexes) activeProfile.value.filter.exclude_regexes = [];
+    activeProfile.value.filter.exclude_regexes.push(v);
+    newExcRegex.value = '';
+    showExcRegexInput.value = false;
+    await _persistProfile();
+    await loadProfiles();
+}
+async function removeExcludeRegex(i) {
+    activeProfile.value?.filter.exclude_regexes?.splice(i, 1);
+    await _persistProfile();
+    await loadProfiles();
+}
 
 /* ---- computed ---- */
 const allCountries = computed(() => {
@@ -83,17 +120,23 @@ const filteredProxies = computed(() => {
         const inc = new Set(f.include_countries.map(c => c.toUpperCase()));
         list = list.filter(p => inc.has((p.country || '').toUpperCase()));
     }
-    if (f.include_regex) {
-        try {
-            const re = new RegExp(f.include_regex, 'i');
-            list = list.filter(p => re.test(p.remarks || ''));
-        } catch { /* invalid regex */ }
+    if (f.include_regexes?.length) {
+        for (const pattern of f.include_regexes) {
+            if (!pattern) continue;
+            try {
+                const re = new RegExp(pattern, 'i');
+                list = list.filter(p => re.test(p.remarks || ''));
+            } catch { /* invalid regex — skip */ }
+        }
     }
-    if (f.exclude_regex) {
-        try {
-            const re = new RegExp(f.exclude_regex, 'i');
-            list = list.filter(p => !re.test(p.remarks || ''));
-        } catch { /* invalid regex */ }
+    if (f.exclude_regexes?.length) {
+        for (const pattern of f.exclude_regexes) {
+            if (!pattern) continue;
+            try {
+                const re = new RegExp(pattern, 'i');
+                list = list.filter(p => !re.test(p.remarks || ''));
+            } catch { /* invalid regex — skip */ }
+        }
     }
     if (f.max_proxies > 0 && list.length > f.max_proxies) {
         list = list.slice(0, f.max_proxies);
@@ -320,7 +363,7 @@ async function confirmNewProfile() {
         await api.createProfile({
             name,
             enabled: true,
-            filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regex: '', exclude_regex: '', max_proxies: 0 },
+            filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regexes: [], exclude_regexes: [], max_proxies: 0 },
             strategy: { type: 'random' }
         });
         showNewProfileInput.value = false;
@@ -501,10 +544,42 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Regex + max -->
+        <!-- Regex include -->
+        <div>
+          <div class="sub-row-label">Regex включения</div>
+          <div class="regex-pills">
+            <span v-for="(r, i) in (activeProfile.filter.include_regexes || [])" :key="'inc'+i" class="rpill">
+              {{ r }}
+              <button class="rpill-del" @click="removeIncludeRegex(i)" title="Удалить">&times;</button>
+            </span>
+            <template v-if="showIncRegexInput">
+              <input class="rpill-input" v-model="newIncRegex"
+                     @keydown.enter="addIncludeRegex()" @keydown.escape="showIncRegexInput = false"
+                     placeholder="Pattern…" autofocus>
+            </template>
+            <button v-else class="rpill-add" @click="showIncRegexInput = true; newIncRegex = ''">+</button>
+          </div>
+        </div>
+
+        <!-- Regex exclude -->
+        <div>
+          <div class="sub-row-label">Regex исключения</div>
+          <div class="regex-pills">
+            <span v-for="(r, i) in (activeProfile.filter.exclude_regexes || [])" :key="'exc'+i" class="rpill rpill-excl">
+              {{ r }}
+              <button class="rpill-del" @click="removeExcludeRegex(i)" title="Удалить">&times;</button>
+            </span>
+            <template v-if="showExcRegexInput">
+              <input class="rpill-input" v-model="newExcRegex"
+                     @keydown.enter="addExcludeRegex()" @keydown.escape="showExcRegexInput = false"
+                     placeholder="Pattern…" autofocus>
+            </template>
+            <button v-else class="rpill-add" @click="showExcRegexInput = true; newExcRegex = ''">+</button>
+          </div>
+        </div>
+
+        <!-- Max proxies -->
         <div class="sub-row-compact">
-          <input type="text" v-model="activeProfile.filter.include_regex" @change="_persistProfile()" placeholder="Regex +" class="sub-input sm">
-          <input type="text" v-model="activeProfile.filter.exclude_regex" @change="_persistProfile()" placeholder="Regex −" class="sub-input sm">
           <input type="number" v-model.number="activeProfile.filter.max_proxies" @change="_persistProfile()" min="0" class="sub-input xs"
                  title="Макс прокси (0 = без лимита)" placeholder="Лимит">
         </div>

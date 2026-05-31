@@ -504,7 +504,7 @@ func TestStore_PersistenceWithFilters(t *testing.T) {
 	store1.SetFilters(&Filter{
 		ExcludeMarkers:   []string{"mobile"},
 		MaxProxies:       50,
-		IncludeRegex:     "speed",
+		IncludeRegexes:  []string{"speed"},
 	})
 	store1.SetStrategy(&RoutingStrategy{Type: "random"})
 
@@ -517,8 +517,8 @@ func TestStore_PersistenceWithFilters(t *testing.T) {
 	if filters.MaxProxies != 50 {
 		t.Errorf("max_proxies not persisted: %d", filters.MaxProxies)
 	}
-	if filters.IncludeRegex != "speed" {
-		t.Errorf("include_regex not persisted: %q", filters.IncludeRegex)
+	if len(filters.IncludeRegexes) != 1 || filters.IncludeRegexes[0] != "speed" {
+		t.Errorf("include_regexes not persisted: %q", filters.IncludeRegexes[0])
 	}
 
 	strategy := store2.GetStrategy()
