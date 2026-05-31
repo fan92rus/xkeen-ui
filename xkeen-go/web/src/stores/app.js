@@ -211,6 +211,7 @@ export const useAppStore = defineStore('app', () => {
 
     // ── Actions: Auth ──
     async function logout() {
+        statusService.disconnectStatusStream();
         try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
         window.location.href = '/login';
     }

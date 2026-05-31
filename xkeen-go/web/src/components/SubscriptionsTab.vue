@@ -89,10 +89,11 @@ const filteredProxies = computed(() => {
 });
 
 /* ---- helpers ---- */
+function _esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function _fmtJson(obj) {
-    const raw = JSON.stringify(obj, null, 2);
-    return raw.replace(/("(?:[^"\\]|\\.)*")\s*:/g, '<span class="pk">$1</span>:')
-              .replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="ps">$1</span>')
+    const raw = _esc(JSON.stringify(obj, null, 2));
+    return raw.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)\s*:/g, '<span class="pk">$1</span>:')
+              .replace(/:\s*(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g, ': <span class="ps">$1</span>')
               .replace(/:\s*(\d+\.?\d*)/g, ': <span class="pn">$1</span>')
               .replace(/:\s*(true|false)/g, ': <span class="pb">$1</span>')
               .replace(/:\s*(null)/g, ': <span class="pu">$1</span>');
