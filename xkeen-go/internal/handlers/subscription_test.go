@@ -878,4 +878,530 @@ func TestFetchSubscription_UpdatesProxyCount(t *testing.T) {
 	}
 }
 
+// ---------- Profile CRUD Tests ----------
+
+func TestListProfiles_DefaultProfile(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "GET", "/subscriptions/profiles", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// Response is an array of profile objects
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	var profiles []map[string]interface{}
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		t.Fatalf("failed to parse profiles array: %v\nbody: %s", err, string(data))
+	}
+
+	if len(profiles) < 1 {
+		t.Fatalf("expected at least 1 (default) profile, got %d", len(profiles))
+	}
+
+	// Default profile should be first
+	def := profiles[0]
+	if def["is_default"] != true {
+		t.Errorf("expected is_default=true, got %v", def["is_default"])
+	}
+	if def["name"] == nil || def["name"] == "" {
+		t.Error("expected default profile to have a name")
+	}
+	// proxy_count and total_proxy should be present (both 0 when no proxies)
+	if _, ok := def["proxy_count"]; !ok {
+		t.Error("expected proxy_count field in profile response")
+	}
+	if _, ok := def["total_proxy"]; !ok {
+		t.Error("expected total_proxy field in profile response")
+	}
+}
+
+func TestListProfiles_WithProxies(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	addTestSubscriptionWithProxies(t, h.store, 5)
+
+	resp := doRequest(t, router, "GET", "/subscriptions/profiles", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	var profiles []map[string]interface{}
+	json.Unmarshal(data, &profiles)
+
+	if len(profiles) < 1 {
+		t.Fatalf("expected at least 1 profile")
+	}
+
+	def := profiles[0]
+	// Default profile with no filters should include all 5 proxies
+	proxyCount := int(def["proxy_count"].(float64))
+	totalProxy := int(def["total_proxy"].(float64))
+	if proxyCount != 5 {
+		t.Errorf("expected proxy_count=5, got %d", proxyCount)
+	}
+	if totalProxy != 5 {
+		t.Errorf("expected total_proxy=5, got %d", totalProxy)
+	}
+}
+
+func TestCreateProfile_Success(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "Custom Profile",
+		"enabled": true,
+		"strategy": map[string]interface{}{
+			"type":         "random",
+			"fallback_tag": "direct",
+		},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if result["name"] != "Custom Profile" {
+		t.Errorf("expected name='Custom Profile', got %v", result["name"])
+	}
+	if result["is_default"] == true {
+		t.Error("new profile should not be default")
+	}
+	if result["id"] == nil || result["id"] == "" {
+		t.Error("expected auto-generated id")
+	}
+
+	// Verify it appears in list
+	profiles := h.store.GetProfiles()
+	found := false
+	for _, p := range profiles {
+		if p.Name == "Custom Profile" {
+			found = true
+			if p.IsDefault {
+				t.Error("new profile should have IsDefault=false")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("created profile not found in store")
+	}
+}
+
+func TestCreateProfile_RejectsEmptyName(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "",
+		"enabled": true,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+
+	result := parseResponse(t, resp)
+	if errMsg, ok := result["error"].(string); ok {
+		if !containsSubstring(errMsg, "name") {
+			t.Errorf("error should mention 'name', got: %s", errMsg)
+		}
+	}
+}
+
+func TestCreateProfile_RejectsMaxProfiles(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Fill up to MaxProfiles (10), default profile already exists (1)
+	for i := 0; i < subscription.MaxProfiles-1; i++ {
+		resp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+			"name":    fmt.Sprintf("Profile %d", i+1),
+			"enabled": true,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("profile %d: expected 201, got %d", i+1, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	// The next one should be rejected
+	resp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "Overflow",
+		"enabled": true,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 400 for max profiles, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestCreateProfile_RejectsDefaultID(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"id":      "default",
+		"name":    "Fake Default",
+		"enabled": true,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for reserved id, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateProfile_Success(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Create a profile first
+	createResp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "Original",
+		"enabled": true,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", createResp.StatusCode)
+	}
+	createResult := parseResponse(t, createResp)
+	profileID := createResult["id"].(string)
+
+	// Update it
+	resp := doRequest(t, router, "PUT", "/subscriptions/profiles/"+profileID, map[string]interface{}{
+		"name":    "Renamed",
+		"enabled": true,
+		"filter": map[string]interface{}{
+			"include_countries": []string{"DE", "NL"},
+			"max_proxies":       20,
+		},
+		"strategy": map[string]interface{}{
+			"type":         "roundrobin",
+			"fallback_tag": "direct",
+		},
+	})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if result["name"] != "Renamed" {
+		t.Errorf("expected name=Renamed, got %v", result["name"])
+	}
+
+	// Verify in store
+	p, err := h.store.GetProfile(profileID)
+	if err != nil {
+		t.Fatalf("profile not found: %v", err)
+	}
+	if p.Name != "Renamed" {
+		t.Errorf("store: expected name=Renamed, got %s", p.Name)
+	}
+	if len(p.Filter.IncludeCountries) != 2 {
+		t.Errorf("expected 2 include_countries, got %d", len(p.Filter.IncludeCountries))
+	}
+	if p.Strategy.Type != "roundrobin" {
+		t.Errorf("expected strategy=roundrobin, got %s", p.Strategy.Type)
+	}
+}
+
+func TestUpdateProfile_PreservesIsDefault(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Find the default profile ID
+	profiles := h.store.GetProfiles()
+	var defaultID string
+	for _, p := range profiles {
+		if p.IsDefault {
+			defaultID = p.ID
+			break
+		}
+	}
+	if defaultID == "" {
+		t.Fatal("no default profile found")
+	}
+
+	// Try to update default profile (changing is_default to false should be ignored)
+	resp := doRequest(t, router, "PUT", "/subscriptions/profiles/"+defaultID, map[string]interface{}{
+		"name":      "Updated Default",
+		"enabled":   true,
+		"is_default": false, // should be ignored
+	})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Verify IsDefault is still true
+	p, _ := h.store.GetProfile(defaultID)
+	if !p.IsDefault {
+		t.Error("IsDefault should be preserved as true")
+	}
+}
+
+func TestUpdateProfile_NotFound(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "PUT", "/subscriptions/profiles/nonexistent-id", map[string]interface{}{
+		"name":    "Ghost",
+		"enabled": true,
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeleteProfile_NonDefault(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Create a non-default profile
+	createResp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "Deletable",
+		"enabled": true,
+	})
+	createResult := parseResponse(t, createResp)
+	profileID := createResult["id"].(string)
+
+	// Delete it
+	resp := doRequest(t, router, "DELETE", "/subscriptions/profiles/"+profileID, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	result := parseResponse(t, resp)
+	if result["status"] != "deleted" {
+		t.Errorf("expected status=deleted, got %v", result["status"])
+	}
+
+	// Verify it's gone from store
+	_, err := h.store.GetProfile(profileID)
+	if err == nil {
+		t.Error("expected profile to be deleted from store")
+	}
+}
+
+func TestDeleteProfile_DefaultRefused(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Find the default profile ID
+	profiles := h.store.GetProfiles()
+	var defaultID string
+	for _, p := range profiles {
+		if p.IsDefault {
+			defaultID = p.ID
+		}
+	}
+	if defaultID == "" {
+		t.Fatal("no default profile found")
+	}
+
+	resp := doRequest(t, router, "DELETE", "/subscriptions/profiles/"+defaultID, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for deleting default, got %d", resp.StatusCode)
+	}
+
+	// Verify default profile still exists
+	p, err := h.store.GetProfile(defaultID)
+	if err != nil {
+		t.Fatal("default profile should still exist")
+	}
+	if !p.IsDefault {
+		t.Error("default profile should still have IsDefault=true")
+	}
+}
+
+func TestDeleteProfile_NotFound(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "DELETE", "/subscriptions/profiles/nonexistent-id", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+// ---------- Auto-Apply Handler Tests ----------
+
+func TestGetAutoApply_Defaults(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "GET", "/subscriptions/auto-apply", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	result := parseResponse(t, resp)
+	if result["enabled"] == nil {
+		t.Error("expected 'enabled' field")
+	}
+	if result["cron"] == nil {
+		t.Error("expected 'cron' field")
+	}
+	// By default, auto-apply should be disabled
+	if result["enabled"] == true {
+		t.Error("expected auto-apply disabled by default")
+	}
+}
+
+func TestUpdateAutoApply_ValidCron(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "PUT", "/subscriptions/auto-apply", map[string]interface{}{
+		"enabled": true,
+		"cron":    "0 */6 * * *",
+	})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if result["enabled"] != true {
+		t.Errorf("expected enabled=true, got %v", result["enabled"])
+	}
+	if result["cron"] != "0 */6 * * *" {
+		t.Errorf("expected cron='0 */6 * * *', got %v", result["cron"])
+	}
+
+	// Verify persisted in store
+	enabled, cronExpr := h.store.GetAutoApply()
+	if !enabled {
+		t.Error("store: expected enabled=true")
+	}
+	if cronExpr != "0 */6 * * *" {
+		t.Errorf("store: expected cron='0 */6 * * *', got %s", cronExpr)
+	}
+}
+
+func TestUpdateAutoApply_InvalidCron(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "PUT", "/subscriptions/auto-apply", map[string]interface{}{
+		"enabled": true,
+		"cron":    "not-a-valid-cron",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid cron, got %d", resp.StatusCode)
+	}
+
+	result := parseResponse(t, resp)
+	if errMsg, ok := result["error"].(string); ok {
+		if !containsSubstring(errMsg, "cron") {
+			t.Errorf("error should mention 'cron', got: %s", errMsg)
+		}
+	}
+
+	// Verify NOT persisted
+	enabled, _ := h.store.GetAutoApply()
+	if enabled {
+		t.Error("invalid cron should not enable auto-apply")
+	}
+}
+
+func TestUpdateAutoApply_Disable(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// First enable
+	enableResp := doRequest(t, router, "PUT", "/subscriptions/auto-apply", map[string]interface{}{
+		"enabled": true,
+		"cron":    "0 */6 * * *",
+	})
+	if enableResp.StatusCode != http.StatusOK {
+		t.Fatalf("enable: expected 200, got %d", enableResp.StatusCode)
+	}
+
+	// Now disable
+	resp := doRequest(t, router, "PUT", "/subscriptions/auto-apply", map[string]interface{}{
+		"enabled": false,
+		"cron":    "",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("disable: expected 200, got %d", resp.StatusCode)
+	}
+
+	result := parseResponse(t, resp)
+	if result["enabled"] != false {
+		t.Errorf("expected enabled=false, got %v", result["enabled"])
+	}
+
+	// Verify persisted
+	enabled, _ := h.store.GetAutoApply()
+	if enabled {
+		t.Error("store: expected enabled=false after disable")
+	}
+}
+
+func TestUpdateAutoApply_EmptyCronWithEnable(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Empty cron with enabled=false should succeed (just disables)
+	resp := doRequest(t, router, "PUT", "/subscriptions/auto-apply", map[string]interface{}{
+		"enabled": false,
+		"cron":    "",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+// ---------- Profile Route Registration ----------
+
+func TestRegisterSubscriptionRoutes_Profiles(t *testing.T) {
+	h, _ := newTestHandler(t)
+	r := mux.NewRouter()
+	RegisterSubscriptionRoutes(r, h)
+
+	profileRoutes := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/subscriptions/profiles"},
+		{"POST", "/subscriptions/profiles"},
+		{"PUT", "/subscriptions/profiles/test-id"},
+		{"DELETE", "/subscriptions/profiles/test-id"},
+		{"GET", "/subscriptions/auto-apply"},
+		{"PUT", "/subscriptions/auto-apply"},
+	}
+
+	for _, route := range profileRoutes {
+		req, _ := http.NewRequest(route.method, route.path, nil)
+		match := &mux.RouteMatch{}
+		if !r.Match(req, match) {
+			t.Errorf("route %s %s not registered", route.method, route.path)
+		}
+	}
+}
+
+// ---------- Helpers ----------
+
+// containsSubstring checks if s contains substr.
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
+}
+
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 
