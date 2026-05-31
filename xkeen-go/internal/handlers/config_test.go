@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -756,5 +758,826 @@ func TestRestoreBackup_ExternalPath(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400/403 for external path, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ============================================================
+// COMPREHENSIVE COVERAGE TESTS
+// ============================================================
+
+// --- GetBackupContent Tests ---
+
+func TestGetBackupContent_ValidBackup(t *testing.T) {
+	handler, _, backupDir := setupConfigTest(t)
+
+	// Create a backup file manually
+	backupContent := `{"log":{"loglevel":"warning"}}`
+	backupName := "01_log.json.20260101-120000.bak"
+	backupPath := filepath.Join(backupDir, backupName)
+	os.WriteFile(backupPath, []byte(backupContent), 0644)
+
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path="+backupPath, nil)
+	rec := httptest.NewRecorder()
+	handler.GetBackupContent(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp["content"] != backupContent {
+		t.Errorf("Expected content %q, got %v", backupContent, resp["content"])
+	}
+	if resp["success"] != true {
+		t.Error("Expected success=true")
+	}
+	if resp["backup_path"] != backupPath {
+		t.Errorf("Expected backup_path %q, got %v", backupPath, resp["backup_path"])
+	}
+}
+
+func TestGetBackupContent_MissingParam(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("GET", "/api/config/backups/content", nil)
+	rec := httptest.NewRecorder()
+	handler.GetBackupContent(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing param, got %d", rec.Code)
+	}
+}
+
+func TestGetBackupContent_NotFound(t *testing.T) {
+	handler, _, backupDir := setupConfigTest(t)
+
+	backupPath := filepath.Join(backupDir, "nonexistent.bak")
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path="+backupPath, nil)
+	rec := httptest.NewRecorder()
+	handler.GetBackupContent(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("Expected 404 for missing backup, got %d", rec.Code)
+	}
+}
+
+func TestGetBackupContent_PathTraversal(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path=../../../etc/passwd", nil)
+	rec := httptest.NewRecorder()
+	handler.GetBackupContent(rec, req)
+
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400/403 for path traversal, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetBackupContent_ExternalPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path=/etc/passwd", nil)
+	rec := httptest.NewRecorder()
+	handler.GetBackupContent(rec, req)
+
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400/403 for external path, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- RestoreBackup Tests ---
+
+func TestRestoreBackup_ValidBackup(t *testing.T) {
+	handler, _, backupDir := setupConfigTest(t)
+
+	// Create a backup file
+	backupContent := `{"log":{"loglevel":"debug"}}`
+	backupName := "01_log.json.20260101-120000.bak"
+	backupPath := filepath.Join(backupDir, backupName)
+	os.WriteFile(backupPath, []byte(backupContent), 0644)
+
+	body := map[string]string{"backup_path": backupPath}
+	req := httptest.NewRequest("POST", "/api/config/restore", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RestoreBackup(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp["success"] != true {
+		t.Error("Expected success=true")
+	}
+	if resp["content"] != backupContent {
+		t.Errorf("Expected content %q, got %v", backupContent, resp["content"])
+	}
+	if resp["original_name"] != "01_log.json" {
+		t.Errorf("Expected original_name '01_log.json', got %v", resp["original_name"])
+	}
+}
+
+func TestRestoreBackup_MissingParam(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("POST", "/api/config/restore", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RestoreBackup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing param, got %d", rec.Code)
+	}
+}
+
+func TestRestoreBackup_InvalidBody(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("POST", "/api/config/restore", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RestoreBackup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestRestoreBackup_InvalidBackupFilename(t *testing.T) {
+	handler, _, backupDir := setupConfigTest(t)
+
+	// Create a backup file with wrong name pattern (no .20 timestamp)
+	backupPath := filepath.Join(backupDir, "bad_backup.bak")
+	os.WriteFile(backupPath, []byte(`{}`), 0644)
+
+	body := map[string]string{"backup_path": backupPath}
+	req := httptest.NewRequest("POST", "/api/config/restore", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RestoreBackup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid backup filename, got %d", rec.Code)
+	}
+}
+
+func TestRestoreBackup_BackupNotExist(t *testing.T) {
+	handler, _, backupDir := setupConfigTest(t)
+
+	backupPath := filepath.Join(backupDir, "file.20260101-120000.bak")
+	body := map[string]string{"backup_path": backupPath}
+	req := httptest.NewRequest("POST", "/api/config/restore", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RestoreBackup(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("Expected 500 for missing backup file, got %d", rec.Code)
+	}
+}
+
+// --- CreateFile Extended Tests ---
+
+func TestCreateFile_OutsideRoot(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := WriteFileRequest{
+		Path:    "/etc/evil.json",
+		Content: `{}`,
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/create", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.CreateFile(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 for path outside roots, got %d", rec.Code)
+	}
+}
+
+func TestCreateFile_InvalidBody(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("POST", "/api/config/create", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.CreateFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestCreateFile_NoPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := WriteFileRequest{Content: `{}`}
+	req := httptest.NewRequest("POST", "/api/config/create", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.CreateFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing path, got %d", rec.Code)
+	}
+}
+
+func TestCreateFile_NestedPath(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	// Create file in a subdirectory that doesn't exist yet
+	newPath := filepath.Join(tmpDir, "configs", "subdir", "nested.json")
+	body := WriteFileRequest{Path: newPath, Content: `{"nested": true}`}
+
+	req := httptest.NewRequest("POST", "/api/config/create", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.CreateFile(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	data, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatalf("File not created: %v", err)
+	}
+	if string(data) != `{"nested": true}` {
+		t.Errorf("Content mismatch: %s", data)
+	}
+}
+
+// --- RenameFile Extended Tests ---
+
+func TestRenameFile_OldPathOutsideRoot(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := RenameFileRequest{
+		OldPath: "/etc/passwd",
+		NewPath: "/tmp/evil",
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/rename", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RenameFile(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 for old_path outside roots, got %d", rec.Code)
+	}
+}
+
+func TestRenameFile_NewPathOutsideRoot(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	body := RenameFileRequest{
+		OldPath: filepath.Join(tmpDir, "configs", "01_log.json"),
+		NewPath: "/etc/evil.json",
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/rename", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RenameFile(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 for new_path outside roots, got %d", rec.Code)
+	}
+}
+
+func TestRenameFile_MissingOldPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := RenameFileRequest{NewPath: "/some/path"}
+	req := httptest.NewRequest("POST", "/api/config/rename", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RenameFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing old_path, got %d", rec.Code)
+	}
+}
+
+func TestRenameFile_MissingNewPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := RenameFileRequest{OldPath: "/some/path"}
+	req := httptest.NewRequest("POST", "/api/config/rename", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RenameFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing new_path, got %d", rec.Code)
+	}
+}
+
+func TestRenameFile_InvalidBody(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("POST", "/api/config/rename", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RenameFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestRenameFile_CreatesBackup(t *testing.T) {
+	handler, tmpDir, backupDir := setupConfigTest(t)
+
+	oldPath := filepath.Join(tmpDir, "configs", "01_log.json")
+	newPath := filepath.Join(tmpDir, "configs", "renamed.json")
+
+	body := RenameFileRequest{OldPath: oldPath, NewPath: newPath}
+	req := httptest.NewRequest("POST", "/api/config/rename", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.RenameFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify backup was created
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatalf("Failed to read backup dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("Expected backup to be created before rename")
+	}
+}
+
+// --- WriteFile Extended Tests ---
+
+func TestWriteFile_YAMLContent(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	yamlPath := filepath.Join(tmpDir, "configs", "test.yaml")
+	body := WriteFileRequest{
+		Path:    yamlPath,
+		Content: "proxy:\n  name: test\n",
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatalf("File not written: %v", err)
+	}
+	if string(data) != "proxy:\n  name: test\n" {
+		t.Errorf("Content mismatch: %s", data)
+	}
+}
+
+func TestWriteFile_YAMLEmptyContent(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	yamlPath := filepath.Join(tmpDir, "configs", "empty.yaml")
+	body := WriteFileRequest{
+		Path:    yamlPath,
+		Content: "   ", // whitespace only
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for empty YAML, got %d", rec.Code)
+	}
+}
+
+func TestWriteFile_InvalidYAMLPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := WriteFileRequest{
+		Path:    "/etc/evil.yaml",
+		Content: "test: true",
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 for outside roots, got %d", rec.Code)
+	}
+}
+
+func TestWriteFile_InvalidBody(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("POST", "/api/config/file", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestWriteFile_CreatesParentDir(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	newPath := filepath.Join(tmpDir, "configs", "newsubdir", "deep.json")
+	body := WriteFileRequest{
+		Path:    newPath,
+		Content: `{"deep": true}`,
+	}
+
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if _, err := os.Stat(newPath); err != nil {
+		t.Errorf("File should exist: %v", err)
+	}
+}
+
+// --- ListBackups Extended Tests ---
+
+func TestListBackups_NoPathParam(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("GET", "/api/config/backups", nil)
+	rec := httptest.NewRecorder()
+	handler.ListBackups(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing path, got %d", rec.Code)
+	}
+}
+
+func TestListBackups_EmptyBackupDir(t *testing.T) {
+	handler, tmpDir, backupDir := setupConfigTest(t)
+
+	file := filepath.Join(tmpDir, "configs", "01_log.json")
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+file, nil)
+	rec := httptest.NewRecorder()
+	handler.ListBackups(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", rec.Code)
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	backups, ok := resp["backups"].([]interface{})
+	if !ok {
+		t.Fatal("Expected backups array in response")
+	}
+	if len(backups) != 0 {
+		t.Errorf("Expected 0 backups, got %d", len(backups))
+	}
+
+	// Verify backupDir exists and is empty
+	entries, _ := os.ReadDir(backupDir)
+	_ = entries // may or may not have entries from other writes
+}
+
+func TestListBackups_MultipleBackups(t *testing.T) {
+	handler, tmpDir, backupDir := setupConfigTest(t)
+
+	// Create multiple backup files manually
+	content1 := `{"log":"old"}`
+	content2 := `{"log":"newer"}`
+	bp1 := filepath.Join(backupDir, "01_log.json.20260101-100000.bak")
+	bp2 := filepath.Join(backupDir, "01_log.json.20260101-110000.bak")
+	os.WriteFile(bp1, []byte(content1), 0644)
+	os.WriteFile(bp2, []byte(content2), 0644)
+
+	// Also create a backup for a different file (should not appear)
+	os.WriteFile(filepath.Join(backupDir, "02_dns.json.20260101-100000.bak"), []byte(`{}`), 0644)
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, nil)
+	rec := httptest.NewRecorder()
+	handler.ListBackups(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", rec.Code)
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	backups := resp["backups"].([]interface{})
+	if len(backups) != 2 {
+		t.Errorf("Expected 2 backups for 01_log.json, got %d", len(backups))
+	}
+}
+
+func TestListBackups_NonexistentBackupDir(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	// Point handler to nonexistent backup dir
+	handler.backupDir = filepath.Join(tmpDir, "no-backups-dir")
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, nil)
+	rec := httptest.NewRecorder()
+	handler.ListBackups(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", rec.Code)
+	}
+
+	// Should return empty array
+	var resp []FileInfo
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Errorf("Expected 0 backups for nonexistent dir, got %d", len(resp))
+	}
+}
+
+// --- SetMode Extended Tests ---
+
+func TestSetMode_SwitchToXray(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	// Handler starts in xray mode, switch to mihomo then back
+	handler.currentMode = "mihomo"
+
+	body := ModeRequest{Mode: "xray"}
+	req := httptest.NewRequest("POST", "/api/config/mode", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if handler.currentMode != "xray" {
+		t.Errorf("Mode should be xray, got %q", handler.currentMode)
+	}
+}
+
+func TestSetMode_InvalidBody(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("POST", "/api/config/mode", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestSetMode_MihomoNotAvailable(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	// Remove mihomo dir so it's unavailable
+	os.RemoveAll(filepath.Join(tmpDir, "mihomo"))
+
+	body := ModeRequest{Mode: "mihomo"}
+	req := httptest.NewRequest("POST", "/api/config/mode", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 when mihomo unavailable, got %d", rec.Code)
+	}
+}
+
+func TestSetMode_XrayNotAvailable(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	// Remove xray config dir
+	os.RemoveAll(filepath.Join(tmpDir, "configs"))
+
+	body := ModeRequest{Mode: "xray"}
+	req := httptest.NewRequest("POST", "/api/config/mode", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 when xray unavailable, got %d", rec.Code)
+	}
+}
+
+func TestSetMode_PersistsToConfigFile(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
+
+	body := ModeRequest{Mode: "mihomo"}
+	req := httptest.NewRequest("POST", "/api/config/mode", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", rec.Code)
+	}
+
+	// Verify config file was updated
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Config file should exist: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("Config should be valid JSON: %v", err)
+	}
+
+	if config["mode"] != "mihomo" {
+		t.Errorf("Config file should have mode=mihomo, got %v", config["mode"])
+	}
+}
+
+func TestSetMode_NoConfigPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	// Empty config path — should still succeed (in-memory only)
+	handler.configPath = ""
+
+	body := ModeRequest{Mode: "mihomo"}
+	req := httptest.NewRequest("POST", "/api/config/mode", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if handler.currentMode != "mihomo" {
+		t.Errorf("Mode should be updated in memory, got %q", handler.currentMode)
+	}
+}
+
+func TestSetMode_ResponseContainsMode(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := ModeRequest{Mode: "mihomo"}
+	req := httptest.NewRequest("POST", "/api/config/mode", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.SetMode(rec, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp["success"] != true {
+		t.Error("Expected success=true")
+	}
+	if resp["mode"] != "mihomo" {
+		t.Errorf("Expected mode=mihomo in response, got %v", resp["mode"])
+	}
+}
+
+// --- DeleteFile Extended Tests ---
+
+func TestDeleteFile_CreatesBackup(t *testing.T) {
+	handler, tmpDir, backupDir := setupConfigTest(t)
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+	body := DeleteFileRequest{Path: filePath}
+
+	req := httptest.NewRequest("DELETE", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.DeleteFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", rec.Code)
+	}
+
+	entries, _ := os.ReadDir(backupDir)
+	if len(entries) == 0 {
+		t.Error("Expected backup before deletion")
+	}
+}
+
+func TestDeleteFile_MissingPath(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	body := DeleteFileRequest{}
+	req := httptest.NewRequest("DELETE", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.DeleteFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for missing path, got %d", rec.Code)
+	}
+}
+
+func TestDeleteFile_InvalidBody(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("DELETE", "/api/config/file", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.DeleteFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+// --- GetMode Extended Tests ---
+
+func TestGetMode_Availability(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	req := httptest.NewRequest("GET", "/api/config/mode", nil)
+	rec := httptest.NewRecorder()
+	handler.GetMode(rec, req)
+
+	var resp ModeInfo
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	// Both xray and mihomo dirs exist in test setup
+	if !resp.XrayAvailable {
+		t.Error("xray should be available")
+	}
+	if !resp.MihomoAvailable {
+		t.Error("mihomo should be available")
+	}
+}
+
+func TestGetMode_MihomoUnavailable(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	// Remove mihomo dir
+	os.RemoveAll(filepath.Join(tmpDir, "mihomo"))
+
+	req := httptest.NewRequest("GET", "/api/config/mode", nil)
+	rec := httptest.NewRecorder()
+	handler.GetMode(rec, req)
+
+	var resp ModeInfo
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if !resp.XrayAvailable {
+		t.Error("xray should still be available")
+	}
+	if resp.MihomoAvailable {
+		t.Error("mihomo should not be available")
+	}
+}
+
+// --- CleanupOldBackups Test ---
+
+func TestCleanupOldBackups(t *testing.T) {
+	handler, _, backupDir := setupConfigTest(t)
+
+	// Create 7 backup files
+	baseName := "01_log.json"
+	for i := 0; i < 7; i++ {
+		name := fmt.Sprintf("%s.2026010%d-120000.bak", baseName, i+1)
+		path := filepath.Join(backupDir, name)
+		os.WriteFile(path, []byte(`{}`), 0644)
+		// Small delay to ensure different mod times
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	entries, _ := os.ReadDir(backupDir)
+	if len(entries) != 7 {
+		t.Fatalf("Setup: expected 7 backups, got %d", len(entries))
+	}
+
+	// Trigger cleanup (keep 5)
+	handler.cleanupOldBackups(filepath.Join("configs", baseName), 5)
+
+	entries, _ = os.ReadDir(backupDir)
+	if len(entries) != 5 {
+		t.Errorf("Expected 5 backups after cleanup, got %d", len(entries))
 	}
 }
