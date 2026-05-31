@@ -269,12 +269,12 @@ onMounted(async () => {
   <div class="sub-toolbar">
     <input type="url" v-model="newUrl" @keydown.enter="add()"
            placeholder="URL подписки… Enter → добавить" :disabled="busy">
-    <button @click="add()" :disabled="busy || !newUrl.trim()" class="btn btn-primary btn-sm">＋</button>
+    <button @click="add()" :disabled="busy || !newUrl.trim()" class="btn btn-primary btn-sm">Добавить</button>
     <div class="sub-sep"></div>
-    <button @click="fetchAll()" :disabled="busy || !subs.length" class="btn btn-sm" title="Обновить все подписки">↻ Обновить</button>
+    <button @click="fetchAll()" :disabled="busy || !subs.length" class="btn btn-sm" title="Обновить все подписки">Обновить все</button>
     <div class="sub-sep"></div>
-    <button @click="preview()" :disabled="busy || !proxies.length" class="btn btn-sm">👁 Предпросмотр</button>
-    <button @click="applySubs()" :disabled="busy || !proxies.length" class="btn btn-primary btn-sm">✓ Применить</button>
+    <button @click="preview()" :disabled="busy || !proxies.length" class="btn btn-sm">Предпросмотр</button>
+    <button @click="applySubs()" :disabled="busy || !proxies.length" class="btn btn-primary btn-sm">Применить</button>
     <div class="sub-sep"></div>
     <!-- Strategy inline -->
     <span class="strat-label">Роутинг:</span>
@@ -295,11 +295,11 @@ onMounted(async () => {
           <span class="name">{{ s.name || 'Без названия' }}</span>
           <span class="badge" v-if="s.proxy_count">{{ s.proxy_count }}</span>
           <span class="meta" v-if="s.last_fetch && s.last_fetch !== '0001-01-01T00:00:00Z'">{{ fmtTime(s.last_fetch) }}</span>
-          <span class="err" v-if="s.last_error" :title="s.last_error">⚠</span>
+          <span class="err" v-if="s.last_error" :title="s.last_error">!</span>
           <span class="acts">
-            <button @click="fetchOne(s.id)" :disabled="busy" title="Обновить">↻</button>
-            <button @click="editStart(s)" title="Редактировать">✎</button>
-            <button @click="remove(s.id)" class="danger" title="Удалить">✕</button>
+            <button @click="fetchOne(s.id)" :disabled="busy" title="Обновить">&#x21bb;</button>
+            <button @click="editStart(s)" title="Редактировать">&#x270e;</button>
+            <button @click="remove(s.id)" class="danger" title="Удалить">&#x2715;</button>
           </span>
         </div>
         <div v-else class="sub-edit">
@@ -308,15 +308,15 @@ onMounted(async () => {
             <input type="text" v-model="edit.name" placeholder="Название" class="sub-input">
             <input type="number" v-model.number="edit.interval" min="0" class="sub-input xs" title="Интервал (мин)" placeholder="мин">
             <label><input type="checkbox" v-model="edit.enabled"> Вкл</label>
-            <button @click="editSave()" class="btn btn-primary btn-sm">✓</button>
-            <button @click="editCancel()" class="btn btn-sm">✕</button>
+            <button @click="editSave()" class="btn btn-primary btn-sm">Сохранить</button>
+            <button @click="editCancel()" class="btn btn-sm">Отмена</button>
           </div>
         </div>
       </div>
 
       <!-- Empty state for no subscriptions -->
       <div v-if="subs.length === 0" class="sub-empty">
-        <p>📋 Нет подписок</p>
+        <p>Нет подписок</p>
         <p class="sub-empty-hint">Вставьте URL подписки в поле выше</p>
       </div>
 
@@ -368,7 +368,7 @@ onMounted(async () => {
     <div class="sub-right">
       <template v-if="proxies.length">
         <div class="px-header">
-          <input type="text" v-model="proxyQ" placeholder="🔍 Поиск…" class="sub-input">
+          <input type="text" v-model="proxyQ" placeholder="Поиск…" class="sub-input">
           <span class="px-count">{{ filteredProxies.length }} / {{ proxies.length }}</span>
         </div>
         <div class="px-list">
@@ -382,7 +382,7 @@ onMounted(async () => {
       </template>
       <div v-else class="sub-right-empty">
         <p v-if="subs.length === 0">Добавьте подписку и обновите её</p>
-        <p v-else>Нажмите ↻ на подписке для загрузки прокси</p>
+        <p v-else>Нажмите "Обновить" на подписке для загрузки прокси</p>
       </div>
     </div>
   </div>
@@ -392,7 +392,7 @@ onMounted(async () => {
     <div class="modal-box">
       <div class="modal-header">
         <h3>Предпросмотр</h3>
-        <button @click="showPreview = false" class="btn btn-sm">✕</button>
+        <button @click="showPreview = false" class="btn btn-sm">Закрыть</button>
       </div>
       <div class="modal-body" v-if="previewData">
         <div class="preview-summary">
@@ -413,7 +413,7 @@ onMounted(async () => {
         </details>
       </div>
       <div class="modal-footer">
-        <button @click="applySubs()" :disabled="busy" class="btn btn-primary">✓ Применить</button>
+        <button @click="applySubs()" :disabled="busy" class="btn btn-primary">Применить</button>
         <button @click="showPreview = false" class="btn">Закрыть</button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, onUnmounted, ref, computed, provide } from 'vue';
 import { useAppStore } from './stores/app.js';
 import EditorTab from './components/EditorTab.vue';
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
@@ -42,6 +42,7 @@ const icons = {
 };
 
 const editorRef = ref(null);
+provide('isDark', isDark);
 
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -125,7 +126,7 @@ onUnmounted(() => {
           </div>
           <!-- Editor actions -->
           <template v-if="app.activeTab === 'editor' && app.currentFile">
-            <span class="status-badge" :class="app.isValidJson === false ? 'invalid' : 'valid'">
+            <span v-if="app.currentFile" class="status-badge" :class="app.isValidJson === false ? 'invalid' : 'valid'">
               {{ app.isValidJson === false ? '✗ JSON' : '✓ JSON' }}
             </span>
             <button class="btn btn-sm" @click="doDiff()">Diff</button>

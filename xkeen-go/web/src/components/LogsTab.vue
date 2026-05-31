@@ -1,10 +1,24 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { createLogStream } from '../services/logs.js';
 
 const app = useAppStore();
+const logsEl = ref(null);
+const autoScroll = ref(true);
 let stream = null;
+
+function scrollToBottom() {
+    if (autoScroll.value && logsEl.value) {
+        nextTick(() => { logsEl.value.scrollTop = logsEl.value.scrollHeight; });
+    }
+}
+
+function onScroll() {
+    if (!logsEl.value) return;
+    const { scrollTop, scrollHeight, clientHeight } = logsEl.value;
+    autoScroll.value = scrollHeight - scrollTop - clientHeight < 40;
+}
 
 function connect() {
     app.loadLogs();
@@ -13,6 +27,7 @@ function connect() {
         (msg) => {
             app.logs.push(msg);
             if (app.logs.length > 500) app.logs = app.logs.slice(-500);
+            scrollToBottom();
         },
         () => { app.showToast('Log stream error', 'error'); }
     );
@@ -49,8 +64,8 @@ onUnmounted(disconnect);
       </select>
       <button @click="app.clearLogs()" class="btn btn-sm">Очистить</button>
     </div>
-    <div class="logs-container">
-      <div v-for="(log, index) in app.filteredLogs" :key="index" :class="'log-entry log-' + log.level">
+    <div class="logs-container" ref="logsEl" @scroll="onScroll">
+      <div v-for="(log, index) in app.filteredLogs" :key="log.timestamp + '-' + index" :class="'log-entry log-' + log.level">
         <span class="log-time">{{ log.timestamp }}</span>
         <span class="log-level">{{ log.level.toUpperCase() }}</span>
         <span class="log-message">{{ log.message }}</span>

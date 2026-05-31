@@ -357,6 +357,7 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 /* ===== Editor ===== */
 .editor-wrapper { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .editor-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.editor-loading { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--text-gray); font-size: var(--text-body); }
 #editor { flex: 1; overflow: hidden; }
 .cm-editor { height: 100% !important; font-size: var(--text-small); }
 .cm-scroller { overflow: auto; }

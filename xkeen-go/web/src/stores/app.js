@@ -312,24 +312,16 @@ export const useAppStore = defineStore('app', () => {
     function closeDiffModal() { diffModal.show = false; diffModal.diffContent = ''; }
 
     function computeDiff(a, b) {
-        const linesA = a.split('\n');
-        const linesB = b.split('\n');
+        const MAX = 500;
+        const linesA = a.split('\n').slice(0, MAX);
+        const linesB = b.split('\n').slice(0, MAX);
         const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const m = linesA.length, n = linesB.length;
-        const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-        for (let i = 1; i <= m; i++)
-            for (let j = 1; j <= n; j++)
-                dp[i][j] = linesA[i-1] === linesB[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
-
-        const ops = [];
-        let i = m, j = n;
-        while (i > 0 || j > 0) {
-            if (i > 0 && j > 0 && linesA[i-1] === linesB[j-1]) { ops.push({ type: 'equal', line: linesA[i-1] }); i--; j--; }
-            else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { ops.push({ type: 'removed', line: linesB[j-1] }); j--; }
-            else { ops.push({ type: 'added', line: linesA[i-1] }); i--; }
-        }
-
-        return ops.reverse().map(op => {
+        const setB = new Set(linesB);
+        const setA = new Set(linesA);
+        const all = [];
+        for (const l of linesA) all.push({ line: l, type: setB.has(l) ? 'equal' : 'removed' });
+        for (const l of linesB) if (!setA.has(l)) all.push({ line: l, type: 'added' });
+        return all.map(op => {
             const e = escapeHtml(op.line);
             return op.type === 'equal' ? '  ' + e
                 : op.type === 'removed' ? `<span class="diff-removed">- ${e}</span>`
