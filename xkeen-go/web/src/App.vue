@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, ref, computed } from 'vue';
 import { useAppStore } from './stores/app.js';
 import EditorTab from './components/EditorTab.vue';
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
@@ -18,6 +18,14 @@ const tabs = [
 ];
 
 /* SVG icon paths (24x24 viewBox, stroke-based, Lucide-style) */
+const theme = ref(localStorage.getItem('theme') || 'dark');
+const isDark = computed(() => theme.value === 'dark');
+function toggleTheme() {
+    theme.value = isDark.value ? 'light' : 'dark';
+    localStorage.setItem('theme', theme.value);
+    document.documentElement.classList.toggle('light', !isDark.value);
+}
+
 const icons = {
     editor: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
     subscriptions: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
@@ -28,6 +36,8 @@ const icons = {
     stop: 'M4 4h16v16H4V4z',
     restart: 'M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15',
     logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+    sun: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
+    moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
     logo: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
 };
 
@@ -43,6 +53,7 @@ function doSave() {
 }
 
 onMounted(() => {
+    document.documentElement.classList.toggle('light', theme.value === 'light');
     window.addEventListener('keydown', onKeydown);
     app.init();
 });
@@ -66,6 +77,10 @@ onMounted(() => {
         </button>
       </div>
       <div class="sidebar-bottom">
+        <button class="sidebar-btn theme-toggle" :title="isDark ? 'Светлая тема' : 'Тёмная тема'" @click="toggleTheme">
+          <svg v-if="isDark" viewBox="0 0 24 24"><path :d="icons.sun" /></svg>
+          <svg v-else viewBox="0 0 24 24"><path :d="icons.moon" /></svg>
+        </button>
         <button class="sidebar-btn" title="Выйти" @click="app.logout()">
           <svg viewBox="0 0 24 24"><path :d="icons.logout" /></svg>
         </button>

@@ -86,6 +86,59 @@
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 
+/* ===== Keenetic Light Theme ===== */
+html.light {
+    --background: #fff;
+    --primary-text: #000;
+    --text-gray: #6e6e6e;
+    --help-text: #949b9f;
+    --primary-color: #0097dc;
+    --primary-color-hover: #007bb3;
+    --primary-color-disabled: #c1dded;
+    --error: #de3d3d;
+    --error-border: #ffd0c8;
+    --stroke: #bdb7b7;
+    --disabled: #fafafa;
+    --menu-background: #fafafa;
+    --menu-border: #ebebeb;
+    --menu-hover: #f0f0f0;
+    --menu-active-item: #ebebeb;
+    --dashboard-background: #EDEEF0;
+    --table-border: #ebebeb;
+    --table-header: #fafafa;
+    --table-row-hover: #ecf5fa;
+    --scrollbar-thumb: #d6d8d9;
+    --scrollbar-background: #f0f0f0;
+    --indicator-online: #03b25a;
+    --indicator-offline: #949b9f;
+    --box-shadow-1: 0 5px 20px rgb(0 0 0 / 5%);
+    --box-shadow-3: 0 0 6px rgb(0 0 0 / 16%);
+    --tooltip-background: #4b4b4b;
+    --tooltip-text: #fff;
+    --status-success-text: #1e7049;
+    --status-success-border: #cbf2df;
+    --status-success-background: #e4faef;
+    --status-warning-text: #de3d3d;
+    --status-warning-border: #ffded9;
+    --status-warning-background: #ffece9;
+    --status-caution-text: #e8951a;
+    --status-caution-border: #f9ecc5;
+    --status-caution-background: #fff7e1;
+    --status-special-text: #0097dc;
+    --status-special-border: #dbe9f2;
+    --status-special-background: #e0f3ff;
+    --outline-button-default-border: #c1dded;
+    --outline-button-hover-background: #ecf5fa;
+    --secondary-button-default-background: #f5fafc;
+    --secondary-button-hover-background: #ecf5fa;
+    --notification-background: #fff;
+    --toggle-on-background: #cce6f5;
+    --progressbar-background: #cce6f5;
+    --progressbar-fill: #0097dc;
+    --input-border: #bdb7b7;
+    --input-focus-border: #0097dc;
+}
+
 body {
     font-family: var(--font);
     background: var(--background);
@@ -160,6 +213,7 @@ input, textarea, button { font-family: inherit; font-size: 14px; }
 }
 .sidebar-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .sidebar-btn:hover { color: var(--error); background: var(--status-warning-background); }
+.sidebar-btn.theme-toggle:hover { color: var(--primary-color); background: var(--status-special-background); }
 
 /* ===== Status Dot ===== */
 .status-dot {
