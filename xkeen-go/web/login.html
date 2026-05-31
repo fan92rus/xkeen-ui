@@ -11,14 +11,14 @@
         .change-password-form.active { display: block; }
         .login-form.hidden { display: none; }
         .warning-box {
-            background: rgba(249,226,175,0.12); border: 1px solid #f9e2af;
-            color: #f9e2af; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;
+            background: var(--status-caution-background); border: 1px solid var(--status-caution-border);
+            color: var(--status-caution-text); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;
         }
-        .password-requirements { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+        .password-requirements { font-size: 12px; color: var(--text-gray); margin-top: 6px; }
         .password-strength { height: 3px; margin-top: 8px; border-radius: 2px; transition: all 0.3s; }
-        .strength-weak { background: #f38ba8; }
-        .strength-medium { background: #f9e2af; }
-        .strength-strong { background: #a6e3a1; }
+        .strength-weak { background: var(--error); }
+        .strength-medium { background: var(--status-caution-text); }
+        .strength-strong { background: var(--status-success-text); }
     </style>
 </head>
 <body>
