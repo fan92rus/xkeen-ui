@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -47,5 +48,68 @@ func TestInteractiveMessageTypes(t *testing.T) {
 	}
 	if string(data) != `{"type":"output","text":"hello"}` {
 		t.Errorf("Unexpected ServerMessage JSON: %s", data)
+	}
+}
+
+// === checkOrigin tests for InteractiveHandler ===
+
+func TestInteractiveCheckOrigin_EmptyOrigin(t *testing.T) {
+	h := NewInteractiveHandler(nil)
+
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req.Header.Del("Origin")
+
+	if h.checkOrigin(req) {
+		t.Error("empty origin should be rejected")
+	}
+}
+
+func TestInteractiveCheckOrigin_SameOrigin(t *testing.T) {
+	h := NewInteractiveHandler(nil)
+
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req.Header.Set("Origin", "http://localhost:8089")
+	req.Host = "localhost:8089"
+
+	if !h.checkOrigin(req) {
+		t.Error("same-origin should be allowed")
+	}
+}
+
+func TestInteractiveCheckOrigin_RejectedOrigin(t *testing.T) {
+	h := NewInteractiveHandler(nil)
+
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req.Header.Set("Origin", "http://evil.example.com")
+	req.Host = "localhost:8089"
+
+	if h.checkOrigin(req) {
+		t.Error("cross-origin should be rejected")
+	}
+}
+
+func TestInteractiveCheckOrigin_AllowedOrigin(t *testing.T) {
+	h := NewInteractiveHandler(&InteractiveConfig{
+		AllowedOrigins: []string{"http://trusted.example.com"},
+	})
+
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req.Header.Set("Origin", "http://trusted.example.com")
+	req.Host = "other-host"
+
+	if !h.checkOrigin(req) {
+		t.Error("explicitly allowed origin should pass")
+	}
+}
+
+func TestInteractiveCheckOrigin_MalformedOrigin(t *testing.T) {
+	h := NewInteractiveHandler(nil)
+
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req.Header.Set("Origin", "://::bad")
+	req.Host = "localhost:8089"
+
+	if h.checkOrigin(req) {
+		t.Error("malformed origin should be rejected")
 	}
 }

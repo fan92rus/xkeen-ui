@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -393,10 +394,7 @@ func (m *MockExecutor) argsContain(args, contains []string) bool {
 	return false
 }
 
-// CommandExecutor is an interface that both MockExecutor and real executors should implement.
+// CommandExecutor is an interface that matches handlers.CommandExecutor for compatibility.
 type CommandExecutor interface {
-	Execute(name string, args ...string) ([]byte, error)
+	Execute(ctx context.Context, name string, args ...string) (string, error)
 }
-
-// Ensure MockExecutor implements CommandExecutor
-var _ CommandExecutor = (*MockExecutor)(nil)

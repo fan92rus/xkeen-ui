@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
@@ -74,22 +75,19 @@ func NewInteractiveHandler(cfg *InteractiveConfig) *InteractiveHandler {
 // checkOrigin validates the origin of WebSocket connections.
 func (h *InteractiveHandler) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	host := r.Host
-
 	if origin == "" {
-		return true
+		return false
 	}
 
 	if h.allowedOrigins[origin] {
 		return true
 	}
 
-	if origin == "http://"+host || origin == "https://"+host {
-		return true
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
 	}
-
-	log.Printf("WebSocket connection rejected from origin: %s (host: %s)", origin, host)
-	return false
+	return u.Host == r.Host
 }
 
 // isCommandAllowed checks if a command is in the whitelist.

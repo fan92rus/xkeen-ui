@@ -23,6 +23,11 @@ type Scheduler struct {
 	cron      *cron.Cron
 	cronEntry cron.EntryID
 
+	// ctx/cancel control the interval checker goroutine lifetime.
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
 	// OnUpdate is called after a successful fetch cycle.
 	OnUpdate func()
 
@@ -35,10 +40,13 @@ type Scheduler struct {
 
 // NewScheduler creates a new scheduler.
 func NewScheduler(store *Store, fetcher *Fetcher) *Scheduler {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Scheduler{
 		store:      store,
 		fetcher:    fetcher,
 		RestartCmd: "xkeen -restart",
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 
@@ -62,16 +70,19 @@ func (s *Scheduler) Start() {
 	}
 }
 
-// Stop gracefully stops all schedulers.
+// Stop gracefully stops all schedulers and waits for goroutines to finish.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.cron != nil {
 		s.cron.Stop()
 		s.cron = nil
 		log.Println("[subscription] auto-apply cron stopped")
 	}
+	s.mu.Unlock()
+
+	// Cancel context to signal interval checker to stop, then wait.
+	s.cancel()
+	s.wg.Wait()
 }
 
 // UpdateAutoApply enables/disables the auto-apply cron and updates the expression.
@@ -248,15 +259,22 @@ func (s *Scheduler) writeConfigFiles(filtered []*ProxyEntry, strategy *RoutingSt
 // startIntervalChecker runs a goroutine that checks every minute
 // which subscriptions need refresh based on their individual interval.
 func (s *Scheduler) startIntervalChecker() {
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 
 		// Check immediately on start
 		s.checkAndRefresh()
 
-		for range ticker.C {
-			s.checkAndRefresh()
+		for {
+			select {
+			case <-ticker.C:
+				s.checkAndRefresh()
+			case <-s.ctx.Done():
+				return
+			}
 		}
 	}()
 	log.Println("[subscription] interval checker started")

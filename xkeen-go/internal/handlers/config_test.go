@@ -716,3 +716,45 @@ func marshalBody(t *testing.T, v interface{}) *strings.Reader {
 	}
 	return strings.NewReader(string(data))
 }
+
+// --- RestoreBackup path traversal tests ---
+
+func TestRestoreBackup_PathTraversal(t *testing.T) {
+	handler, xrayDir, _ := setupConfigTest(t)
+	r := mux.NewRouter()
+	RegisterConfigRoutes(r, handler)
+
+	body := marshalBody(t, map[string]string{
+		"file_path":   filepath.Join(xrayDir, "test.json"),
+		"backup_path": "../../../etc/passwd",
+	})
+
+	req := httptest.NewRequest("POST", "/config/restore", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400/403 for path traversal, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRestoreBackup_ExternalPath(t *testing.T) {
+	handler, xrayDir, _ := setupConfigTest(t)
+	r := mux.NewRouter()
+	RegisterConfigRoutes(r, handler)
+
+	body := marshalBody(t, map[string]string{
+		"file_path":   filepath.Join(xrayDir, "test.json"),
+		"backup_path": "/tmp/nonexistent/backup.bak",
+	})
+
+	req := httptest.NewRequest("POST", "/config/restore", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400/403 for external path, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

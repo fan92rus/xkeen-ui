@@ -87,15 +87,6 @@ type SubscriptionConfig struct {
 	AutoApplyCron    string `json:"auto_apply_cron"`    // cron expression, e.g. "0 */6 * * *"
 }
 
-// KnownMarkers is the set of recognized markers in proxy remarks.
-var KnownMarkers = []string{
-	"⚡",   // fast
-	"⭐",   // standard
-	"🎮",   // gaming
-	"0.5X", // mobile
-	"⬇",   // download
-	"💎",   // auto
-}
 
 // DefaultMux is the default mux configuration copied to all generated outbounds.
 var DefaultMux = map[string]interface{}{

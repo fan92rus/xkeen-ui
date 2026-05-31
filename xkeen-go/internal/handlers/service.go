@@ -164,14 +164,14 @@ func (h *ServiceHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Handle timeout errors specifically
 	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		h.respondJSON(w, http.StatusGatewayTimeout, ServiceResponse{
+		respondJSON(w, http.StatusGatewayTimeout, ServiceResponse{
 			Success: false,
 			Message: fmt.Sprintf("Status check timed out: %s", err),
 		})
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, ServiceResponse{
+	respondJSON(w, http.StatusOK, ServiceResponse{
 		Success: true,
 		Message: output,
 		Status:  status,
@@ -266,7 +266,7 @@ func (h *ServiceHandler) Start(w http.ResponseWriter, r *http.Request) {
 		h.TriggerStatusCheck()
 	}()
 
-	h.respondJSON(w, http.StatusOK, ServiceResponse{
+	respondJSON(w, http.StatusOK, ServiceResponse{
 		Success: true,
 		Message: "Start initiated",
 	})
@@ -292,7 +292,7 @@ func (h *ServiceHandler) Stop(w http.ResponseWriter, r *http.Request) {
 		h.TriggerStatusCheck()
 	}()
 
-	h.respondJSON(w, http.StatusOK, ServiceResponse{
+	respondJSON(w, http.StatusOK, ServiceResponse{
 		Success: true,
 		Message: "Stop initiated",
 	})
@@ -320,7 +320,7 @@ func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Return immediately
-	h.respondJSON(w, http.StatusOK, ServiceResponse{
+	respondJSON(w, http.StatusOK, ServiceResponse{
 		Success: true,
 		Message: "Restart initiated",
 	})
@@ -335,11 +335,3 @@ func RegisterServiceRoutes(r *mux.Router, handler *ServiceHandler) {
 	r.HandleFunc("/xkeen/restart", handler.Restart).Methods("POST")
 }
 
-// respondJSON writes a JSON response.
-func (h *ServiceHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON response: %v", err)
-	}
-}

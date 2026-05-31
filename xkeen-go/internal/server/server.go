@@ -47,8 +47,9 @@ type Server struct {
 	subscriptionHandler  *handlers.SubscriptionHandler
 
 	// Shutdown state
-	shutdown bool
-	mu       sync.RWMutex
+	shutdown   bool
+	mu         sync.RWMutex
+	defaultHash string // cached bcrypt hash for default password
 }
 
 // sessionStore implements SessionManager interface.
@@ -507,6 +508,8 @@ func generateSecureToken(length int) (string, error) {
 }
 
 // SetSessionCookie sets the session cookie with secure attributes.
+// TODO: Make Secure flag configurable via config (e.g., cookie_secure bool).
+// Currently false because Keenetic routers serve over HTTP on LAN.
 func (s *Server) SetSessionCookie(w http.ResponseWriter, token string) {
 	maxAge := s.cfg.Auth.SessionTimeout * 3600 // Convert hours to seconds
 	http.SetCookie(w, &http.Cookie{
@@ -589,13 +592,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// Check password from config
 	storedHash := s.cfg.Auth.PasswordHash
 	if storedHash == "" {
-		// If no hash set, use default admin/admin
-		var err error
-		storedHash, err = s.security.HashPassword("admin")
-		if err != nil {
-			http.Error(w, "Internal error", http.StatusInternalServerError)
-			return
+		// If no hash set, use default admin/admin (cached to avoid bcrypt on every login)
+		if s.defaultHash == "" {
+			var err error
+			s.defaultHash, err = s.security.HashPassword("admin")
+			if err != nil {
+				http.Error(w, "Internal error", http.StatusInternalServerError)
+				return
+			}
 		}
+		storedHash = s.defaultHash
 	}
 
 	if !s.security.CheckPassword(req.Password, storedHash) {
@@ -725,18 +731,20 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	// Verify current password
 	storedHash := s.cfg.Auth.PasswordHash
 	if storedHash == "" {
-		// If no hash set (shouldn't happen in production), use default
-		var err error
-		storedHash, err = s.security.HashPassword("admin")
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":    false,
-				"error": "Internal server error",
-			})
-			return
+		if s.defaultHash == "" {
+			var err error
+			s.defaultHash, err = s.security.HashPassword("admin")
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":    false,
+					"error": "Internal server error",
+				})
+				return
+			}
 		}
+		storedHash = s.defaultHash
 	}
 
 	if !s.security.CheckPassword(req.CurrentPassword, storedHash) {

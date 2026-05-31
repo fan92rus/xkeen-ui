@@ -45,7 +45,7 @@ func (h *SubscriptionHandler) Stop() {
 // GET /api/subscriptions
 func (h *SubscriptionHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	cfg := h.store.GetConfig()
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"subscriptions": cfg.Subscriptions,
 		"filters":       cfg.Filters,
 		"strategy":      cfg.Strategy,
@@ -58,12 +58,12 @@ func (h *SubscriptionHandler) ListSubscriptions(w http.ResponseWriter, r *http.R
 func (h *SubscriptionHandler) AddSubscription(w http.ResponseWriter, r *http.Request) {
 	var req subscription.Subscription
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.URL == "" {
-		h.respondError(w, http.StatusBadRequest, "url is required")
+		respondError(w, http.StatusBadRequest, "url is required")
 		return
 	}
 	if req.Name == "" {
@@ -71,11 +71,11 @@ func (h *SubscriptionHandler) AddSubscription(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.store.AddSubscription(&req); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to add subscription: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to add subscription: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusCreated, map[string]interface{}{
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"success":      true,
 		"subscription": req,
 	})
@@ -86,24 +86,24 @@ func (h *SubscriptionHandler) AddSubscription(w http.ResponseWriter, r *http.Req
 func (h *SubscriptionHandler) UpdateSubscription(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if id == "" {
-		h.respondError(w, http.StatusBadRequest, "subscription id is required")
+		respondError(w, http.StatusBadRequest, "subscription id is required")
 		return
 	}
 
 	var req subscription.Subscription
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	req.ID = id
 
 	if err := h.store.UpdateSubscription(&req); err != nil {
-		h.respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":      true,
 		"subscription": req,
 	})
@@ -114,16 +114,16 @@ func (h *SubscriptionHandler) UpdateSubscription(w http.ResponseWriter, r *http.
 func (h *SubscriptionHandler) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if id == "" {
-		h.respondError(w, http.StatusBadRequest, "subscription id is required")
+		respondError(w, http.StatusBadRequest, "subscription id is required")
 		return
 	}
 
 	if err := h.store.DeleteSubscription(id); err != nil {
-		h.respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"id":      id,
 	})
@@ -136,13 +136,13 @@ func (h *SubscriptionHandler) DeleteSubscription(w http.ResponseWriter, r *http.
 func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if id == "" {
-		h.respondError(w, http.StatusBadRequest, "subscription id is required")
+		respondError(w, http.StatusBadRequest, "subscription id is required")
 		return
 	}
 
 	sub, err := h.store.GetSubscription(id)
 	if err != nil {
-		h.respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -156,7 +156,7 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 		sub.LastFetch = time.Now()
 		_ = h.store.UpdateSubscription(sub)
 
-		h.respondError(w, http.StatusBadGateway, fmt.Sprintf("fetch failed: %v", err))
+		respondError(w, http.StatusBadGateway, fmt.Sprintf("fetch failed: %v", err))
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	// Extract markers from unfiltered data
 	markers := subscription.ExtractAllMarkers(entries)
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,
 		"proxy_count": len(entries),
 		"total":       len(entries),
@@ -189,7 +189,7 @@ func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request)
 	allProxies := h.store.GetProxies()
 	markers := subscription.ExtractAllMarkers(allProxies)
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"total":    len(allProxies),
 		"markers":  markers,
 		"proxies":  allProxies,
@@ -202,7 +202,7 @@ func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request)
 // GET /api/subscriptions/filters
 func (h *SubscriptionHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 	filters := h.store.GetFilters()
-	h.respondJSON(w, http.StatusOK, filters)
+	respondJSON(w, http.StatusOK, filters)
 }
 
 // UpdateFilters replaces filter rules.
@@ -210,16 +210,16 @@ func (h *SubscriptionHandler) GetFilters(w http.ResponseWriter, r *http.Request)
 func (h *SubscriptionHandler) UpdateFilters(w http.ResponseWriter, r *http.Request) {
 	var req subscription.Filter
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if err := h.store.SetFilters(&req); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save filters: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save filters: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"filters": req,
 	})
@@ -231,7 +231,7 @@ func (h *SubscriptionHandler) UpdateFilters(w http.ResponseWriter, r *http.Reque
 // GET /api/subscriptions/strategy
 func (h *SubscriptionHandler) GetStrategy(w http.ResponseWriter, r *http.Request) {
 	strategy := h.store.GetStrategy()
-	h.respondJSON(w, http.StatusOK, strategy)
+	respondJSON(w, http.StatusOK, strategy)
 }
 
 // UpdateStrategy replaces routing strategy.
@@ -239,7 +239,7 @@ func (h *SubscriptionHandler) GetStrategy(w http.ResponseWriter, r *http.Request
 func (h *SubscriptionHandler) UpdateStrategy(w http.ResponseWriter, r *http.Request) {
 	var req subscription.RoutingStrategy
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
@@ -252,16 +252,16 @@ func (h *SubscriptionHandler) UpdateStrategy(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if !valid {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid strategy type %q; must be one of %v", req.Type, subscription.StrategyTypes))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid strategy type %q; must be one of %v", req.Type, subscription.StrategyTypes))
 		return
 	}
 
 	if err := h.store.SetStrategy(&req); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save strategy: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save strategy: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":  true,
 		"strategy": req,
 	})
@@ -278,7 +278,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	// Body is optional
 	if r.Body != nil && r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 			return
 		}
 	}
@@ -289,7 +289,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	filtered := subscription.ApplyFilter(allProxies, filters)
 
 	if len(filtered) == 0 {
-		h.respondError(w, http.StatusBadRequest, "no proxies available after filtering; fetch subscriptions first")
+		respondError(w, http.StatusBadRequest, "no proxies available after filtering; fetch subscriptions first")
 		return
 	}
 
@@ -298,7 +298,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	// Generate outbounds
 	outboundsJSON, err := subscription.GenerateOutboundsJSON(filtered)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
 	}
 
@@ -312,7 +312,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	// Generate routing
 	routingJSON, err := subscription.GenerateRoutingJSON(filtered, *strategy, existingRouting)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
 		return
 	}
 
@@ -321,27 +321,27 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	if subscription.NeedsObservatory(strategy.Type) {
 		observatoryJSON, err = subscription.GenerateObservatoryJSON()
 		if err != nil {
-			h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate observatory: %v", err))
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate observatory: %v", err))
 			return
 		}
 	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(h.xrayDir, 0755); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create config directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create config directory: %v", err))
 		return
 	}
 
 	// Write outbounds
 	outboundsPath := h.xrayDir + "/04_outbounds.json"
 	if err := os.WriteFile(outboundsPath, outboundsJSON, 0644); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write outbounds: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write outbounds: %v", err))
 		return
 	}
 
 	// Write routing
 	if err := os.WriteFile(routingPath, routingJSON, 0644); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write routing: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write routing: %v", err))
 		return
 	}
 
@@ -349,7 +349,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	observatoryPath := h.xrayDir + "/07_observatory.json"
 	if observatoryJSON != nil {
 		if err := os.WriteFile(observatoryPath, observatoryJSON, 0644); err != nil {
-			h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write observatory: %v", err))
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write observatory: %v", err))
 			return
 		}
 	} else {
@@ -375,7 +375,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		response["files"].(map[string]string)["observatory"] = observatoryPath
 	}
 
-	h.respondJSON(w, http.StatusOK, response)
+	respondJSON(w, http.StatusOK, response)
 }
 
 // Preview returns a dry-run of what Apply would generate, without writing files.
@@ -386,7 +386,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	filtered := subscription.ApplyFilter(allProxies, filters)
 
 	if len(filtered) == 0 {
-		h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"proxy_count": 0,
 			"outbounds":   nil,
 			"routing":     nil,
@@ -400,7 +400,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	outboundsJSON, err := subscription.GenerateOutboundsJSON(filtered)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
 	}
 
@@ -413,7 +413,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	routingJSON, err := subscription.GenerateRoutingJSON(filtered, *strategy, existingRouting)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
 		return
 	}
 
@@ -424,7 +424,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"proxy_count": len(filtered),
 		"outbounds":   json.RawMessage(outboundsJSON),
 		"routing":     json.RawMessage(routingJSON),
@@ -443,7 +443,7 @@ func (h *SubscriptionHandler) GetAutoApply(w http.ResponseWriter, r *http.Reques
 	enabled, cronExpr := h.store.GetAutoApply()
 	nextRun := h.scheduler.GetNextRun()
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled":   enabled,
 		"cron":      cronExpr,
 		"next_run":  nextRun,
@@ -461,14 +461,14 @@ type UpdateAutoApplyRequest struct {
 func (h *SubscriptionHandler) UpdateAutoApply(w http.ResponseWriter, r *http.Request) {
 	var req UpdateAutoApplyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	// Validate cron expression before saving
 	if req.Enabled && req.Cron != "" {
 		if err := h.scheduler.UpdateAutoApply(req.Enabled, req.Cron); err != nil {
-			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid cron expression: %v", err))
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid cron expression: %v", err))
 			return
 		}
 	} else {
@@ -477,12 +477,12 @@ func (h *SubscriptionHandler) UpdateAutoApply(w http.ResponseWriter, r *http.Req
 
 	// Persist to store
 	if err := h.store.SetAutoApply(req.Enabled, req.Cron); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save auto-apply: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save auto-apply: %v", err))
 		return
 	}
 
 	nextRun := h.scheduler.GetNextRun()
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled":  req.Enabled,
 		"cron":     req.Cron,
 		"next_run": nextRun,
@@ -515,16 +515,3 @@ func RegisterSubscriptionRoutes(r *mux.Router, handler *SubscriptionHandler) {
 	r.HandleFunc("/subscriptions/{id}/fetch", handler.FetchSubscription).Methods("POST")
 }
 
-// respondJSON writes a JSON response.
-func (h *SubscriptionHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON response: %v", err)
-	}
-}
-
-// respondError writes an error response.
-func (h *SubscriptionHandler) respondError(w http.ResponseWriter, statusCode int, message string) {
-	h.respondJSON(w, statusCode, map[string]interface{}{"error": message})
-}

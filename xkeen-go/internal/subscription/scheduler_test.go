@@ -972,3 +972,46 @@ func TestScheduler_FetcherContextCancellation(t *testing.T) {
 		t.Error("expected timeout error")
 	}
 }
+
+func TestScheduler_Stop_StopsIntervalChecker(t *testing.T) {
+	// Verify that Stop() terminates the interval checker goroutine
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+
+	// Start the scheduler — this starts the interval checker goroutine
+	sched.Start()
+
+	// Give it a moment to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Stop should cancel the context and wait for the goroutine
+	done := make(chan struct{})
+	go func() {
+		sched.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Stop returned — interval checker goroutine terminated
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() hung — interval checker goroutine not stopped")
+	}
+}
+
+func TestScheduler_StartStopMultipleTimes(t *testing.T) {
+	// Verify Start/Stop can be called multiple times without leaking goroutines
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+
+	for i := 0; i < 5; i++ {
+		sched := NewScheduler(store, fetcher)
+		sched.Start()
+		time.Sleep(50 * time.Millisecond)
+		sched.Stop()
+	}
+}
+

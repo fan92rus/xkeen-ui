@@ -344,109 +344,6 @@ func TestGenerateTags_UpdatesOutboundJSON(t *testing.T) {
 	}
 }
 
-// --- VMESS ---
-
-func TestParseVmess(t *testing.T) {
-	vmessConfig := map[string]interface{}{
-		"v":    "2",
-		"ps":   "🇺🇸 US Node",
-		"add":  "1.2.3.4",
-		"port": 443,
-		"id":   "uuid-here",
-		"aid":  0,
-		"net":  "ws",
-		"type": "none",
-		"host": "ws.example.com",
-		"path": "/ws",
-		"tls":  "tls",
-		"sni":  "example.com",
-	}
-	configJSON, _ := json.Marshal(vmessConfig)
-	uri := "vmess://" + base64.StdEncoding.EncodeToString(configJSON)
-
-	entry, err := ParseURI(uri)
-	if err != nil {
-		t.Fatalf("ParseURI(vmess) failed: %v", err)
-	}
-
-	if entry.Protocol != "vmess" {
-		t.Errorf("Protocol = %q, want vmess", entry.Protocol)
-	}
-	if entry.Country != "US" {
-		t.Errorf("Country = %q, want US", entry.Country)
-	}
-
-	var outbound map[string]interface{}
-	json.Unmarshal(entry.Outbound, &outbound)
-	if outbound["protocol"] != "vmess" {
-		t.Errorf("outbound.protocol = %v, want vmess", outbound["protocol"])
-	}
-	stream := outbound["streamSettings"].(map[string]interface{})
-	if stream["network"] != "ws" {
-		t.Errorf("network = %v, want ws", stream["network"])
-	}
-}
-
-// --- Shadowsocks ---
-
-func TestParseShadowsocks(t *testing.T) {
-	creds := base64.StdEncoding.EncodeToString([]byte("aes-256-gcm:mypassword"))
-	uri := "ss://" + creds + "@1.2.3.4:8388#MySS"
-
-	entry, err := ParseURI(uri)
-	if err != nil {
-		t.Fatalf("ParseURI(ss) failed: %v", err)
-	}
-
-	if entry.Protocol != "shadowsocks" {
-		t.Errorf("Protocol = %q, want shadowsocks", entry.Protocol)
-	}
-
-	var outbound map[string]interface{}
-	json.Unmarshal(entry.Outbound, &outbound)
-	settings := outbound["settings"].(map[string]interface{})
-	servers := settings["servers"].([]interface{})
-	server := servers[0].(map[string]interface{})
-
-	if server["method"] != "aes-256-gcm" {
-		t.Errorf("method = %v, want aes-256-gcm", server["method"])
-	}
-	if server["password"] != "mypassword" {
-		t.Errorf("password = %v, want mypassword", server["password"])
-	}
-	if server["address"] != "1.2.3.4" {
-		t.Errorf("address = %v, want 1.2.3.4", server["address"])
-	}
-}
-
-// --- Trojan ---
-
-func TestParseTrojan(t *testing.T) {
-	uri := "trojan://mypassword@example.com:443?security=tls&sni=example.com&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20Trojan"
-
-	entry, err := ParseURI(uri)
-	if err != nil {
-		t.Fatalf("ParseURI(trojan) failed: %v", err)
-	}
-
-	if entry.Protocol != "trojan" {
-		t.Errorf("Protocol = %q, want trojan", entry.Protocol)
-	}
-	if entry.Country != "DE" {
-		t.Errorf("Country = %q, want DE", entry.Country)
-	}
-
-	var outbound map[string]interface{}
-	json.Unmarshal(entry.Outbound, &outbound)
-	settings := outbound["settings"].(map[string]interface{})
-	servers := settings["servers"].([]interface{})
-	server := servers[0].(map[string]interface{})
-	if server["password"] != "mypassword" {
-		t.Errorf("password = %v, want mypassword", server["password"])
-	}
-}
-
-// --- Subscription Content Parsing ---
 
 func TestParseSubscriptionContent_Base64(t *testing.T) {
 	lines := []string{
@@ -499,9 +396,22 @@ func TestParseURI_Empty(t *testing.T) {
 }
 
 func TestParseURI_Unsupported(t *testing.T) {
-	_, err := ParseURI("http://example.com")
+	_, err := ParseURI("vmess://dGVzdA==")
 	if err == nil {
-		t.Error("expected error for unsupported scheme")
+		t.Error("expected error for vmess scheme")
+	}
+	if !strings.Contains(err.Error(), "only vless") {
+		t.Errorf("error should mention only vless, got: %v", err)
+	}
+
+	_, err2 := ParseURI("trojan://pass@host:443")
+	if err2 == nil {
+		t.Error("expected error for trojan scheme")
+	}
+
+	_, err3 := ParseURI("ss://creds@host:8388")
+	if err3 == nil {
+		t.Error("expected error for ss scheme")
 	}
 }
 

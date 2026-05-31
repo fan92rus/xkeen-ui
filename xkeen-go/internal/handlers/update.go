@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -32,6 +33,8 @@ type UpdateHandler struct {
 	initScript    string
 	updateScript  string
 	downloadURL   string
+
+	mu             sync.Mutex
 	devReleaseTag string // Latest dev release tag for download
 }
 
@@ -88,7 +91,7 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		h.respondJSON(w, http.StatusOK, CheckUpdateResponse{
+		respondJSON(w, http.StatusOK, CheckUpdateResponse{
 			CurrentVersion: currentVersion,
 			Architecture:   runtime.GOARCH,
 			BinaryName:     h.binaryName,
@@ -102,10 +105,10 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Store dev release tag for download if checking prerelease
 	if checkPrerelease && updateAvailable {
-		h.devReleaseTag = release.TagName
+		h.setDevReleaseTag(release.TagName)
 	}
 
-	h.respondJSON(w, http.StatusOK, CheckUpdateResponse{
+	respondJSON(w, http.StatusOK, CheckUpdateResponse{
 		CurrentVersion:  currentVersion,
 		LatestVersion:   release.TagName,
 		UpdateAvailable: updateAvailable,
@@ -319,9 +322,9 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	// Determine download URL
 	prerelease := r.URL.Query().Get("prerelease") == "true"
 	downloadURL := h.downloadURL
-	if prerelease && h.devReleaseTag != "" {
+	if devTag := h.getDevReleaseTag(); prerelease && devTag != "" {
 		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
-			h.githubRepo, h.devReleaseTag, h.binaryName)
+			h.githubRepo, devTag, h.binaryName)
 	}
 
 	// Step 1: Download and verify checksum
@@ -476,13 +479,17 @@ func (h *UpdateHandler) downloadWithChecksum(ctx context.Context, binaryPath, bi
 	return nil
 }
 
-// respondJSON writes a JSON response.
-func (h *UpdateHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON response: %v", err)
-	}
+
+func (h *UpdateHandler) setDevReleaseTag(tag string) {
+	h.mu.Lock()
+	h.devReleaseTag = tag
+	h.mu.Unlock()
+}
+
+func (h *UpdateHandler) getDevReleaseTag() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.devReleaseTag
 }
 
 // RegisterUpdateRoutes registers update-related routes.

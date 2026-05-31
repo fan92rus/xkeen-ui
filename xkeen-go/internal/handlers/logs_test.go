@@ -503,8 +503,8 @@ func TestCheckOrigin_EmptyOrigin(t *testing.T) {
 	req := httptest.NewRequest("GET", "/ws/logs", nil)
 	req.Header.Del("Origin")
 
-	if !h.checkOrigin(req) {
-		t.Error("empty origin should be allowed")
+	if h.checkOrigin(req) {
+		t.Error("empty origin should be rejected")
 	}
 }
 

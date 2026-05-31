@@ -2,8 +2,6 @@
 package handlers
 
 import (
-	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -430,7 +428,7 @@ func (h *CommandsHandler) GetCommands(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	h.respondJSON(w, http.StatusOK, CommandsListResponse{
+	respondJSON(w, http.StatusOK, CommandsListResponse{
 		Commands: commands,
 	})
 }
@@ -440,11 +438,3 @@ func RegisterCommandsRoutes(r *mux.Router, handler *CommandsHandler) {
 	r.HandleFunc("/xkeen/commands", handler.GetCommands).Methods("GET")
 }
 
-// respondJSON writes a JSON response.
-func (h *CommandsHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON response: %v", err)
-	}
-}

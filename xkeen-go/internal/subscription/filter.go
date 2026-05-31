@@ -13,6 +13,23 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 		return proxies
 	}
 
+	// Compile regexes once before the loop
+	var includeRe, excludeRe *regexp.Regexp
+	if filter.IncludeRegex != "" {
+		var err error
+		includeRe, err = regexp.Compile(filter.IncludeRegex)
+		if err != nil {
+			includeRe = nil // invalid regex → pass through
+		}
+	}
+	if filter.ExcludeRegex != "" {
+		var err error
+		excludeRe, err = regexp.Compile(filter.ExcludeRegex)
+		if err != nil {
+			excludeRe = nil // invalid regex → don't exclude
+		}
+	}
+
 	result := make([]*ProxyEntry, 0, len(proxies))
 
 	for _, p := range proxies {
@@ -28,10 +45,10 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 		if isExcludedCountry(p, filter) {
 			continue
 		}
-		if !passesIncludeRegex(p, filter) {
+		if !passesCompiledIncludeRegex(p, includeRe) {
 			continue
 		}
-		if isExcludedRegex(p, filter) {
+		if isExcludedByCompiledRegex(p, excludeRe) {
 			continue
 		}
 		result = append(result, p)
@@ -93,26 +110,19 @@ func isExcludedCountry(p *ProxyEntry, f *Filter) bool {
 	return false
 }
 
-// passesIncludeRegex returns true if IncludeRegex is empty or the proxy's remarks match.
-func passesIncludeRegex(p *ProxyEntry, f *Filter) bool {
-	if f.IncludeRegex == "" {
+// passesCompiledIncludeRegex returns true if includeRe is nil (no filter or invalid regex)
+// or the proxy's remarks match.
+func passesCompiledIncludeRegex(p *ProxyEntry, includeRe *regexp.Regexp) bool {
+	if includeRe == nil {
 		return true
 	}
-	re, err := regexp.Compile(f.IncludeRegex)
-	if err != nil {
-		return true // invalid regex → pass through
-	}
-	return re.MatchString(p.Remarks)
+	return includeRe.MatchString(p.Remarks)
 }
 
-// isExcludedRegex returns true if ExcludeRegex is non-empty and the proxy's remarks match.
-func isExcludedRegex(p *ProxyEntry, f *Filter) bool {
-	if f.ExcludeRegex == "" {
+// isExcludedByCompiledRegex returns true if excludeRe is non-nil and the proxy's remarks match.
+func isExcludedByCompiledRegex(p *ProxyEntry, excludeRe *regexp.Regexp) bool {
+	if excludeRe == nil {
 		return false
 	}
-	re, err := regexp.Compile(f.ExcludeRegex)
-	if err != nil {
-		return false // invalid regex → don't exclude
-	}
-	return re.MatchString(p.Remarks)
+	return excludeRe.MatchString(p.Remarks)
 }

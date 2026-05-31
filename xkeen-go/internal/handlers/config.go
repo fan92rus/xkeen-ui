@@ -120,7 +120,7 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	// Validate path
 	cleanPath, err := h.validator.Validate(queryPath)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -128,10 +128,10 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	entries, err := os.ReadDir(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			h.respondError(w, http.StatusNotFound, "directory not found")
+			respondError(w, http.StatusNotFound, "directory not found")
 			return
 		}
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read directory: %v", err))
 		return
 	}
 
@@ -180,7 +180,7 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.respondJSON(w, http.StatusOK, ListFilesResponse{
+	respondJSON(w, http.StatusOK, ListFilesResponse{
 		Path:  cleanPath,
 		Files: files,
 	})
@@ -192,7 +192,7 @@ func (h *ConfigHandler) GetMode(w http.ResponseWriter, r *http.Request) {
 	xrayAvailable := h.dirExists(h.xrayConfigDir)
 	mihomoAvailable := h.dirExists(h.mihomoConfigDir)
 
-	h.respondJSON(w, http.StatusOK, ModeInfo{
+	respondJSON(w, http.StatusOK, ModeInfo{
 		Mode:            h.currentMode,
 		XrayAvailable:   xrayAvailable,
 		MihomoAvailable: mihomoAvailable,
@@ -204,22 +204,22 @@ func (h *ConfigHandler) GetMode(w http.ResponseWriter, r *http.Request) {
 func (h *ConfigHandler) SetMode(w http.ResponseWriter, r *http.Request) {
 	var req ModeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.Mode != "xray" && req.Mode != "mihomo" {
-		h.respondError(w, http.StatusBadRequest, "mode must be 'xray' or 'mihomo'")
+		respondError(w, http.StatusBadRequest, "mode must be 'xray' or 'mihomo'")
 		return
 	}
 
 	// Check availability
 	if req.Mode == "mihomo" && !h.dirExists(h.mihomoConfigDir) {
-		h.respondError(w, http.StatusBadRequest, "mihomo is not available")
+		respondError(w, http.StatusBadRequest, "mihomo is not available")
 		return
 	}
 	if req.Mode == "xray" && !h.dirExists(h.xrayConfigDir) {
-		h.respondError(w, http.StatusBadRequest, "xray is not available")
+		respondError(w, http.StatusBadRequest, "xray is not available")
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *ConfigHandler) SetMode(w http.ResponseWriter, r *http.Request) {
 		// Continue anyway, mode is updated in memory
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"mode":    req.Mode,
 	})
@@ -286,14 +286,14 @@ func (h *ConfigHandler) dirExists(path string) bool {
 func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 	filePath := r.URL.Query().Get("path")
 	if filePath == "" {
-		h.respondError(w, http.StatusBadRequest, "path parameter is required")
+		respondError(w, http.StatusBadRequest, "path parameter is required")
 		return
 	}
 
 	// Validate path
 	cleanPath, err := h.validator.Validate(filePath)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -301,10 +301,10 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			h.respondError(w, http.StatusNotFound, "file not found")
+			respondError(w, http.StatusNotFound, "file not found")
 			return
 		}
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read file: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read file: %v", err))
 		return
 	}
 
@@ -317,13 +317,13 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		// JSON/JSONC files - validate JSON
 		jsonData, err := utils.JSONCtoJSON(data)
 		if err != nil {
-			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse JSONC: %v", err))
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse JSONC: %v", err))
 			return
 		}
 		isValid = json.Valid(jsonData)
 	}
 
-	h.respondJSON(w, http.StatusOK, ReadFileResponse{
+	respondJSON(w, http.StatusOK, ReadFileResponse{
 		Path:    cleanPath,
 		Content: string(data),
 		Valid:   isValid,
@@ -337,24 +337,24 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 
 	var req WriteFileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.Path == "" {
-		h.respondError(w, http.StatusBadRequest, "path is required")
+		respondError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 
 	if req.Content == "" {
-		h.respondError(w, http.StatusBadRequest, "content is required")
+		respondError(w, http.StatusBadRequest, "content is required")
 		return
 	}
 
 	// Validate path
 	cleanPath, err := h.validator.Validate(req.Path)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -362,19 +362,19 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	if isYAMLFile(cleanPath) {
 		// YAML files - basic validation (non-empty)
 		if strings.TrimSpace(req.Content) == "" {
-			h.respondError(w, http.StatusBadRequest, "YAML content cannot be empty")
+			respondError(w, http.StatusBadRequest, "YAML content cannot be empty")
 			return
 		}
 	} else {
 		// JSON/JSONC files - validate JSON
 		jsonData, err := utils.JSONCtoJSON([]byte(req.Content))
 		if err != nil {
-			h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSONC: %v", err))
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSONC: %v", err))
 			return
 		}
 
 		if !json.Valid(jsonData) {
-			h.respondError(w, http.StatusBadRequest, "invalid JSON content")
+			respondError(w, http.StatusBadRequest, "invalid JSON content")
 			return
 		}
 	}
@@ -388,17 +388,17 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	// Ensure parent directory exists
 	parentDir := filepath.Dir(cleanPath)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
 		return
 	}
 
 	// Write file
 	if err := os.WriteFile(cleanPath, []byte(req.Content), 0644); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write file: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write file: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"path":    cleanPath,
 		"backup":  backupPath,
@@ -468,20 +468,6 @@ func (h *ConfigHandler) cleanupOldBackups(filePath string, keep int) {
 	}
 }
 
-// respondJSON writes a JSON response.
-func (h *ConfigHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON response: %v", err)
-	}
-}
-
-// respondError writes an error response.
-func (h *ConfigHandler) respondError(w http.ResponseWriter, statusCode int, message string) {
-	h.respondJSON(w, statusCode, ErrorResponse{Error: message})
-}
-
 // DeleteFileRequest is the request body for the DeleteFile endpoint.
 type DeleteFileRequest struct {
 	Path string `json:"path"`
@@ -498,25 +484,25 @@ type RenameFileRequest struct {
 func (h *ConfigHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	var req DeleteFileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.Path == "" {
-		h.respondError(w, http.StatusBadRequest, "path is required")
+		respondError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 
 	// Validate path
 	cleanPath, err := h.validator.Validate(req.Path)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-		h.respondError(w, http.StatusNotFound, "file not found")
+		respondError(w, http.StatusNotFound, "file not found")
 		return
 	}
 
@@ -528,11 +514,11 @@ func (h *ConfigHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 
 	// Delete file
 	if err := os.Remove(cleanPath); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete file: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete file: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"path":    cleanPath,
 		"backup":  backupPath,
@@ -545,37 +531,37 @@ func (h *ConfigHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 func (h *ConfigHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 	var req RenameFileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.OldPath == "" || req.NewPath == "" {
-		h.respondError(w, http.StatusBadRequest, "old_path and new_path are required")
+		respondError(w, http.StatusBadRequest, "old_path and new_path are required")
 		return
 	}
 
 	// Validate both paths
 	oldCleanPath, err := h.validator.Validate(req.OldPath)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, fmt.Sprintf("old_path: %v", err))
+		respondError(w, http.StatusForbidden, fmt.Sprintf("old_path: %v", err))
 		return
 	}
 
 	newCleanPath, err := h.validator.Validate(req.NewPath)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, fmt.Sprintf("new_path: %v", err))
+		respondError(w, http.StatusForbidden, fmt.Sprintf("new_path: %v", err))
 		return
 	}
 
 	// Check if source file exists
 	if _, err := os.Stat(oldCleanPath); os.IsNotExist(err) {
-		h.respondError(w, http.StatusNotFound, "source file not found")
+		respondError(w, http.StatusNotFound, "source file not found")
 		return
 	}
 
 	// Check if destination already exists
 	if _, err := os.Stat(newCleanPath); err == nil {
-		h.respondError(w, http.StatusConflict, "destination file already exists")
+		respondError(w, http.StatusConflict, "destination file already exists")
 		return
 	}
 
@@ -588,17 +574,17 @@ func (h *ConfigHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 	// Ensure parent directory exists for destination
 	parentDir := filepath.Dir(newCleanPath)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
 		return
 	}
 
 	// Rename file
 	if err := os.Rename(oldCleanPath, newCleanPath); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to rename file: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to rename file: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":  true,
 		"old_path": oldCleanPath,
 		"new_path": newCleanPath,
@@ -611,25 +597,25 @@ func (h *ConfigHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 func (h *ConfigHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
 	var req WriteFileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.Path == "" {
-		h.respondError(w, http.StatusBadRequest, "path is required")
+		respondError(w, http.StatusBadRequest, "path is required")
 		return
 	}
 
 	// Validate path
 	cleanPath, err := h.validator.Validate(req.Path)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
 	// Check if file already exists
 	if _, err := os.Stat(cleanPath); err == nil {
-		h.respondError(w, http.StatusConflict, "file already exists")
+		respondError(w, http.StatusConflict, "file already exists")
 		return
 	}
 
@@ -642,17 +628,17 @@ func (h *ConfigHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
 	// Ensure parent directory exists
 	parentDir := filepath.Dir(cleanPath)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
 		return
 	}
 
 	// Write file
 	if err := os.WriteFile(cleanPath, []byte(content), 0644); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create file: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create file: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusCreated, map[string]interface{}{
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"success": true,
 		"path":    cleanPath,
 		"message": "file created",
@@ -664,7 +650,7 @@ func (h *ConfigHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
 func (h *ConfigHandler) ListBackups(w http.ResponseWriter, r *http.Request) {
 	filePath := r.URL.Query().Get("path")
 	if filePath == "" {
-		h.respondError(w, http.StatusBadRequest, "path parameter is required")
+		respondError(w, http.StatusBadRequest, "path parameter is required")
 		return
 	}
 
@@ -672,10 +658,10 @@ func (h *ConfigHandler) ListBackups(w http.ResponseWriter, r *http.Request) {
 	entries, err := os.ReadDir(h.backupDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			h.respondJSON(w, http.StatusOK, []FileInfo{})
+			respondJSON(w, http.StatusOK, []FileInfo{})
 			return
 		}
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup directory: %v", err))
 		return
 	}
 
@@ -700,7 +686,7 @@ func (h *ConfigHandler) ListBackups(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"file":    filePath,
 		"backups": backups,
 	})
@@ -713,12 +699,12 @@ func (h *ConfigHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		BackupPath string `json:"backup_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
 	if req.BackupPath == "" {
-		h.respondError(w, http.StatusBadRequest, "backup_path is required")
+		respondError(w, http.StatusBadRequest, "backup_path is required")
 		return
 	}
 
@@ -729,12 +715,12 @@ func (h *ConfigHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		cleanPath := filepath.Clean(req.BackupPath)
 		absPath, absErr := filepath.Abs(cleanPath)
 		if absErr != nil {
-			h.respondError(w, http.StatusBadRequest, "invalid backup path")
+			respondError(w, http.StatusBadRequest, "invalid backup path")
 			return
 		}
-		// Verify the cleaned absolute path is within backup dir
-		if !strings.HasPrefix(absPath, h.backupDir+string(filepath.Separator)) && absPath != h.backupDir {
-			h.respondError(w, http.StatusForbidden, "backup path must be in backup directory")
+		rel, relErr := filepath.Rel(h.backupDir, absPath)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, "..") {
+			respondError(w, http.StatusForbidden, "backup path must be in backup directory")
 			return
 		}
 		cleanBackupPath = absPath
@@ -745,7 +731,7 @@ func (h *ConfigHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	backupName := filepath.Base(cleanBackupPath)
 	idx := strings.LastIndex(backupName, ".20") // Find timestamp
 	if idx == -1 {
-		h.respondError(w, http.StatusBadRequest, "invalid backup filename format")
+		respondError(w, http.StatusBadRequest, "invalid backup filename format")
 		return
 	}
 	originalName := backupName[:idx]
@@ -753,11 +739,11 @@ func (h *ConfigHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	// Read backup content
 	data, err := os.ReadFile(cleanBackupPath)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":         true,
 		"backup_path":     cleanBackupPath,
 		"original_name":   originalName,
@@ -771,7 +757,7 @@ func (h *ConfigHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 func (h *ConfigHandler) GetBackupContent(w http.ResponseWriter, r *http.Request) {
 	backupPath := r.URL.Query().Get("backup_path")
 	if backupPath == "" {
-		h.respondError(w, http.StatusBadRequest, "backup_path parameter is required")
+		respondError(w, http.StatusBadRequest, "backup_path parameter is required")
 		return
 	}
 
@@ -783,12 +769,12 @@ func (h *ConfigHandler) GetBackupContent(w http.ResponseWriter, r *http.Request)
 		cleanBackupPath = filepath.Clean(backupPath)
 		absPath, absErr := filepath.Abs(cleanBackupPath)
 		if absErr != nil {
-			h.respondError(w, http.StatusBadRequest, "invalid backup path")
+			respondError(w, http.StatusBadRequest, "invalid backup path")
 			return
 		}
-		// Verify the cleaned absolute path is within backup dir
-		if !strings.HasPrefix(absPath, h.backupDir+string(filepath.Separator)) && absPath != h.backupDir {
-			h.respondError(w, http.StatusForbidden, "backup path must be in backup directory")
+		rel, relErr := filepath.Rel(h.backupDir, absPath)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, "..") {
+			respondError(w, http.StatusForbidden, "backup path must be in backup directory")
 			return
 		}
 		cleanBackupPath = absPath
@@ -800,14 +786,14 @@ func (h *ConfigHandler) GetBackupContent(w http.ResponseWriter, r *http.Request)
 	data, err := os.ReadFile(cleanBackupPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			h.respondError(w, http.StatusNotFound, "backup not found")
+			respondError(w, http.StatusNotFound, "backup not found")
 			return
 		}
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,
 		"backup_path": cleanBackupPath,
 		"content":     string(data),

@@ -4,11 +4,11 @@ package handlers
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,25 +122,21 @@ func (h *LogsHandler) Close() {
 // checkOrigin validates the origin of WebSocket connections.
 func (h *LogsHandler) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	host := r.Host
-
 	if origin == "" {
-		// Allow connections without Origin header (same-origin browser requests)
-		return true
+		return false
 	}
 
-	// Check against allowed origins
+	// Check against explicitly allowed origins
 	if h.allowedOrigins[origin] {
 		return true
 	}
 
 	// Allow same-origin requests
-	if origin == "http://"+host || origin == "https://"+host {
-		return true
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
 	}
-
-	log.Printf("WebSocket connection rejected from origin: %s (host: %s)", origin, host)
-	return false
+	return u.Host == r.Host
 }
 
 // runBroadcast handles broadcasting messages to all connected clients.
@@ -256,13 +252,13 @@ func (h *LogsHandler) ReadLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Validate path
 	if h.validator == nil {
-		h.respondError(w, http.StatusInternalServerError, "Path validator not initialized")
+		respondError(w, http.StatusInternalServerError, "Path validator not initialized")
 		return
 	}
 
 	cleanPath, err := h.validator.Validate(logPath)
 	if err != nil {
-		h.respondError(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -280,11 +276,11 @@ func (h *LogsHandler) ReadLogs(w http.ResponseWriter, r *http.Request) {
 	// Read file
 	entries, err := h.readLastLines(cleanPath, lines)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"path":    cleanPath,
 		"entries": entries,
 	})
@@ -412,17 +408,6 @@ func (h *LogsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// respondJSON writes a JSON response.
-func (h *LogsHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
-}
-
-// respondError writes an error response.
-func (h *LogsHandler) respondError(w http.ResponseWriter, statusCode int, message string) {
-	h.respondJSON(w, statusCode, ErrorResponse{Error: message})
-}
 
 // RegisterLogsRoutes registers logs-related routes (protected API routes).
 func RegisterLogsRoutes(r *mux.Router, handler *LogsHandler) {

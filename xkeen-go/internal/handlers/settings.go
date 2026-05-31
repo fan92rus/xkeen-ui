@@ -77,23 +77,23 @@ func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		if os.IsNotExist(err) {
 			// File doesn't exist, return defaults
-			h.respondJSON(w, http.StatusOK, response)
+			respondJSON(w, http.StatusOK, response)
 			return
 		}
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read log config: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read log config: %v", err))
 		return
 	}
 
 	// Parse JSONC (Xray configs may have comments)
 	jsonData, err := utils.JSONCtoJSON(data)
 	if err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse log config: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse log config: %v", err))
 		return
 	}
 
 	var config XrayLogConfigFile
 	if err := json.Unmarshal(jsonData, &config); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse log config JSON: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse log config JSON: %v", err))
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, r *http.Request
 		response.ErrorLog = config.Log.Error
 	}
 
-	h.respondJSON(w, http.StatusOK, response)
+	respondJSON(w, http.StatusOK, response)
 }
 
 // UpdateLogLevel updates the Xray log level.
@@ -116,7 +116,7 @@ func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, r *http.Request
 func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request) {
 	var req UpdateLogLevelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 		"none":    true,
 	}
 	if !validLevels[req.LogLevel] {
-		h.respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid log level: %s (valid: debug, info, warning, error, none)", req.LogLevel))
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid log level: %s (valid: debug, info, warning, error, none)", req.LogLevel))
 		return
 	}
 
@@ -171,14 +171,14 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(h.logConfigPath), 0755); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create config directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create config directory: %v", err))
 		return
 	}
 
 	// Write new config
 	newData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal config: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal config: %v", err))
 		return
 	}
 
@@ -186,11 +186,11 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 	newData = append(newData, '\n')
 
 	if err := os.WriteFile(h.logConfigPath, newData, 0644); err != nil {
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config: %v", err))
 		return
 	}
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":   true,
 		"log_level": req.LogLevel,
 		"message":   fmt.Sprintf("Log level updated to '%s'. Restart Xray to apply changes.", req.LogLevel),
@@ -239,10 +239,10 @@ func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http
 	entries, err := os.ReadDir(h.backupDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			h.respondJSON(w, http.StatusOK, []FileInfo{})
+			respondJSON(w, http.StatusOK, []FileInfo{})
 			return
 		}
-		h.respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup directory: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read backup directory: %v", err))
 		return
 	}
 
@@ -271,25 +271,12 @@ func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http
 		return backups[i].Modified > backups[j].Modified
 	})
 
-	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"file":    h.logConfigPath,
 		"backups": backups,
 	})
 }
 
-// respondJSON writes a JSON response.
-func (h *SettingsHandler) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON response: %v", err)
-	}
-}
-
-// respondError writes an error response.
-func (h *SettingsHandler) respondError(w http.ResponseWriter, statusCode int, message string) {
-	h.respondJSON(w, statusCode, ErrorResponse{Error: message})
-}
 
 // RegisterSettingsRoutes registers settings-related routes.
 func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
