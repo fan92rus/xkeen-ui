@@ -73,6 +73,7 @@ const defaultConfigJSON = `{
 // getInitScript returns the init script template with the given binary name.
 func getInitScript(binName string) string {
 	return fmt.Sprintf(`#!/bin/sh
+PATH=/opt/bin:/opt/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 DAEMON=/opt/bin/%s
 CONFIG=/opt/etc/xkeen-ui/config.json
 PIDFILE=/var/run/xkeen-ui.pid
@@ -81,37 +82,62 @@ NAME=xkeen-ui
 DESC="XKEEN-UI Web Interface"
 
 start() {
-    if [ -f "$PIDFILE" ] && kill -0 $(cat "$PIDFILE") 2>/dev/null; then
-        echo "$NAME is already running"
+    # Clean stale PID file
+    if [ -f "$PIDFILE" ]; then
+        if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            rm -f "$PIDFILE"
+        fi
+    fi
+
+    if [ -f "$PIDFILE" ]; then
+        echo "$NAME is already running (PID: $(cat "$PIDFILE"))"
         return 1
     fi
+
     echo "Starting $DESC..."
     mkdir -p /opt/var/log
-    start-stop-daemon -S -b -m -p "$PIDFILE" -x "$DAEMON" -- -config "$CONFIG" >> "$LOGFILE" 2>&1
-    echo "Started $NAME (PID: $(cat $PIDFILE))"
+    "$DAEMON" -config "$CONFIG" >> "$LOGFILE" 2>&1 &
+    echo $! > "$PIDFILE"
+
+    # Brief wait to confirm process didn't crash immediately
+    sleep 1
+    if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        rm -f "$PIDFILE"
+        echo "ERROR: $NAME failed to start, check $LOGFILE"
+        return 1
+    fi
+
+    echo "$NAME started (PID: $(cat "$PIDFILE"))"
     echo "Logs: $LOGFILE"
 }
 
 stop() {
     echo "Stopping $DESC..."
-    start-stop-daemon -K -p "$PIDFILE" -x "$DAEMON" 2>/dev/null
+    if [ -f "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            # Wait up to 5 seconds for graceful shutdown
+            i=0
+            while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 5 ]; do
+                sleep 1
+                i=$((i + 1))
+            done
+            # Force kill if still running
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid" 2>/dev/null
+            fi
+        fi
+    fi
     rm -f "$PIDFILE"
     echo "$NAME stopped"
 }
 
 status() {
-    if [ -f "$PIDFILE" ] && kill -0 $(cat "$PIDFILE") 2>/dev/null; then
-        echo "$NAME is running (PID: $(cat $PIDFILE))"
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "$NAME is running (PID: $(cat "$PIDFILE"))"
     else
         echo "$NAME is not running"
-    fi
-}
-
-log() {
-    if [ -f "$LOGFILE" ]; then
-        tail -f "$LOGFILE"
-    else
-        echo "Log file not found: $LOGFILE"
     fi
 }
 
@@ -130,14 +156,8 @@ case "$1" in
     status)
         status
         ;;
-    log)
-        log
-        ;;
-    uninstall)
-        $DAEMON uninstall
-        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|log|uninstall}"
+        echo "Usage: $0 {start|stop|restart|status}"
         exit 1
         ;;
 esac
@@ -435,23 +455,22 @@ func install() error {
 		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
-	// Enable autostart (create symlinks in rc.d)
+	// Enable autostart — Entware runs /opt/etc/init.d/S* at boot
 	fmt.Println("Enabling autostart...")
-	rcDir := "/opt/etc/init.d/rc.d"
-	if err := os.MkdirAll(rcDir, 0755); err != nil {
-		fmt.Printf("Warning: failed to create rc.d directory: %v\n", err)
+	autoStart := "/opt/etc/init.d/S99xkeen-ui"
+	os.Remove(autoStart)
+	if err := os.Symlink(installInitScript, autoStart); err != nil {
+		fmt.Printf("Warning: failed to create autostart symlink: %v\n", err)
 	}
+	// Also create in rc.d/ for Entware variants that use it
+	rcDir := "/opt/etc/init.d/rc.d"
+	os.MkdirAll(rcDir, 0755)
 	sLink := filepath.Join(rcDir, "S99xkeen-ui")
 	kLink := filepath.Join(rcDir, "K01xkeen-ui")
-	// Remove existing symlinks first (os.Symlink doesn't overwrite)
 	os.Remove(sLink)
 	os.Remove(kLink)
-	if err := os.Symlink(installInitScript, sLink); err != nil {
-		fmt.Printf("Warning: failed to create S99 symlink: %v\n", err)
-	}
-	if err := os.Symlink(installInitScript, kLink); err != nil {
-		fmt.Printf("Warning: failed to create K01 symlink: %v\n", err)
-	}
+	os.Symlink(installInitScript, sLink)
+	os.Symlink(installInitScript, kLink)
 
 	fmt.Println()
 	fmt.Println("===================================")
