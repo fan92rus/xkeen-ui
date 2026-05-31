@@ -935,3 +935,99 @@ func TestParseSubscriptionContent_Base64MixedProtocols(t *testing.T) {
 		t.Errorf("expected all 3 protocols, got %v", protocols)
 	}
 }
+
+// --- isLetterOrDigit ---
+
+func TestIsLetterOrDigit(t *testing.T) {
+	tests := []struct {
+		input rune
+		want  bool
+	}{
+		{'a', true},
+		{'z', true},
+		{'A', true},
+		{'Z', true},
+		{'0', true},
+		{'9', true},
+		// Cyrillic range 0x0400-0x04FF
+		{0x0410, true},  // А
+		{0x044F, true},  // я
+		{0x0400, true},  // Ѐ
+		{0x04FF, true},  // ӿ
+		// Non-matching
+		{'-', false},
+		{'.', false},
+		{'@', false},
+		{' ', false},
+		{'\n', false},
+		{0x00E9, false}, // é (Latin extended)
+		{0x0500, false}, // not in Cyrillic range
+		{0x03FF, false}, // Greek, not Cyrillic
+	}
+	for _, tt := range tests {
+		got := isLetterOrDigit(tt.input)
+		if got != tt.want {
+			t.Errorf("isLetterOrDigit(%q [=U+%04X]) = %v, want %v", tt.input, tt.input, got, tt.want)
+		}
+	}
+}
+
+// --- jsonInt ---
+
+func TestJsonInt(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+		want  int
+	}{
+		{"float64", float64(42), 42},
+		{"float64_zero", float64(0), 0},
+		{"string_number", "123", 123},
+		{"string_zero", "0", 0},
+		{"int", 99, 99},
+		{"invalid_string", "abc", 0},
+		{"nil", nil, 0},
+		{"bool", true, 0},
+		{"float_string", "12.5", 0}, // Atoi can't parse float
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := jsonInt(tt.input)
+			if got != tt.want {
+				t.Errorf("jsonInt(%v) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- isEmojiToken ---
+
+func TestIsEmojiToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"empty", "", false},
+		{"starts_with_letter", "hello", false},
+		{"starts_with_uppercase", "Hello", false},
+		{"starts_with_digit", "123abc", false},
+		{"starts_with_cyrillic", "Россия", false},
+		{"star_emoji", "\u2B50", true},      // ⭐
+		{"lightning", "\u26A1", true},         // ⚡
+		{"game_emoji", "\U0001F3AE", true},    // 🎮
+		{"dash", "-", true},                   // non-letter/digit
+		{"punctuation", "!", true},             // non-letter/digit
+		{"variation_selector_then_emoji", "\uFE0F\u2B50", true}, // VS then star
+		{"zwj_then_emoji", "\u200D\u2B50", true},               // ZWJ then star
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isEmojiToken(tt.input)
+			if got != tt.want {
+				t.Errorf("isEmojiToken(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+

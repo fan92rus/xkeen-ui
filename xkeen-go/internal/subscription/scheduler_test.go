@@ -1005,3 +1005,104 @@ func TestScheduler_StartStopMultipleTimes(t *testing.T) {
 	}
 }
 
+// --- enableCron ---
+
+func TestScheduler_EnableCron(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+	defer sched.Stop()
+
+	// Enable cron with a valid expression
+	err := sched.enableCron("0 */6 * * *")
+	if err != nil {
+		t.Fatalf("enableCron failed: %v", err)
+	}
+
+	sched.mu.Lock()
+	hasCron := sched.cron != nil
+	sched.mu.Unlock()
+	if !hasCron {
+		t.Error("expected cron to be initialized after enableCron")
+	}
+
+	// Next run should be available
+	nextRun := sched.GetNextRun()
+	if nextRun.IsZero() {
+		t.Error("GetNextRun should return non-zero time after enableCron")
+	}
+}
+
+func TestScheduler_EnableCron_InvalidExpression(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+	defer sched.Stop()
+
+	err := sched.enableCron("invalid-cron-expression")
+	if err == nil {
+		t.Error("expected error for invalid cron expression")
+	}
+
+	sched.mu.Lock()
+	hasCron := sched.cron != nil
+	sched.mu.Unlock()
+	if hasCron {
+		t.Error("cron should be nil after failed enableCron")
+	}
+}
+
+// --- Start with existing cron config ---
+
+func TestScheduler_Start_WithExistingCron(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "subscriptions.json")
+	store, _ := NewStore(cfgPath)
+	fetcher := NewFetcher()
+
+	// Enable auto-apply in config so Start() restores cron
+	store.SetAutoApply(true, "0 */12 * * *")
+
+	sched := NewScheduler(store, fetcher)
+	sched.Start()
+	defer sched.Stop()
+
+	// Give Start time to restore cron
+	time.Sleep(200 * time.Millisecond)
+
+	sched.mu.Lock()
+	hasCron := sched.cron != nil
+	sched.mu.Unlock()
+	if !hasCron {
+		t.Error("expected cron to be restored after Start() with enabled auto-apply")
+	}
+
+	nextRun := sched.GetNextRun()
+	if nextRun.IsZero() {
+		t.Errorf("GetNextRun should return non-zero time: %v", nextRun)
+	}
+}
+
+func TestScheduler_Start_WithoutCron(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+
+	// Auto-apply is disabled by default
+	sched := NewScheduler(store, fetcher)
+	sched.Start()
+	defer sched.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	sched.mu.Lock()
+	hasCron := sched.cron != nil
+	sched.mu.Unlock()
+	if hasCron {
+		t.Error("cron should be nil when auto-apply is disabled")
+	}
+}
+
+

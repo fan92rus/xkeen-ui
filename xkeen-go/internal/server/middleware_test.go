@@ -800,3 +800,100 @@ func TestAuthMiddleware_ErrorMessage(t *testing.T) {
 		t.Error("Expected error message in response body")
 	}
 }
+
+// --- LoggingMiddleware ---
+
+func TestLoggingMiddleware(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	defer mw.Stop()
+
+	called := false
+	handler := mw.LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("ok"))
+	}))
+
+	req := httptest.NewRequest("POST", "/api/test", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Error("next handler was not called")
+	}
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d", rec.Code)
+	}
+	if rec.Body.String() != "ok" {
+		t.Errorf("expected body 'ok', got %q", rec.Body.String())
+	}
+}
+
+func TestLoggingMiddleware_DefaultStatus(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	defer mw.Stop()
+
+	handler := mw.LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Don't call WriteHeader — should default to 200
+	}))
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 default, got %d", rec.Code)
+	}
+}
+
+// --- RateLimiter cleanup ---
+
+func TestRateLimiter_Cleanup(t *testing.T) {
+	rl := NewRateLimiter(3, 100*time.Millisecond)
+
+	// Record an attempt
+	rl.RecordAttempt("1.2.3.4")
+	rl.RecordAttempt("1.2.3.4")
+	rl.RecordAttempt("1.2.3.4")
+	// Now locked
+	if !rl.IsLocked("1.2.3.4") {
+		t.Error("expected IP to be locked after 3 attempts")
+	}
+
+	// Wait for lockout to expire
+	time.Sleep(150 * time.Millisecond)
+
+	// Run cleanup manually
+	rl.cleanup()
+
+	// After cleanup, expired entry should be removed
+	rl.mu.Lock()
+	_, exists := rl.attempts["1.2.3.4"]
+	rl.mu.Unlock()
+	if exists {
+		t.Error("expected expired entry to be cleaned up")
+	}
+}
+
+func TestRateLimiter_Cleanup_KeepsActive(t *testing.T) {
+	rl := NewRateLimiter(5, 10*time.Minute)
+
+	// Record a recent attempt that is NOT locked
+	rl.RecordAttempt("5.6.7.8")
+
+	// Run cleanup
+	rl.cleanup()
+
+	// Active (non-expired) entry should remain
+	rl.mu.Lock()
+	_, exists := rl.attempts["5.6.7.8"]
+	rl.mu.Unlock()
+	if !exists {
+		t.Error("expected active entry to remain after cleanup")
+	}
+
+	rl.Stop()
+}
+

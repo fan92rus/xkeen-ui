@@ -478,3 +478,175 @@ func TestErrorTypes_AreDistinct(t *testing.T) {
 		}
 	}
 }
+
+// --- GetBinaryNameForArch ---
+
+func TestGetBinaryNameForArch(t *testing.T) {
+	result := GetBinaryNameForArch()
+	// On any architecture it should return a non-empty binary name
+	if result == "" {
+		t.Error("GetBinaryNameForArch should return non-empty string")
+	}
+	if !strings.HasPrefix(result, "xkeen-ui-") {
+		t.Errorf("expected prefix 'xkeen-ui-', got %q", result)
+	}
+}
+
+func TestGetBinaryNameForArch_KnownArchs(t *testing.T) {
+	// Test the mapping logic by checking current arch produces expected result
+	result := GetBinaryNameForArch()
+	expected := map[string]string{
+		"arm64":  "xkeen-ui-keenetic-arm64",
+		"amd64":  "xkeen-ui-keenetic-arm64",
+		"mipsle": "xkeen-ui-keenetic-mipsle",
+		"mips":   "xkeen-ui-keenetic-mipsle",
+	}
+	if exp, ok := expected[runtime.GOARCH]; ok {
+		if result != exp {
+			t.Errorf("on %s: expected %q, got %q", runtime.GOARCH, exp, result)
+		}
+	}
+	// For unknown architectures, it defaults to arm64
+}
+
+// --- WithSymlinks ---
+
+func TestWithSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks not reliable on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	realDir := filepath.Join(tmpDir, "real")
+	if err := os.MkdirAll(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create validator with symlinks allowed
+	pv, err := NewPathValidator([]string{tmpDir}, WithSymlinks(true))
+	if err != nil {
+		t.Fatalf("NewPathValidator with WithSymlinks(true) failed: %v", err)
+	}
+
+	// Create a symlink inside allowed root
+	linkPath := filepath.Join(tmpDir, "link")
+	if err := os.Symlink(realDir, linkPath); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	targetFile := filepath.Join(linkPath, "test.txt")
+	if err := os.WriteFile(targetFile, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should resolve symlink and allow access
+	_, err = pv.Validate(linkPath)
+	if err != nil {
+		t.Errorf("Validate with symlink allowed should succeed: %v", err)
+	}
+}
+
+func TestWithSymlinks_Disallowed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks not reliable on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	realDir := filepath.Join(tmpDir, "real")
+	if err := os.MkdirAll(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create validator with symlinks NOT allowed (default)
+	pv, err := NewPathValidator([]string{tmpDir})
+	if err != nil {
+		t.Fatalf("NewPathValidator failed: %v", err)
+	}
+
+	// Create a symlink
+	linkPath := filepath.Join(tmpDir, "link")
+	if err := os.Symlink(realDir, linkPath); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	targetFile := filepath.Join(linkPath, "test.txt")
+	if err := os.WriteFile(targetFile, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should detect symlink and reject
+	_, err = pv.Validate(targetFile)
+	if err == nil {
+		t.Error("expected error for symlink when symlinks not allowed")
+	}
+}
+
+// --- validateNonExistentPath ---
+
+func TestValidateNonExistentPath_WithinRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "sub")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	pv, err := NewPathValidator([]string{tmpDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-existent file within existing parent
+	nonExistent := filepath.Join(subDir, "newfile.json")
+	result, err := pv.Validate(nonExistent)
+	if err != nil {
+		t.Errorf("Validate should succeed for non-existent file within root: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty resolved path")
+	}
+}
+
+func TestValidateNonExistentPath_DeepNesting(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "level1")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	pv, err := NewPathValidator([]string{tmpDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-existent deep path — only level1 exists
+	deepPath := filepath.Join(subDir, "level2", "level3", "file.json")
+	result, err := pv.Validate(deepPath)
+	if err != nil {
+		t.Errorf("Validate should succeed for deeply nested non-existent path: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty resolved path")
+	}
+}
+
+func TestValidateNonExistentPath_OutsideRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "sub")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	otherDir := t.TempDir()
+
+	pv, err := NewPathValidator([]string{tmpDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-existent file under a completely different root
+	nonExistent := filepath.Join(otherDir, "newfile.json")
+	_, err = pv.Validate(nonExistent)
+	if err == nil {
+		t.Error("expected error for non-existent file outside root")
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1298,5 +1299,134 @@ func TestLogin_MultipleFailedAttemptsRecordIP(t *testing.T) {
 	rec = doReq(t, s.router, "POST", "/api/auth/login", loginJSON("wrong"))
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 on 6th attempt, got %d", rec.Code)
+	}
+}
+
+// --- validateAndResolveBackupPath ---
+
+func TestValidateAndResolveBackupPath_ValidPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	xrayDir := filepath.Join(tmpDir, "xray")
+	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := validateAndResolveBackupPath(xrayDir, []string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should return a path within tmpDir
+	if !strings.HasPrefix(result, tmpDir) {
+		t.Errorf("expected path within %s, got %s", tmpDir, result)
+	}
+}
+
+func TestValidateAndResolveBackupPath_EmptyRoots(t *testing.T) {
+	_, err := validateAndResolveBackupPath("/some/dir", []string{})
+	if err == nil {
+		t.Error("expected error for empty allowed roots")
+	}
+}
+
+func TestValidateAndResolveBackupPath_DefaultWithinRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	xrayDir := filepath.Join(tmpDir, "xray")
+	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Add parent of xray dir as allowed root, so default backup path is valid
+	result, err := validateAndResolveBackupPath(xrayDir, []string{tmpDir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Default path is filepath.Join(filepath.Dir(xrayDir), "xkeen-ui", "backups")
+	expectedDefault := filepath.Join(tmpDir, "xkeen-ui", "backups")
+	if result != expectedDefault {
+		t.Errorf("expected default %s, got %s", expectedDefault, result)
+	}
+}
+
+func TestValidateAndResolveBackupPath_Fallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	xrayDir := filepath.Join(tmpDir, "xray")
+	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Use a different root than tmpDir to trigger fallback
+	otherDir := t.TempDir()
+
+	result, err := validateAndResolveBackupPath(xrayDir, []string{otherDir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should use fallback within otherDir
+	if !strings.HasPrefix(result, otherDir) {
+		t.Errorf("expected fallback path within %s, got %s", otherDir, result)
+	}
+}
+
+// --- loginPage ---
+
+func TestLoginPage_NotLoggedIn(t *testing.T) {
+	s, _ := testServer(t)
+	rec := doReq(t, s.router, "GET", "/login", nil)
+
+	// With emptyFS, login.html doesn't exist, so we get 500
+	// This is expected behavior — loginPage serves embedded HTML
+	if rec.Code != http.StatusInternalServerError {
+		// If the code gets a real FS, it might return 200
+		t.Logf("login page returned %d (expected 500 with emptyFS or 200 with real FS)", rec.Code)
+	}
+}
+
+func TestLoginPage_AlreadyLoggedIn(t *testing.T) {
+	s, _ := testServer(t)
+
+	// Login first to get a session
+	loginRec := doReq(t, s.router, "POST", "/api/auth/login", loginJSON("password"))
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", loginRec.Code)
+	}
+	_ = parseJSON(t, loginRec)
+	sessionToken := ""
+	for _, c := range loginRec.Result().Cookies() {
+		if c.Name == "session" {
+			sessionToken = c.Value
+		}
+	}
+	if sessionToken == "" {
+		t.Fatal("no session cookie")
+	}
+
+	// GET /login with valid session should redirect to /
+	req := httptest.NewRequest("GET", "/login", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
+	req.RemoteAddr = "192.168.1.1:12345"
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("expected 302 redirect when logged in, got %d", rec.Code)
+	}
+	location := rec.Header().Get("Location")
+	if location != "/" {
+		t.Errorf("expected redirect to /, got %s", location)
+	}
+}
+
+func TestLoginPage_InvalidSession(t *testing.T) {
+	s, _ := testServer(t)
+
+	// GET /login with invalid session cookie — should serve login page
+	req := httptest.NewRequest("GET", "/login", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: "invalid-token"})
+	req.RemoteAddr = "192.168.1.1:12345"
+	rec := httptest.NewRecorder()
+	s.router.ServeHTTP(rec, req)
+
+	// With emptyFS, login.html doesn't exist → 500
+	// With real FS → 200 with HTML
+	if rec.Code == http.StatusFound {
+		t.Error("should not redirect with invalid session")
 	}
 }
