@@ -110,7 +110,7 @@ const filteredProxies = computed(() => {
     }
     if (f.include_markers?.length) {
         const inc = new Set(f.include_markers);
-        list = list.filter(p => inc.has(p.marker));
+        list = list.filter(p => !p.marker || inc.has(p.marker));
     }
     if (f.exclude_countries?.length) {
         const ex = new Set(f.exclude_countries.map(c => c.toUpperCase()));
@@ -118,7 +118,7 @@ const filteredProxies = computed(() => {
     }
     if (f.include_countries?.length) {
         const inc = new Set(f.include_countries.map(c => c.toUpperCase()));
-        list = list.filter(p => inc.has((p.country || '').toUpperCase()));
+        list = list.filter(p => !p.country || inc.has(p.country.toUpperCase()));
     }
     if (f.include_regexes?.length) {
         for (const pattern of f.include_regexes) {

@@ -62,6 +62,22 @@ func TestApplyFilter_IncludeMarkers(t *testing.T) {
 	}
 }
 
+func TestApplyFilter_IncludeMarkers_EmptyMarkerPasses(t *testing.T) {
+	// Proxies without a marker should pass through include_markers filter
+	proxies := []*ProxyEntry{
+		makeProxy("⚡", "DE", "Fast"),
+		makeProxy("", "NL", "Standard"),
+		makeProxy("🎮", "US", "Gaming"),
+	}
+	filter := &Filter{
+		IncludeMarkers: []string{"⚡"},
+	}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 (⚡ + empty marker passes), got %d", len(result))
+	}
+}
+
 func TestApplyFilter_IncludeMarkers_EmptyPassesAll(t *testing.T) {
 	proxies := []*ProxyEntry{
 		makeProxy("⚡", "DE", "Fast"),
@@ -129,6 +145,22 @@ func TestApplyFilter_IncludeCountries(t *testing.T) {
 	result := ApplyFilter(proxies, filter)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 (DE+NL), got %d", len(result))
+	}
+}
+
+func TestApplyFilter_IncludeCountries_EmptyCountryPasses(t *testing.T) {
+	// Proxies without a country should pass through include_countries filter
+	proxies := []*ProxyEntry{
+		makeProxy("⚡", "DE", "Germany"),
+		makeProxy("⚡", "", "Unknown"),
+		makeProxy("⚡", "US", "USA"),
+	}
+	filter := &Filter{
+		IncludeCountries: []string{"DE"},
+	}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 (DE + empty country passes), got %d", len(result))
 	}
 }
 

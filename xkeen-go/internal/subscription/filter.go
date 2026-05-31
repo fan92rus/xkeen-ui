@@ -65,11 +65,14 @@ func compileRegexes(patterns []string) []*regexp.Regexp {
 	return res
 }
 
-// passesIncludeMarkers returns true if the proxy's marker is in IncludeMarkers
-// or if IncludeMarkers is empty (no filter).
+// passesIncludeMarkers returns true if the proxy's marker is in IncludeMarkers,
+// if IncludeMarkers is empty (no filter), or if the proxy has no marker (pass through).
 func passesIncludeMarkers(p *ProxyEntry, f *Filter) bool {
 	if len(f.IncludeMarkers) == 0 {
 		return true
+	}
+	if p.Marker == "" {
+		return true // proxies without markers pass through include filter
 	}
 	for _, m := range f.IncludeMarkers {
 		if p.Marker == m {
@@ -89,11 +92,14 @@ func isExcludedMarker(p *ProxyEntry, f *Filter) bool {
 	return false
 }
 
-// passesIncludeCountries returns true if the proxy's country is in IncludeCountries
-// or if IncludeCountries is empty (no filter).
+// passesIncludeCountries returns true if the proxy's country is in IncludeCountries,
+// if IncludeCountries is empty (no filter), or if the proxy has no country (pass through).
 func passesIncludeCountries(p *ProxyEntry, f *Filter) bool {
 	if len(f.IncludeCountries) == 0 {
 		return true
+	}
+	if p.Country == "" {
+		return true // proxies without country pass through include filter
 	}
 	for _, c := range f.IncludeCountries {
 		if strings.EqualFold(p.Country, c) {
