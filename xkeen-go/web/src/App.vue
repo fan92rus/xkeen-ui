@@ -49,11 +49,6 @@ onMounted(() => {
         </button>
       </div>
       <div class="sidebar-bottom">
-        <div class="xray-status" :class="app.serviceStatus"
-             @click="app.serviceStatus === 'running' ? app.stopService() : app.startService()">
-          <span class="status-dot" :class="app.serviceStatus"></span>
-          <span class="status-text">{{ app.serviceStatus === 'running' ? 'Запущен' : app.serviceStatus === 'stopped' ? 'Остановлен' : '…' }}</span>
-        </div>
         <button class="sidebar-btn" title="Выйти" @click="app.logout()">⏻</button>
       </div>
     </nav>
@@ -78,6 +73,13 @@ onMounted(() => {
           </template>
         </div>
         <div class="toolbar-right">
+          <div class="service-bar">
+            <span class="status-dot" :class="app.serviceStatus"></span>
+            <span class="service-label">{{ app.serviceStatus === 'running' ? 'Запущен' : app.serviceStatus === 'stopped' ? 'Остановлен' : '…' }}</span>
+            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" title="Запустить">▶</button>
+            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" title="Остановить">■</button>
+            <button class="btn btn-sm" @click="app.restartService()" title="Перезапустить">↻</button>
+          </div>
           <!-- Editor actions -->
           <template v-if="app.activeTab === 'editor' && app.currentFile">
             <span class="status-badge" :class="app.isValidJson === false ? 'invalid' : 'valid'">
@@ -86,10 +88,6 @@ onMounted(() => {
             <button class="btn btn-sm" @click="window.dispatchEvent(new CustomEvent('editor:diff'))">Diff</button>
             <button class="btn btn-sm" @click="app.showBackups()">Бэкапы</button>
             <button class="btn btn-sm btn-primary" @click="doSave()">Сохранить</button>
-          </template>
-          <!-- Service actions (non-editor) -->
-          <template v-if="app.activeTab !== 'editor'">
-            <button @click="app.restartService()" class="btn btn-sm btn-danger" title="Перезапуск Xkeen">↻ Xkeen</button>
           </template>
         </div>
       </div>
