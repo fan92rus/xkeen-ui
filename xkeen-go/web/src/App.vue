@@ -1,7 +1,6 @@
 <script setup>
 import { onMounted } from 'vue';
 import { useAppStore } from './stores/app.js';
-import ServiceCtrl from './components/ServiceCtrl.vue';
 import EditorTab from './components/EditorTab.vue';
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
@@ -11,12 +10,26 @@ import CommandsTab from './components/CommandsTab.vue';
 const app = useAppStore();
 
 const tabs = [
-    { id: 'editor', icon: '📝', label: 'Редактор' },
-    { id: 'subscriptions', icon: '⭐', label: 'Подписки' },
-    { id: 'logs', icon: '📋', label: 'Логи' },
-    { id: 'settings', icon: '⚙', label: 'Настройки' },
-    { id: 'commands', icon: '💻', label: 'Команды' },
+    { id: 'editor', label: 'Редактор' },
+    { id: 'subscriptions', label: 'Подписки' },
+    { id: 'logs', label: 'Логи' },
+    { id: 'settings', label: 'Настройки' },
+    { id: 'commands', label: 'Команды' },
 ];
+
+/* SVG icon paths (24x24 viewBox, stroke-based, Lucide-style) */
+const icons = {
+    editor: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
+    subscriptions: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+    logs: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',
+    settings: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+    commands: 'M4 17l6-6-6-6M12 19h8',
+    play: 'M5 3l14 9-14 9V3z',
+    stop: 'M4 4h16v16H4V4z',
+    restart: 'M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15',
+    logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+    logo: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+};
 
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -37,19 +50,25 @@ onMounted(() => {
 
 <template>
   <div class="app">
-    <!-- Sidebar Nav -->
+    <!-- Sidebar -->
     <nav class="sidebar-nav">
-      <div class="sidebar-logo">⚙</div>
+      <div class="sidebar-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path v-for="(d, i) in icons.logo.split('M').filter(Boolean)" :key="i" :d="'M' + d" />
+        </svg>
+      </div>
       <div class="sidebar-nav-items">
         <button v-for="t in tabs" :key="t.id"
                 class="nav-btn" :class="{ active: app.activeTab === t.id }"
                 :title="t.label"
                 @click="app.activeTab = t.id">
-          {{ t.icon }}
+          <svg viewBox="0 0 24 24"><path :d="icons[t.id]" /></svg>
         </button>
       </div>
       <div class="sidebar-bottom">
-        <button class="sidebar-btn" title="Выйти" @click="app.logout()">⏻</button>
+        <button class="sidebar-btn" title="Выйти" @click="app.logout()">
+          <svg viewBox="0 0 24 24"><path :d="icons.logout" /></svg>
+        </button>
       </div>
     </nav>
 
@@ -58,7 +77,6 @@ onMounted(() => {
       <!-- Toolbar -->
       <div class="toolbar">
         <div class="toolbar-left">
-          <!-- Editor: file selector -->
           <template v-if="app.activeTab === 'editor'">
             <select class="file-select" :value="app.currentFile?.path || ''"
                     @change="app.loadFile($event.target.value)">
@@ -67,18 +85,24 @@ onMounted(() => {
             </select>
             <span class="toolbar-title">{{ app.currentFile?.path || '' }}</span>
           </template>
-          <!-- Other tabs: label -->
           <template v-else>
             <span class="toolbar-title">{{ tabs.find(t => t.id === app.activeTab)?.label || '' }}</span>
           </template>
         </div>
         <div class="toolbar-right">
+          <!-- Service controls (always visible) -->
           <div class="service-bar">
             <span class="status-dot" :class="app.serviceStatus"></span>
             <span class="service-label">{{ app.serviceStatus === 'running' ? 'Запущен' : app.serviceStatus === 'stopped' ? 'Остановлен' : '…' }}</span>
-            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" title="Запустить">▶</button>
-            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" title="Остановить">■</button>
-            <button class="btn btn-sm" @click="app.restartService()" title="Перезапустить">↻</button>
+            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" title="Запустить">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path :d="icons.play" /></svg>
+            </button>
+            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" title="Остановить">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path :d="icons.stop" /></svg>
+            </button>
+            <button class="btn btn-sm" @click="app.restartService()" title="Перезапустить">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.restart" /></svg>
+            </button>
           </div>
           <!-- Editor actions -->
           <template v-if="app.activeTab === 'editor' && app.currentFile">
@@ -92,13 +116,12 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Tab Content -->
+      <!-- Tabs -->
       <EditorTab v-if="app.activeTab === 'editor'" class="tab-content" />
       <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content" />
       <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
       <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />
       <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content" />
-
     </div>
 
     <!-- Output Modal -->
@@ -124,7 +147,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Confirmation Dialog -->
+    <!-- Confirm Dialog -->
     <div class="modal-overlay" v-show="app.confirm.show" @click.self="app.cancelConfirm()">
       <div class="modal">
         <div class="modal-header"><h3>Подтверждение</h3></div>
