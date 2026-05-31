@@ -104,7 +104,6 @@ onUnmounted(() => {
               <option value="" disabled>Выберите файл…</option>
               <option v-for="f in app.files" :key="f.path" :value="f.path">{{ f.name }}</option>
             </select>
-            <span class="toolbar-title">{{ app.currentFile?.path || '' }}</span>
           </template>
           <template v-else>
             <span class="toolbar-title">{{ tabs.find(t => t.id === app.activeTab)?.label || '' }}</span>

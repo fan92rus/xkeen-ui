@@ -145,24 +145,22 @@ onMounted(loadAutoApply);
       <div class="settings-section">
         <h3>Безопасность</h3>
         <div class="password-change-form">
-          <div class="setting-row">
-            <label for="currentPassword">Текущий пароль:</label>
-            <input type="password" id="currentPassword" v-model="app.passwordChange.currentPassword"
-                   placeholder="Введите текущий пароль" autocomplete="current-password">
-          </div>
-          <div class="setting-row">
-            <label for="newPassword">Новый пароль:</label>
-            <input type="password" id="newPassword" v-model="app.passwordChange.newPassword"
-                   placeholder="Минимум 8 символов" autocomplete="new-password">
-          </div>
-          <div class="setting-row">
-            <label for="confirmPassword">Подтверждение пароля:</label>
-            <input type="password" id="confirmPassword" v-model="app.passwordChange.confirmPassword"
-                   placeholder="Повторите новый пароль" autocomplete="new-password">
-          </div>
-          <div class="setting-info">
-            <p><strong>Требования к паролю:</strong></p>
-            <ul><li>Минимум 8 символов</li><li>Должен отличаться от текущего пароля</li></ul>
+          <div class="password-fields">
+            <div class="password-field">
+              <label for="currentPassword">Текущий пароль</label>
+              <input type="password" id="currentPassword" v-model="app.passwordChange.currentPassword"
+                     placeholder="••••••••" autocomplete="current-password">
+            </div>
+            <div class="password-field">
+              <label for="newPassword">Новый пароль</label>
+              <input type="password" id="newPassword" v-model="app.passwordChange.newPassword"
+                     placeholder="Мин. 8 символов" autocomplete="new-password">
+            </div>
+            <div class="password-field">
+              <label for="confirmPassword">Подтверждение</label>
+              <input type="password" id="confirmPassword" v-model="app.passwordChange.confirmPassword"
+                     placeholder="••••••••" autocomplete="new-password">
+            </div>
           </div>
           <div v-show="app.passwordChange.error" class="setting-error">
             <p>{{ app.passwordChange.error }}</p>
