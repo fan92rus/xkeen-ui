@@ -3,7 +3,6 @@ package subscription
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // GenerateOutboundsJSON generates the content for 04_outbounds.json.
@@ -65,8 +64,9 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 }
 
 // GenerateRoutingJSON generates or updates the content for 05_routing.json.
-// If existingRouting is non-empty, it preserves existing routing rules and only
-// updates the proxy-related rule and balancers section.
+// When existingRouting is non-empty, it preserves the ENTIRE rules section as raw
+// JSON bytes (no parse/unparse roundtrip). Only the balancers section is
+// regenerated based on the current subscription strategy.
 func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existingRouting json.RawMessage) ([]byte, error) {
 	if len(proxies) == 0 {
 		return nil, fmt.Errorf("no proxies to generate routing from")
@@ -76,10 +76,8 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 		DomainStrategy: "IPIfNonMatch",
 	}
 
-	// Parse existing routing if provided
+	// Parse existing routing if provided — preserve rules as raw JSON (no roundtrip)
 	if len(existingRouting) > 0 {
-		// The file format is {"routing": {"domainStrategy": ..., "rules": ...}}
-		// We need to unwrap the "routing" key first.
 		var wrapper map[string]json.RawMessage
 		innerRouting := existingRouting
 		if err := json.Unmarshal(existingRouting, &wrapper); err == nil {
@@ -96,48 +94,37 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 					routing.DomainStrategy = dsStr
 				}
 			}
-			if rules, ok := existing["rules"]; ok {
-				var existingRules []map[string]interface{}
-				if json.Unmarshal(rules, &existingRules) == nil {
-					// Preserve non-proxy rules (block, direct, custom)
-					for _, rule := range existingRules {
-						tag, _ := rule["outboundTag"].(string)
-						bTag, _ := rule["balancerTag"].(string)
-						// Skip old proxy-related rules — we'll regenerate them
-						if tag == "proxy" || strings.HasPrefix(bTag, "proxy-") {
-							continue
-						}
-						routing.Rules = append(routing.Rules, rule)
-					}
-				}
+			// Keep ALL existing rules as raw JSON — preserves exact formatting, key order, types
+			if rulesRaw, ok := existing["rules"]; ok {
+				routing.RulesRaw = rulesRaw
 			}
 		}
 	}
 
-	// If no existing rules, add default ad-blocking rule
-	if len(routing.Rules) == 0 {
-		routing.Rules = append(routing.Rules, map[string]interface{}{
-			"type":         "field",
-			"domain":       []string{"geosite:category-ads-all"},
-			"outboundTag":  "block",
-		})
+	// No existing rules at all — add defaults
+	if routing.RulesRaw == nil && len(routing.Rules) == 0 {
+		routing.Rules = append(routing.Rules,
+			map[string]interface{}{
+				"type":        "field",
+				"domain":      []string{"geosite:category-ads-all"},
+				"outboundTag": "block",
+			},
+		)
+		if strategy.Type == "all" || strategy.Type == "" {
+			routing.Rules = append(routing.Rules, map[string]interface{}{
+				"type":        "field",
+				"outboundTag": "proxy",
+				"network":     "tcp,udp",
+			})
+		}
 	}
 
-	// Set strategy-specific configuration
-	if strategy.Type == "all" || strategy.Type == "" {
-		// Simple: all traffic through the first proxy
-		routing.Rules = append(routing.Rules, map[string]interface{}{
-			"type":        "field",
-			"outboundTag": "proxy",
-			"network":     "tcp,udp",
-		})
-	} else {
-		// Balancer mode
+	// Set balancers — this is the ONLY part we always regenerate
+	if strategy.Type == "random" || strategy.Type == "leastping" || strategy.Type == "roundrobin" || strategy.Type == "leastload" {
 		fallback := "direct"
 		if strategy.FallbackTag != "" {
 			fallback = strategy.FallbackTag
 		}
-
 		routing.Balancers = []map[string]interface{}{
 			{
 				"tag":         "proxy-balancer",
@@ -146,12 +133,9 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 				"fallbackTag": fallback,
 			},
 		}
-
-		routing.Rules = append(routing.Rules, map[string]interface{}{
-			"type":         "field",
-			"balancerTag":  "proxy-balancer",
-			"network":      "tcp,udp",
-		})
+	} else {
+		// "all" or empty — no balancer needed
+		routing.Balancers = nil
 	}
 
 	result := map[string]interface{}{
@@ -181,7 +165,42 @@ func NeedsObservatory(strategyType string) bool {
 
 // routingConfig is an internal struct for building routing JSON.
 type routingConfig struct {
-	DomainStrategy string                     `json:"domainStrategy"`
-	Balancers      []map[string]interface{}   `json:"balancers,omitempty"`
-	Rules          []map[string]interface{}    `json:"rules"`
+	DomainStrategy string            `json:"domainStrategy"`
+	Balancers      []map[string]interface{} `json:"balancers,omitempty"`
+	Rules          []map[string]interface{} `json:"-"`
+	RulesRaw       json.RawMessage      `json:"-"`
+}
+
+// MarshalJSON serializes routingConfig, using RulesRaw (preserved raw JSON)
+// if available, otherwise falling back to Rules (generated defaults).
+func (r *routingConfig) MarshalJSON() ([]byte, error) {
+	m := map[string]json.RawMessage{}
+
+	dsRaw, err := json.Marshal(r.DomainStrategy)
+	if err != nil {
+		return nil, err
+	}
+	m["domainStrategy"] = dsRaw
+
+	// Rules: use raw JSON if available, otherwise marshal generated rules
+	if r.RulesRaw != nil {
+		m["rules"] = r.RulesRaw
+	} else if len(r.Rules) > 0 {
+		raw, err := json.Marshal(r.Rules)
+		if err != nil {
+			return nil, err
+		}
+		m["rules"] = raw
+	}
+
+	// Balancers (always regenerated if present)
+	if r.Balancers != nil {
+		raw, err := json.Marshal(r.Balancers)
+		if err != nil {
+			return nil, err
+		}
+		m["balancers"] = raw
+	}
+
+	return json.Marshal(m)
 }

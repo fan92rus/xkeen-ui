@@ -622,23 +622,20 @@ func TestScheduler_WriteConfigFiles_PreservesExistingRouting(t *testing.T) {
 	routing := result["routing"].(map[string]interface{})
 	rules := routing["rules"].([]interface{})
 
-	// Should have: custom rule + proxy rule
+	// Should have: custom rule preserved as-is (no new rules added)
 	foundCustom := false
-	foundProxy := false
 	for _, r := range rules {
 		rule := r.(map[string]interface{})
 		if tag, ok := rule["outboundTag"]; ok && tag == "my-custom" {
 			foundCustom = true
 		}
-		if tag, ok := rule["outboundTag"]; ok && tag == "proxy" {
-			foundProxy = true
-		}
 	}
 	if !foundCustom {
 		t.Error("expected custom routing rule to be preserved")
 	}
-	if !foundProxy {
-		t.Error("expected proxy routing rule to be added")
+	// No new proxy rule added when existing rules are preserved
+	if len(rules) != 1 {
+		t.Errorf("expected 1 rule (custom only), got %d", len(rules))
 	}
 }
 
@@ -674,17 +671,10 @@ func TestScheduler_WriteConfigFiles_BalancerMode(t *testing.T) {
 		t.Error("expected balancer tag 'proxy-balancer'")
 	}
 
-	// Verify rule uses balancerTag
+	// Rules: ad-block only (no proxy rule added for balancer strategies)
 	rules := routing["rules"].([]interface{})
-	var foundBalancerRule bool
-	for _, r := range rules {
-		rule := r.(map[string]interface{})
-		if bt, ok := rule["balancerTag"]; ok && bt == "proxy-balancer" {
-			foundBalancerRule = true
-		}
-	}
-	if !foundBalancerRule {
-		t.Error("expected rule with balancerTag")
+	if len(rules) != 1 {
+		t.Errorf("expected 1 rule (ad-block), got %d", len(rules))
 	}
 }
 

@@ -1,1 +1,0 @@
-{"port": 9877, "xray_config_dir": "C:\\Users\\user\\AppData\\Local\\Temp\\tmpu51y0cp8", "allowed_roots": ["C:\\Users\\user\\AppData\\Local\\Temp\\tmp0tlev82w"], "auth": {"password_hash": "$2a$12$oDp.vVnkWYsDjAuEWEKOgOR08sApErSrJFyRMbOE5d/GvccJKiNLe", "session_timeout": 24, "max_login_attempts": 10, "lockout_duration": 5}}

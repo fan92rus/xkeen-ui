@@ -227,10 +227,9 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 		t.Errorf("expected fallback 'direct', got %q", balancer.FallbackTag)
 	}
 
-	// Last rule should use balancerTag
-	lastRule := routing.Rules[len(routing.Rules)-1]
-	if btag, ok := lastRule["balancerTag"].(string); !ok || btag != "proxy-balancer" {
-		t.Errorf("last rule should have balancerTag 'proxy-balancer', got %v", lastRule["balancerTag"])
+	// Rules: only ad-block default (no proxy rule added for balancer strategies)
+	if len(routing.Rules) != 1 {
+		t.Errorf("expected 1 rule (ad-block), got %d", len(routing.Rules))
 	}
 }
 
@@ -540,5 +539,172 @@ func TestGenerateObservatoryJSON_ValidJSON(t *testing.T) {
 
 	if !json.Valid(data) {
 		t.Error("generated observatory JSON is not valid")
+	}
+}
+
+func TestGenerateRoutingJSON_PreservesRulesRaw(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de", Outbound: json.RawMessage(`{"tag":"proxy-de","protocol":"vless"}`)},
+	}
+
+	// Simulate existing routing with custom rules that user edited in editor
+	existing := json.RawMessage(`{
+		"routing": {
+			"domainStrategy": "IPIfNonMatch",
+			"rules": [
+				{"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
+				{"type": "field", "ip": ["geoip:private"], "outboundTag": "direct"},
+				{"type": "field", "balancerTag": "proxy-balancer", "network": "tcp,udp"},
+				{"type": "field", "outboundTag": "proxy", "network": "tcp,udp"},
+				{"type": "field", "port": [80, 443], "outboundTag": "proxy"}
+			]
+		}
+	}`)
+
+	strat := RoutingStrategy{Type: "random", FallbackTag: "direct"}
+	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	routing, ok := result["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing routing key")
+	}
+
+	// ALL 5 rules must be preserved
+	rules, ok := routing["rules"].([]interface{})
+	if !ok {
+		t.Fatal("missing rules")
+	}
+	if len(rules) != 5 {
+		t.Errorf("expected 5 rules preserved, got %d", len(rules))
+	}
+
+	// Balancer should be regenerated
+	balancers, ok := routing["balancers"].([]interface{})
+	if !ok {
+		t.Fatal("missing balancers")
+	}
+	if len(balancers) != 1 {
+		t.Errorf("expected 1 balancer, got %d", len(balancers))
+	}
+	balancerMap := balancers[0].(map[string]interface{})
+	strategyMap := balancerMap["strategy"].(map[string]interface{})
+	if strategyMap["type"] != "random" {
+		t.Errorf("expected strategy type 'random', got %v", strategyMap["type"])
+	}
+}
+
+func TestGenerateRoutingJSON_StrategyAll_NoBalancer(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de", Outbound: json.RawMessage(`{"tag":"proxy-de","protocol":"vless"}`)},
+	}
+
+	existing := json.RawMessage(`{
+		"routing": {
+			"domainStrategy": "IPIfNonMatch",
+			"rules": [{"type": "field", "outboundTag": "proxy", "network": "tcp,udp"}],
+			"balancers": [{"tag": "proxy-balancer", "selector": ["proxy-"]}]
+		}
+	}`)
+
+	strat := RoutingStrategy{Type: "all"}
+	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	routing := result["routing"].(map[string]interface{})
+
+	// Rules preserved as-is
+	rules := routing["rules"].([]interface{})
+	if len(rules) != 1 {
+		t.Errorf("expected 1 rule, got %d", len(rules))
+	}
+
+	// No balancer for "all" strategy (omitempty — key should not exist)
+	if _, exists := routing["balancers"]; exists {
+		t.Errorf("expected no balancers key for strategy 'all', got: %v", routing["balancers"])
+	}
+}
+
+func TestGenerateRoutingJSON_PreservesDomainStrategy(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de", Outbound: json.RawMessage(`{"tag":"proxy-de","protocol":"vless"}`)},
+	}
+
+	existing := json.RawMessage(`{
+		"routing": {
+			"domainStrategy": "IPOnDemand",
+			"rules": [{"type": "field", "outboundTag": "direct"}]
+		}
+	}`)
+
+	strat := RoutingStrategy{Type: "random"}
+	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	routing := result["routing"].(map[string]interface{})
+	if routing["domainStrategy"] != "IPOnDemand" {
+		t.Errorf("expected domainStrategy 'IPOnDemand', got %v", routing["domainStrategy"])
+	}
+}
+
+func TestGenerateRoutingJSON_NoExistingRules(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de", Outbound: json.RawMessage(`{"tag":"proxy-de","protocol":"vless"}`)},
+		{Tag: "proxy-us", Outbound: json.RawMessage(`{"tag":"proxy-us","protocol":"vless"}`)},
+	}
+
+	strat := RoutingStrategy{Type: "random", FallbackTag: "direct"}
+	data, err := GenerateRoutingJSON(proxies, strat, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	routing, ok := result["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing routing key")
+	}
+
+	// Should have default ad-blocking rule
+	rules, ok := routing["rules"].([]interface{})
+	if !ok {
+		t.Fatal("missing rules")
+	}
+	if len(rules) != 1 {
+		t.Errorf("expected 1 rule (ad-block), got %d", len(rules))
+	}
+
+	// Should have balancer
+	balancers, ok := routing["balancers"].([]interface{})
+	if !ok {
+		t.Fatal("missing balancers")
+	}
+	if len(balancers) != 1 {
+		t.Errorf("expected 1 balancer, got %d", len(balancers))
 	}
 }
