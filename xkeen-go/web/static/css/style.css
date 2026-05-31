@@ -697,15 +697,15 @@ details summary { cursor: pointer; padding: 3px 0; color: var(--primary-color); 
 /* ===== Commands ===== */
 .commands-container { padding: 12px; overflow-y: auto; height: 100%; }
 .commands-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 8px;
-    align-content: start;
+    columns: 320px;
+    column-gap: 8px;
 }
 .command-category-block {
     background: var(--menu-background); border-radius: var(--radius);
     border: 1px solid var(--menu-border);
     display: flex; flex-direction: column;
+    break-inside: avoid;
+    margin-bottom: 8px;
 }
 .category-title {
     font-size: var(--text-small); font-weight: 600; color: var(--primary-text); margin: 0;
