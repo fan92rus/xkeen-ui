@@ -368,6 +368,19 @@ func (s *Scheduler) RefreshOne(id string) error {
 		return err
 	}
 
-	s.store.SetProxies(entries)
+	// Merge: keep existing proxies from other subscriptions, add new ones (dedup by tag)
+	existing := s.store.GetProxies()
+	existingTags := make(map[string]bool, len(existing))
+	for _, p := range existing {
+		existingTags[p.Tag] = true
+	}
+	merged := make([]*ProxyEntry, 0, len(existing)+len(entries))
+	merged = append(merged, existing...)
+	for _, e := range entries {
+		if !existingTags[e.Tag] {
+			merged = append(merged, e)
+		}
+	}
+	s.store.SetProxies(merged)
 	return nil
 }

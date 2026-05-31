@@ -219,13 +219,11 @@ async function fetchOne(id) {
     try {
         const d = await api.fetchSubscription(id);
         console.log('[sub] fetch result:', d.total, d.proxy_count, d.proxies?.length);
-        if (d.proxies?.length) {
-            proxies.value = d.proxies;
-            markers.value = _extractMarkers(d.proxies);
-        }
+        // Reload ALL proxies from backend (now merged across subscriptions)
+        await loadProxies();
         await _reload();
         const count = d.total || d.proxy_count || 0;
-        _toast(`+${count} прокси`, d.error ? 'error' : 'success');
+        _toast(`+${count} прокси (всего: ${proxies.value.length})`, d.error ? 'error' : 'success');
     } catch (e) {
         _err(e);
         try {
@@ -240,20 +238,16 @@ async function fetchOne(id) {
 async function fetchAll() {
     busy.value = true;
     try {
-        let allP = [], n = 0;
+        let n = 0;
         for (const s of subs.value.filter(x => x.enabled)) {
             try {
                 const d = await api.fetchSubscription(s.id);
                 n += d.total || 0;
-                if (d.proxies) allP = allP.concat(d.proxies);
             } catch { /* skip failed */ }
         }
         await _reload();
-        if (allP.length) {
-            proxies.value = allP;
-            markers.value = _extractMarkers(allP);
-        }
-        _toast(`Обновлено: ${n} прокси`, 'success');
+        await loadProxies();
+        _toast(`Обновлено: ${n} прокси (всего: ${proxies.value.length})`, 'success');
     } catch (e) { _err(e); } finally { busy.value = false; }
 }
 async function loadProxies() {
