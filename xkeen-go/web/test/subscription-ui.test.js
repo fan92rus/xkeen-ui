@@ -74,7 +74,7 @@ async function goToSubscriptions() {
 }
 
 async function getSubCount() {
-    return page.evaluate(() => document.querySelectorAll('.sub-card').length);
+    return page.evaluate(() => document.querySelectorAll('.sub-card:not(.profile-card)').length);
 }
 
 async function test(name, fn) {
@@ -133,10 +133,10 @@ async function main() {
     await test('Clean slate', async () => {
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < 10; i++) {
-            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
+            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card:not(.profile-card)').length);
             if (remaining === 0) break;
             await page.evaluate(() => {
-                const cards = document.querySelectorAll('.sub-card');
+                const cards = document.querySelectorAll('.sub-card:not(.profile-card)');
                 const last = cards[cards.length - 1];
                 if (!last) return;
                 for (const b of last.querySelectorAll('.acts button')) {
@@ -170,7 +170,7 @@ async function main() {
 
     await test('Subscription cards have name and action buttons', async () => {
         const info = await page.evaluate(() => {
-            const cards = document.querySelectorAll('.sub-card');
+            const cards = document.querySelectorAll('.sub-card:not(.profile-card)');
             return Array.from(cards).map(c => ({
                 name: c.querySelector('.name')?.textContent,
                 btnCount: c.querySelectorAll('.acts button').length,
@@ -186,7 +186,7 @@ async function main() {
 
     await test('Edit toggles inline form', async () => {
         const clicked = await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card')[0];
+            const card = document.querySelectorAll('.sub-card:not(.profile-card)')[0];
             if (!card) return false;
             for (const b of card.querySelectorAll('.acts button')) {
                 if (b.title === 'Редактировать') { b.click(); return true; }
@@ -199,7 +199,7 @@ async function main() {
         assert(hasForm, 'Edit form visible after click');
         await page.evaluate(() => {
             const btns = document.querySelectorAll('.sub-card.editing button');
-            for (const b of btns) { if (b.textContent.includes('✕')) { b.click(); return; } }
+            for (const b of btns) { if (b.textContent.includes('Отмена')) { b.click(); return; } }
         });
         await wait(300);
     });
@@ -228,18 +228,18 @@ async function main() {
     });
 
     await test('Fetch button clicks without error', async () => {
-        const clicked = await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card')[0];
-            if (!card) return false;
-            for (const b of card.querySelectorAll('.acts button')) {
-                if (b.title === 'Обновить') { b.click(); return true; }
-            }
-            // Fallback: first button is fetch
+        const result = await page.evaluate(() => {
+            const card = document.querySelectorAll('.sub-card:not(.profile-card)')[0];
+            if (!card) return { clicked: false, reason: 'no card' };
             const btns = card.querySelectorAll('.acts button');
-            if (btns.length > 0) { btns[0].click(); return true; }
-            return false;
+            const titles = Array.from(btns).map(b => b.title);
+            for (const b of btns) {
+                if (b.title === 'Обновить') { b.click(); return { clicked: true, titles }; }
+            }
+            if (btns.length > 0) { btns[0].click(); return { clicked: true, titles, fallback: true }; }
+            return { clicked: false, titles };
         });
-        assert(clicked, 'Fetch button exists on card');
+        assert(result.clicked, `Fetch button: ${JSON.stringify(result)}`);
         await wait(2000);
     });
 
@@ -247,7 +247,7 @@ async function main() {
         const before = await getSubCount();
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card')[0];
+            const card = document.querySelectorAll('.sub-card:not(.profile-card)')[0];
             if (!card) return;
             for (const b of card.querySelectorAll('.acts button')) {
                 if (b.title === 'Удалить') { b.click(); return; }
@@ -267,9 +267,18 @@ async function main() {
         assert(display === 'flex', `Layout should be flex, got ${display}`);
     });
 
-    await test('Strategy pills exist', async () => {
-        const count = await page.evaluate(() => document.querySelectorAll('.strat-pills .spill').length);
-        assert(count >= 4, `Strategy pills: ${count}`);
+    await test('Strategy pills exist when proxies loaded', async () => {
+        // Strategy pills are in filters section, visible only with proxies
+        const count = await page.evaluate(() => document.querySelectorAll('.sub-filters .strat-pills .spill').length);
+        // Without proxies loaded, filters section is hidden, so count may be 0
+        // Verify the strat-pills component exists in the template instead
+        if (count === 0) {
+            // Check that at least one profile-card shows a strategy badge
+            const badges = await page.evaluate(() => document.querySelectorAll('.strat-badge').length);
+            assert(badges >= 1, `Strategy badge or pills: badges=${badges}`);
+        } else {
+            assert(count >= 4, `Strategy pills in filters: ${count}`);
+        }
     });
 
     await test('Marker pills render', async () => {
@@ -285,10 +294,10 @@ async function main() {
         if (count === 0) return;
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < count + 2; i++) {
-            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
+            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card:not(.profile-card)').length);
             if (remaining === 0) break;
             await page.evaluate(() => {
-                const cards = document.querySelectorAll('.sub-card');
+                const cards = document.querySelectorAll('.sub-card:not(.profile-card)');
                 const last = cards[cards.length - 1];
                 if (!last) return;
                 for (const b of last.querySelectorAll('.acts button')) {

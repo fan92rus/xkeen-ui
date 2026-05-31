@@ -47,8 +47,8 @@ func (h *SubscriptionHandler) ListSubscriptions(w http.ResponseWriter, r *http.R
 	cfg := h.store.GetConfig()
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"subscriptions": cfg.Subscriptions,
-		"filters":       cfg.Filters,
-		"strategy":      cfg.Strategy,
+		"filters":       h.store.GetFilters(),
+		"strategy":      h.store.GetStrategy(),
 		"generated_at":  cfg.GeneratedAt,
 	})
 }
@@ -437,13 +437,14 @@ func (h *SubscriptionHandler) ListProfiles(w http.ResponseWriter, r *http.Reques
 
 	type profileWithCount struct {
 		subscription.Profile
-		ProxyCount int `json:"proxy_count"`
+		ProxyCount  int `json:"proxy_count"`
+		TotalProxy  int `json:"total_proxy"`
 	}
 
 	result := make([]profileWithCount, len(profiles))
 	for i, p := range profiles {
 		filtered := subscription.ApplyFilter(allProxies, &p.Filter)
-		result[i] = profileWithCount{Profile: p, ProxyCount: len(filtered)}
+		result[i] = profileWithCount{Profile: p, ProxyCount: len(filtered), TotalProxy: len(allProxies)}
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -471,7 +472,7 @@ func (h *SubscriptionHandler) CreateProfile(w http.ResponseWriter, r *http.Reque
 // UpdateProfile updates an existing profile.
 // PUT /api/subscriptions/profiles/{id}
 func (h *SubscriptionHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := mux.Vars(r)["id"]
 	var p subscription.Profile
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
@@ -488,7 +489,7 @@ func (h *SubscriptionHandler) UpdateProfile(w http.ResponseWriter, r *http.Reque
 // DeleteProfile removes a profile (cannot delete default).
 // DELETE /api/subscriptions/profiles/{id}
 func (h *SubscriptionHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := mux.Vars(r)["id"]
 	if err := h.store.DeleteProfile(id); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return

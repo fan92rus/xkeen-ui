@@ -222,12 +222,18 @@ func safeSlice(s []string) []string {
 
 // ---------- Profiles ----------
 
-// GetProfiles returns all profiles.
+// GetProfiles returns a deep copy of all profiles.
 func (s *Store) GetProfiles() []Profile {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	cp := make([]Profile, len(s.config.Profiles))
-	copy(cp, s.config.Profiles)
+	data, err := json.Marshal(s.config.Profiles)
+	if err != nil {
+		cp := make([]Profile, len(s.config.Profiles))
+		copy(cp, s.config.Profiles)
+		return cp
+	}
+	var cp []Profile
+	json.Unmarshal(data, &cp)
 	return cp
 }
 
@@ -314,7 +320,12 @@ func (s *Store) defaultProfile() *Profile {
 		Name:      "По умолчанию",
 		Enabled:   true,
 		IsDefault: true,
-		Filter:    Filter{},
+		Filter: Filter{
+			IncludeMarkers:   []string{},
+			ExcludeMarkers:   []string{},
+			IncludeCountries: []string{},
+			ExcludeCountries: []string{},
+		},
 		Strategy:  RoutingStrategy{Type: "all", FallbackTag: "direct"},
 	})
 	return &s.config.Profiles[len(s.config.Profiles)-1]
@@ -342,7 +353,12 @@ func (s *Store) migrateProfiles() {
 	if f != nil {
 		dp.Filter = *f
 	} else {
-		dp.Filter = Filter{}
+		dp.Filter = Filter{
+			IncludeMarkers:   []string{},
+			ExcludeMarkers:   []string{},
+			IncludeCountries: []string{},
+			ExcludeCountries: []string{},
+		}
 	}
 	if st != nil {
 		dp.Strategy = *st

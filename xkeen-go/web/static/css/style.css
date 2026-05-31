@@ -874,3 +874,15 @@ details summary { cursor: pointer; padding: 3px 0; color: var(--primary-color); 
     .sub-left { padding: 8px 10px; }
     .sub-row .name { max-width: 120px; }
 }
+
+/* ===== Profile cards ===== */
+.profile-card { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 8px; }
+.profile-default { background: var(--menu-hover); border: 1px solid var(--primary-color); }
+.strat-badge { font-size: var(--text-small); color: var(--text-gray); background: var(--menu-bg); padding: 1px 6px; border-radius: var(--radius-sm); }
+
+/* ===== Profile Editor ===== */
+.pe-field { margin-bottom: 12px; }
+.pe-field > label { display: block; font-weight: 600; margin-bottom: 4px; font-size: var(--text-body); }
+.pe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pe-label { display: block; font-size: var(--text-small); color: var(--text-gray); margin-bottom: 2px; }
+.pe-grid input { width: 100%; }
