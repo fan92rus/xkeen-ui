@@ -3,6 +3,7 @@ package subscription
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 // GenerateOutboundsJSON generates the content for 04_outbounds.json.
@@ -64,10 +65,11 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 }
 
 // GenerateRoutingJSON generates or updates the content for 05_routing.json.
-// When existingRouting is non-empty, it preserves the ENTIRE rules section as raw
-// JSON bytes (no parse/unparse roundtrip). Only the balancers section is
-// regenerated based on the current subscription strategy.
-func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existingRouting json.RawMessage) ([]byte, error) {
+// Each enabled profile generates its own balancer entry. The default profile
+// uses selector ["proxy-"] (regex matching all outbound tags); other profiles
+// use a concrete list of matching proxy tags. Existing rules are preserved as
+// raw JSON — only the balancers section is regenerated.
+func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRouting json.RawMessage) ([]byte, error) {
 	if len(proxies) == 0 {
 		return nil, fmt.Errorf("no proxies to generate routing from")
 	}
@@ -76,7 +78,16 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 		DomainStrategy: "IPIfNonMatch",
 	}
 
-	// Parse existing routing if provided
+	// Find the default profile for replace_balancer_tag handling.
+	var defaultProfile *Profile
+	for i := range profiles {
+		if profiles[i].IsDefault {
+			defaultProfile = &profiles[i]
+			break
+		}
+	}
+
+	// Parse existing routing if provided — preserve rules as raw JSON.
 	if len(existingRouting) > 0 {
 		var wrapper map[string]json.RawMessage
 		innerRouting := existingRouting
@@ -96,18 +107,16 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 			}
 
 			if rulesRaw, ok := existing["rules"]; ok {
-				if strategy.ReplaceBalancerTag {
-					// Parse rules, replace balancerTag rules, preserve others as raw
+				if defaultProfile != nil && defaultProfile.Strategy.ReplaceBalancerTag {
 					routing.RulesRaw = replaceBalancerRules(rulesRaw)
 				} else {
-					// Keep ALL existing rules as raw JSON — preserves exact formatting
 					routing.RulesRaw = rulesRaw
 				}
 			}
 		}
 	}
 
-	// No existing rules at all — add defaults
+	// No existing rules at all — add defaults.
 	if routing.RulesRaw == nil && len(routing.Rules) == 0 {
 		routing.Rules = append(routing.Rules,
 			map[string]interface{}{
@@ -116,33 +125,66 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 				"outboundTag": "block",
 			},
 		)
-		if strategy.Type == "all" || strategy.Type == "" {
-			routing.Rules = append(routing.Rules, map[string]interface{}{
-				"type":        "field",
-				"outboundTag": "proxy",
-				"network":     "tcp,udp",
-			})
+		// Fallback rule for default profile
+		if defaultProfile != nil {
+			sType := defaultProfile.Strategy.Type
+			if sType == "" || sType == "all" {
+				routing.Rules = append(routing.Rules, map[string]interface{}{
+					"type":        "field",
+					"outboundTag": "proxy",
+					"network":     "tcp,udp",
+				})
+			} else {
+				routing.Rules = append(routing.Rules, map[string]interface{}{
+					"type":        "field",
+					"balancerTag": "default-balancer",
+					"network":     "tcp,udp",
+				})
+			}
 		}
 	}
 
-	// Set balancers — this is the ONLY part we always regenerate
-	if strategy.Type == "random" || strategy.Type == "leastping" || strategy.Type == "roundrobin" || strategy.Type == "leastload" {
-		fallback := "direct"
-		if strategy.FallbackTag != "" {
-			fallback = strategy.FallbackTag
+	// Generate balancers for each enabled profile.
+	var balancers []map[string]interface{}
+	for _, profile := range profiles {
+		if !profile.Enabled {
+			continue
 		}
-		routing.Balancers = []map[string]interface{}{
-			{
-				"tag":         "proxy-balancer",
-				"selector":    []string{"proxy-"},
-				"strategy":    map[string]interface{}{"type": strategy.Type},
-				"fallbackTag": fallback,
-			},
+		sType := profile.Strategy.Type
+		if sType == "" || sType == "all" {
+			continue // no balancer needed for "all" strategy
 		}
-	} else {
-		// "all" or empty — no balancer needed
-		routing.Balancers = nil
+
+		var selector []string
+		if profile.IsDefault {
+			// Default profile matches all outbounds via regex prefix.
+			selector = []string{"proxy-"}
+		} else {
+			// Concrete tag list from filtered proxies.
+			filtered := ApplyFilter(proxies, &profile.Filter)
+			for _, p := range filtered {
+				selector = append(selector, p.Tag)
+			}
+			sort.Strings(selector)
+		}
+
+		balancer := map[string]interface{}{
+			"tag":      profile.ID + "-balancer",
+			"selector": selector,
+			"strategy": map[string]interface{}{"type": sType},
+		}
+		// Only default profile gets fallbackTag.
+		if profile.IsDefault {
+			fallback := "direct"
+			if profile.Strategy.FallbackTag != "" {
+				fallback = profile.Strategy.FallbackTag
+			}
+			balancer["fallbackTag"] = fallback
+		}
+
+		balancers = append(balancers, balancer)
 	}
+	routing.Balancers = balancers
 
 	result := map[string]interface{}{
 		"routing": routing,
@@ -152,7 +194,7 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, strategy RoutingStrategy, existi
 }
 
 // replaceBalancerRules parses the existing rules array, replaces rules with
-// balancerTag with a new rule pointing to "proxy-balancer", and keeps all
+// balancerTag with a new rule pointing to "default-balancer", and keeps all
 // other rules as raw JSON bytes (no re-serialization).
 func replaceBalancerRules(rulesRaw json.RawMessage) json.RawMessage {
 	var rules []json.RawMessage
@@ -162,7 +204,7 @@ func replaceBalancerRules(rulesRaw json.RawMessage) json.RawMessage {
 
 	newRule, _ := json.Marshal(map[string]interface{}{
 		"type":        "field",
-		"balancerTag": "proxy-balancer",
+		"balancerTag": "default-balancer",
 		"network":     "tcp,udp",
 	})
 
@@ -195,17 +237,22 @@ func GenerateObservatoryJSON() ([]byte, error) {
 	return json.MarshalIndent(observatory, "", "  ")
 }
 
-// NeedsObservatory returns true if the given strategy type requires an observatory config.
-func NeedsObservatory(strategyType string) bool {
-	return strategyType == "leastping" || strategyType == "leastload"
+// NeedsObservatory returns true if any enabled profile requires an observatory config.
+func NeedsObservatory(profiles []Profile) bool {
+	for _, p := range profiles {
+		if p.Enabled && (p.Strategy.Type == "leastping" || p.Strategy.Type == "leastload") {
+			return true
+		}
+	}
+	return false
 }
 
 // routingConfig is an internal struct for building routing JSON.
 type routingConfig struct {
-	DomainStrategy string            `json:"domainStrategy"`
+	DomainStrategy string                   `json:"domainStrategy"`
 	Balancers      []map[string]interface{} `json:"balancers,omitempty"`
 	Rules          []map[string]interface{} `json:"-"`
-	RulesRaw       json.RawMessage      `json:"-"`
+	RulesRaw       json.RawMessage          `json:"-"`
 }
 
 // MarshalJSON serializes routingConfig, using RulesRaw (preserved raw JSON)

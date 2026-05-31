@@ -74,11 +74,24 @@ type RoutingStrategy struct {
 	ReplaceBalancerTag bool   `json:"replace_balancer_tag"` // if true, replace existing balancerTag rules with new ones
 }
 
+// Profile is a named group of proxies with its own balancer.
+// Each active profile generates a separate balancer entry in routing config.
+type Profile struct {
+	ID        string          `json:"id"`         // unique identifier, "default" for the built-in profile
+	Name      string          `json:"name"`       // display name
+	Enabled   bool            `json:"enabled"`    // inactive profiles are skipped during generation
+	IsDefault bool            `json:"is_default"` // exactly one profile is default; cannot be deleted
+	Filter    Filter          `json:"filter"`     // determines which proxies belong to this profile
+	Strategy  RoutingStrategy `json:"strategy"`   // balancer strategy for this profile
+}
+
+// MaxProfiles limits the number of profiles to prevent config bloat on MIPSLE routers.
+const MaxProfiles = 10
+
 // SubscriptionConfig is the persisted subscription configuration.
 type SubscriptionConfig struct {
 	Subscriptions []Subscription  `json:"subscriptions"`
-	Filters       Filter          `json:"filters"`
-	Strategy      RoutingStrategy `json:"strategy"`
+	Profiles      []Profile       `json:"profiles"`
 	GeneratedAt   time.Time       `json:"generated_at"`
 	OutboundsFile string          `json:"outbounds_file"` // path to 04_outbounds.json
 	RoutingFile   string          `json:"routing_file"`   // path to 05_routing.json
@@ -86,6 +99,10 @@ type SubscriptionConfig struct {
 	// AutoApply configures automatic proxy refresh + apply on a cron schedule.
 	AutoApplyEnabled bool   `json:"auto_apply_enabled"` // enable/disable
 	AutoApplyCron    string `json:"auto_apply_cron"`    // cron expression, e.g. "0 */6 * * *"
+
+	// Legacy fields — migrated to default profile on first load.
+	Filters  *Filter          `json:"filters,omitempty"`
+	Strategy *RoutingStrategy `json:"strategy,omitempty"`
 }
 
 

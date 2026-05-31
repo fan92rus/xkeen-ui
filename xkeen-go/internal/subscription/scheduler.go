@@ -161,17 +161,9 @@ func (s *Scheduler) runAutoApply() {
 		return
 	}
 
-	// 3. Filter
-	filters := s.store.GetFilters()
-	filtered := ApplyFilter(allProxies, filters)
-	if len(filtered) == 0 {
-		log.Println("[subscription] auto-apply: all proxies filtered out, skipping")
-		return
-	}
-
-	// 4. Generate and write config files
-	strategy := s.store.GetStrategy()
-	if err := s.writeConfigFiles(filtered, strategy); err != nil {
+	// 3. Generate and write config files (profiles handle filtering internally)
+	profiles := s.store.GetProfiles()
+	if err := s.writeConfigFiles(allProxies, profiles); err != nil {
 		log.Printf("[subscription] auto-apply: write failed: %v", err)
 		return
 	}
@@ -189,7 +181,7 @@ func (s *Scheduler) runAutoApply() {
 	}
 
 	_ = s.store.SetGeneratedAt(time.Now())
-	log.Printf("[subscription] auto-apply complete: %d proxies applied", len(filtered))
+	log.Printf("[subscription] auto-apply complete: %d proxies applied", len(allProxies))
 
 	if s.OnUpdate != nil {
 		s.OnUpdate()
@@ -197,14 +189,14 @@ func (s *Scheduler) runAutoApply() {
 }
 
 // writeConfigFiles generates outbounds, routing, and observatory and writes them to xrayDir.
-func (s *Scheduler) writeConfigFiles(filtered []*ProxyEntry, strategy *RoutingStrategy) error {
+func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profile) error {
 	dir := s.xrayDir
 	if dir == "" {
 		return fmt.Errorf("xray config dir not set")
 	}
 
-	// Generate outbounds
-	outboundsJSON, err := GenerateOutboundsJSON(filtered)
+	// Generate outbounds for ALL proxies
+	outboundsJSON, err := GenerateOutboundsJSON(allProxies)
 	if err != nil {
 		return fmt.Errorf("generate outbounds: %w", err)
 	}
@@ -216,8 +208,8 @@ func (s *Scheduler) writeConfigFiles(filtered []*ProxyEntry, strategy *RoutingSt
 		existingRouting = data
 	}
 
-	// Generate routing
-	routingJSON, err := GenerateRoutingJSON(filtered, *strategy, existingRouting)
+	// Generate routing with profiles
+	routingJSON, err := GenerateRoutingJSON(allProxies, profiles, existingRouting)
 	if err != nil {
 		return fmt.Errorf("generate routing: %w", err)
 	}
@@ -239,7 +231,7 @@ func (s *Scheduler) writeConfigFiles(filtered []*ProxyEntry, strategy *RoutingSt
 
 	// Observatory
 	obsPath := dir + "/07_observatory.json"
-	if NeedsObservatory(strategy.Type) {
+	if NeedsObservatory(profiles) {
 		obsJSON, err := GenerateObservatoryJSON()
 		if err != nil {
 			return fmt.Errorf("generate observatory: %w", err)

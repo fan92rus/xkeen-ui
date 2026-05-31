@@ -572,9 +572,9 @@ func TestScheduler_RunAutoApply_AllFilteredOut(t *testing.T) {
 	sched.RefreshAll()
 	sched.runAutoApply()
 
-	// All proxies filtered out — no files should be written
-	if _, err := os.Stat(filepath.Join(dir, "04_outbounds.json")); !os.IsNotExist(err) {
-		t.Error("expected no outbounds file when all proxies filtered")
+	// With profiles model, outbounds are always written (filtering is via balancer selectors)
+	if _, err := os.Stat(filepath.Join(dir, "04_outbounds.json")); os.IsNotExist(err) {
+		t.Error("expected outbounds file to be written (profiles handle filtering)")
 	}
 }
 
@@ -607,7 +607,7 @@ func TestScheduler_WriteConfigFiles_PreservesExistingRouting(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	sched.SetXrayDir(dir)
 
-	err := sched.writeConfigFiles(proxies, &RoutingStrategy{Type: "all"})
+	err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "all"}}})
 	if err != nil {
 		t.Fatalf("writeConfigFiles: %v", err)
 	}
@@ -652,7 +652,7 @@ func TestScheduler_WriteConfigFiles_BalancerMode(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	sched.SetXrayDir(dir)
 
-	err := sched.writeConfigFiles(proxies, &RoutingStrategy{Type: "random", FallbackTag: "direct"})
+	err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "random", FallbackTag: "direct"}}})
 	if err != nil {
 		t.Fatalf("writeConfigFiles: %v", err)
 	}
@@ -667,14 +667,14 @@ func TestScheduler_WriteConfigFiles_BalancerMode(t *testing.T) {
 		t.Fatal("expected balancers in routing for random strategy")
 	}
 	balancer := balancers[0].(map[string]interface{})
-	if balancer["tag"] != "proxy-balancer" {
-		t.Error("expected balancer tag 'proxy-balancer'")
+	if balancer["tag"] != "default-balancer" {
+		t.Error("expected balancer tag 'default-balancer'")
 	}
 
-	// Rules: ad-block only (no proxy rule added for balancer strategies)
+	// Rules: ad-block + fallback balancer rule
 	rules := routing["rules"].([]interface{})
-	if len(rules) != 1 {
-		t.Errorf("expected 1 rule (ad-block), got %d", len(rules))
+	if len(rules) != 2 {
+		t.Errorf("expected 2 rules (ad-block + fallback), got %d", len(rules))
 	}
 }
 
@@ -684,7 +684,7 @@ func TestScheduler_WriteConfigFiles_NoXrayDir(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	// xrayDir is empty
 
-	err := sched.writeConfigFiles([]*ProxyEntry{{Tag: "test"}}, &RoutingStrategy{Type: "all"})
+	err := sched.writeConfigFiles([]*ProxyEntry{{Tag: "test"}}, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "all"}}})
 	if err == nil {
 		t.Error("expected error when xrayDir is empty")
 	}

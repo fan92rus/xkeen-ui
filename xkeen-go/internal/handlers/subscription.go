@@ -283,20 +283,17 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get filtered proxies
+	// Get all proxies and profiles
 	allProxies := h.store.GetProxies()
-	filters := h.store.GetFilters()
-	filtered := subscription.ApplyFilter(allProxies, filters)
+	profiles := h.store.GetProfiles()
 
-	if len(filtered) == 0 {
-		respondError(w, http.StatusBadRequest, "no proxies available after filtering; fetch subscriptions first")
+	if len(allProxies) == 0 {
+		respondError(w, http.StatusBadRequest, "no proxies available; fetch subscriptions first")
 		return
 	}
 
-	strategy := h.store.GetStrategy()
-
-	// Generate outbounds
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(filtered)
+	// Generate outbounds for ALL proxies (profiles select subsets via balancer selectors)
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
@@ -309,16 +306,16 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		existingRouting = data
 	}
 
-	// Generate routing
-	routingJSON, err := subscription.GenerateRoutingJSON(filtered, *strategy, existingRouting)
+	// Generate routing with all profiles
+	routingJSON, err := subscription.GenerateRoutingJSON(allProxies, profiles, existingRouting)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
 		return
 	}
 
-	// Generate observatory if needed
+	// Generate observatory if any profile needs it
 	var observatoryJSON []byte
-	if subscription.NeedsObservatory(strategy.Type) {
+	if subscription.NeedsObservatory(profiles) {
 		observatoryJSON, err = subscription.GenerateObservatoryJSON()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate observatory: %v", err))
@@ -360,11 +357,11 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	// Update generated timestamp
 	_ = h.store.SetGeneratedAt(time.Now())
 
-	log.Printf("[subscription] applied %d proxies with strategy %q: %s, %s", len(filtered), strategy.Type, outboundsPath, routingPath)
+	log.Printf("[subscription] applied %d proxies with %d profiles: %s, %s", len(allProxies), len(profiles), outboundsPath, routingPath)
 
 	response := map[string]interface{}{
 		"success":     true,
-		"proxy_count": len(filtered),
+		"proxy_count": len(allProxies),
 		"files": map[string]string{
 			"outbounds":   outboundsPath,
 			"routing":     routingPath,
@@ -382,10 +379,9 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 // GET /api/subscriptions/preview
 func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	allProxies := h.store.GetProxies()
-	filters := h.store.GetFilters()
-	filtered := subscription.ApplyFilter(allProxies, filters)
+	profiles := h.store.GetProfiles()
 
-	if len(filtered) == 0 {
+	if len(allProxies) == 0 {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"proxy_count": 0,
 			"outbounds":   nil,
@@ -396,9 +392,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	strategy := h.store.GetStrategy()
-
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(filtered)
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
@@ -411,26 +405,95 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		existingRouting = data
 	}
 
-	routingJSON, err := subscription.GenerateRoutingJSON(filtered, *strategy, existingRouting)
+	routingJSON, err := subscription.GenerateRoutingJSON(allProxies, profiles, existingRouting)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
 		return
 	}
 
 	var observatoryJSON json.RawMessage
-	if subscription.NeedsObservatory(strategy.Type) {
+	if subscription.NeedsObservatory(profiles) {
 		if obs, err := subscription.GenerateObservatoryJSON(); err == nil {
 			observatoryJSON = obs
 		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"proxy_count": len(filtered),
+		"proxy_count": len(allProxies),
 		"outbounds":   json.RawMessage(outboundsJSON),
 		"routing":     json.RawMessage(routingJSON),
 		"observatory": observatoryJSON,
-		"strategy":    strategy.Type,
+		"profiles":    profiles,
 	})
+}
+
+// ---------- Profiles ----------
+
+// ListProfiles returns all profiles with proxy counts.
+// GET /api/subscriptions/profiles
+func (h *SubscriptionHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
+	profiles := h.store.GetProfiles()
+	allProxies := h.store.GetProxies()
+
+	type profileWithCount struct {
+		subscription.Profile
+		ProxyCount int `json:"proxy_count"`
+	}
+
+	result := make([]profileWithCount, len(profiles))
+	for i, p := range profiles {
+		filtered := subscription.ApplyFilter(allProxies, &p.Filter)
+		result[i] = profileWithCount{Profile: p, ProxyCount: len(filtered)}
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// CreateProfile adds a new profile.
+// POST /api/subscriptions/profiles
+func (h *SubscriptionHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
+	var p subscription.Profile
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+	if p.Name == "" {
+		respondError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if err := h.store.AddProfile(&p); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, p)
+}
+
+// UpdateProfile updates an existing profile.
+// PUT /api/subscriptions/profiles/{id}
+func (h *SubscriptionHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var p subscription.Profile
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+	p.ID = id
+	if err := h.store.UpdateProfile(&p); err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, p)
+}
+
+// DeleteProfile removes a profile (cannot delete default).
+// DELETE /api/subscriptions/profiles/{id}
+func (h *SubscriptionHandler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.store.DeleteProfile(id); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // ---------- Registration ----------
@@ -504,6 +567,12 @@ func RegisterSubscriptionRoutes(r *mux.Router, handler *SubscriptionHandler) {
 	r.HandleFunc("/subscriptions/strategy", handler.UpdateStrategy).Methods("PUT")
 	r.HandleFunc("/subscriptions/apply", handler.Apply).Methods("POST")
 	r.HandleFunc("/subscriptions/preview", handler.Preview).Methods("GET")
+
+	// Profiles
+	r.HandleFunc("/subscriptions/profiles", handler.ListProfiles).Methods("GET")
+	r.HandleFunc("/subscriptions/profiles", handler.CreateProfile).Methods("POST")
+	r.HandleFunc("/subscriptions/profiles/{id}", handler.UpdateProfile).Methods("PUT")
+	r.HandleFunc("/subscriptions/profiles/{id}", handler.DeleteProfile).Methods("DELETE")
 
 	// Auto-apply cron settings
 	r.HandleFunc("/subscriptions/auto-apply", handler.GetAutoApply).Methods("GET")

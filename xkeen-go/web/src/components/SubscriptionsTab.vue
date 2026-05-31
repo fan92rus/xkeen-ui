@@ -16,6 +16,7 @@ const filters = reactive({
     include_regex: '', exclude_regex: '', max_proxies: 0
 });
 const strategy = reactive({ type: 'all', replace_balancer_tag: false });
+const profiles = ref([]); // [{id, name, enabled, is_default, filter, strategy, proxy_count}]
 const busy = ref(false);
 const editId = ref(null);
 const edit = reactive({ name: '', url: '', interval: 0, enabled: true });
@@ -243,6 +244,46 @@ async function applySubs() {
     } catch (e) { _err(e); } finally { busy.value = false; }
 }
 
+/* ---- profiles ---- */
+const editingProfile = reactive({ id: '', name: '', enabled: true, filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regex: '', exclude_regex: '', max_proxies: 0 }, strategy: { type: 'random' } });
+const showProfileEditor = ref(false);
+
+async function loadProfiles() {
+    try {
+        profiles.value = await api.listProfiles();
+    } catch (e) { console.error('[sub] loadProfiles:', e); }
+}
+function openNewProfile() {
+    Object.assign(editingProfile, { id: '', name: '', enabled: true, is_default: false,
+        filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regex: '', exclude_regex: '', max_proxies: 0 },
+        strategy: { type: 'random' } });
+    showProfileEditor.value = true;
+}
+function editProfile(p) {
+    Object.assign(editingProfile, JSON.parse(JSON.stringify(p)));
+    showProfileEditor.value = true;
+}
+async function saveProfile() {
+    try {
+        if (editingProfile.is_default) {
+            // Update default profile's strategy via legacy endpoint
+            await api.updateStrategy(editingProfile.strategy);
+            await api.updateFilters(editingProfile.filter);
+        } else if (editingProfile.id) {
+            await api.updateProfile(editingProfile.id, editingProfile);
+        } else {
+            await api.createProfile(editingProfile);
+        }
+        showProfileEditor.value = false;
+        await loadProfiles();
+        _toast('Профиль сохранён');
+    } catch (e) { _err(e); }
+}
+async function removeProfile(id) {
+    if (!confirm('Удалить профиль?')) return;
+    try { await api.deleteProfile(id); await loadProfiles(); _toast('Профиль удалён'); } catch (e) { _err(e); }
+}
+
 /* ---- init ---- */
 onMounted(async () => {
     try {
@@ -255,8 +296,7 @@ onMounted(async () => {
             exclude_countries: f.exclude_countries || [],
         });
         if (s) Object.assign(strategy, s);
-        // Auto-load cached proxies on mount
-        await loadProxies();
+        await Promise.all([loadProxies(), loadProfiles()]);
     } catch (e) { console.error('[sub] init error:', e); }
 });
 </script>
@@ -320,6 +360,63 @@ onMounted(async () => {
       <div v-if="subs.length === 0" class="sub-empty">
         <p>Нет подписок</p>
         <p class="sub-empty-hint">Вставьте URL подписки в поле выше</p>
+      </div>
+
+      <!-- Profiles -->
+      <div class="sub-divider" v-if="profiles.length"></div>
+      <div class="sub-row-label" v-if="profiles.length">Профили</div>
+      <div v-for="p in profiles" :key="p.id" class="sub-card" style="padding:6px 8px">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:6px;min-width:0">
+            <span class="dot" :class="p.enabled ? 'on' : 'off'"></span>
+            <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</strong>
+            <span class="cc" style="font-size:11px">{{ p.proxy_count }} прокси</span>
+            <span class="cc" style="font-size:11px">{{ p.strategy.type }}</span>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn btn-sm" @click="editProfile(p)" :disabled="busy">Ред.</button>
+            <button class="btn btn-sm" @click="removeProfile(p.id)" :disabled="busy || p.is_default" v-if="!p.is_default">Удалить</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-sm" @click="openNewProfile()" :disabled="busy || profiles.length >= 10" style="margin:4px 0">
+        + Профиль
+      </button>
+
+      <!-- Profile Editor Modal -->
+      <div v-if="showProfileEditor" class="sub-card" style="padding:8px;border:1px solid var(--primary-color)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <strong>{{ editingProfile.is_default ? 'Профиль по умолчанию' : (editingProfile.id ? 'Редактировать' : 'Новый профиль') }}</strong>
+          <button class="btn btn-sm" @click="showProfileEditor=false">Закрыть</button>
+        </div>
+        <div v-if="!editingProfile.is_default" style="margin-bottom:6px">
+          <input v-model="editingProfile.name" placeholder="Название" style="width:100%" />
+        </div>
+        <div style="margin-bottom:6px">
+          <div class="sub-row-label" style="margin-bottom:4px">Стратегия</div>
+          <div class="strat-pills">
+            <button v-for="s in STRATS" :key="s.v" class="spill" :class="{ active: editingProfile.strategy.type === s.v }"
+                    @click="editingProfile.strategy.type = s.v">{{ s.l }}</button>
+          </div>
+        </div>
+        <div style="margin-bottom:6px">
+          <div class="sub-row-label" style="margin-bottom:4px">Исключить маркеры</div>
+          <input v-model="editingProfile.filter.exclude_markers_str" placeholder="через запятую" style="width:100%"
+                 @change="editingProfile.filter.exclude_markers = editingProfile.filter.exclude_markers_str?.split(',').map(s=>s.trim()).filter(Boolean) || []" />
+        </div>
+        <div style="margin-bottom:6px">
+          <div class="sub-row-label" style="margin-bottom:4px">Исключить страны</div>
+          <input v-model="editingProfile.filter.exclude_countries_str" placeholder="DE, NL через запятую" style="width:100%"
+                 @change="editingProfile.filter.exclude_countries = editingProfile.filter.exclude_countries_str?.split(',').map(s=>s.trim()).filter(Boolean) || []" />
+        </div>
+        <div style="margin-bottom:6px">
+          <div class="sub-row-label" style="margin-bottom:4px">Max прокси (0=все)</div>
+          <input type="number" v-model.number="editingProfile.filter.max_proxies" min="0" style="width:80px" />
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" @click="saveProfile()" :disabled="busy">Сохранить</button>
+          <button class="btn btn-sm" @click="showProfileEditor=false">Отмена</button>
+        </div>
       </div>
 
       <!-- Filters (always visible when proxies exist) -->

@@ -17,6 +17,13 @@ func makeProxies() []*ProxyEntry {
 	return entries
 }
 
+// defaultProfiles creates a []Profile with a single default profile using the given strategy.
+func defaultProfiles(strategy RoutingStrategy) []Profile {
+	return []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: strategy},
+	}
+}
+
 // --- GenerateOutboundsJSON ---
 
 func TestGenerateOutboundsJSON_Basic(t *testing.T) {
@@ -89,7 +96,6 @@ func TestGenerateOutboundsJSON_BlockHasHTTPResponse(t *testing.T) {
 	}
 	json.Unmarshal(data, &result)
 
-	// Find block outbound
 	var block struct {
 		Tag      string `json:"tag"`
 		Protocol string `json:"protocol"`
@@ -146,9 +152,9 @@ func TestGenerateOutboundsJSON_MuxPresent(t *testing.T) {
 
 func TestGenerateRoutingJSON_StrategyAll(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "all"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "all"})
 
-	data, err := GenerateRoutingJSON(proxies, strategy, nil)
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -188,9 +194,9 @@ func TestGenerateRoutingJSON_StrategyAll(t *testing.T) {
 
 func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "random"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "random"})
 
-	data, err := GenerateRoutingJSON(proxies, strategy, nil)
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -214,8 +220,8 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 	}
 
 	balancer := routing.Balancers[0]
-	if balancer.Tag != "proxy-balancer" {
-		t.Errorf("expected balancer tag 'proxy-balancer', got %q", balancer.Tag)
+	if balancer.Tag != "default-balancer" {
+		t.Errorf("expected balancer tag 'default-balancer', got %q", balancer.Tag)
 	}
 	if len(balancer.Selector) != 1 || balancer.Selector[0] != "proxy-" {
 		t.Errorf("expected selector ['proxy-'], got %v", balancer.Selector)
@@ -227,17 +233,22 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 		t.Errorf("expected fallback 'direct', got %q", balancer.FallbackTag)
 	}
 
-	// Rules: only ad-block default (no proxy rule added for balancer strategies)
-	if len(routing.Rules) != 1 {
-		t.Errorf("expected 1 rule (ad-block), got %d", len(routing.Rules))
+	// Rules: ad-block + fallback balancer rule
+	if len(routing.Rules) != 2 {
+		t.Errorf("expected 2 rules (ad-block + fallback), got %d", len(routing.Rules))
+	}
+	// Last rule should be the fallback balancer rule
+	lastRule := routing.Rules[len(routing.Rules)-1]
+	if btag, ok := lastRule["balancerTag"].(string); !ok || btag != "default-balancer" {
+		t.Errorf("last rule should have balancerTag 'default-balancer', got %v", lastRule["balancerTag"])
 	}
 }
 
 func TestGenerateRoutingJSON_StrategyRoundRobin(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "roundrobin"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "roundrobin"})
 
-	data, err := GenerateRoutingJSON(proxies, strategy, nil)
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -259,9 +270,9 @@ func TestGenerateRoutingJSON_StrategyRoundRobin(t *testing.T) {
 
 func TestGenerateRoutingJSON_StrategyLeastPing(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "leastping"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "leastping"})
 
-	data, err := GenerateRoutingJSON(proxies, strategy, nil)
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -283,9 +294,9 @@ func TestGenerateRoutingJSON_StrategyLeastPing(t *testing.T) {
 
 func TestGenerateRoutingJSON_StrategyLeastLoad(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "leastload"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "leastload"})
 
-	data, err := GenerateRoutingJSON(proxies, strategy, nil)
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -307,9 +318,9 @@ func TestGenerateRoutingJSON_StrategyLeastLoad(t *testing.T) {
 
 func TestGenerateRoutingJSON_CustomFallbackTag(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "random", FallbackTag: "block"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "random", FallbackTag: "block"})
 
-	data, err := GenerateRoutingJSON(proxies, strategy, nil)
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -331,7 +342,7 @@ func TestGenerateRoutingJSON_CustomFallbackTag(t *testing.T) {
 
 func TestGenerateRoutingJSON_WithExistingRouting(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "all"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "all"})
 
 	existing := `{
 		"domainStrategy": "AsIs",
@@ -342,7 +353,7 @@ func TestGenerateRoutingJSON_WithExistingRouting(t *testing.T) {
 		]
 	}`
 
-	data, err := GenerateRoutingJSON(proxies, strategy, json.RawMessage(existing))
+	data, err := GenerateRoutingJSON(proxies, profiles, json.RawMessage(existing))
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -389,9 +400,9 @@ func TestGenerateRoutingJSON_WithExistingRouting(t *testing.T) {
 
 func TestGenerateRoutingJSON_ExistingWithBalancerSwitch(t *testing.T) {
 	proxies := makeProxies()
-	strategy := RoutingStrategy{Type: "random"}
+	profiles := defaultProfiles(RoutingStrategy{Type: "random"})
 
-	// Existing routing has old balancer rules — they should be removed
+	// Existing routing has old balancer rules — they should be preserved (no replace flag)
 	existing := `{
 		"domainStrategy": "IPIfNonMatch",
 		"rules": [
@@ -400,7 +411,7 @@ func TestGenerateRoutingJSON_ExistingWithBalancerSwitch(t *testing.T) {
 		]
 	}`
 
-	data, err := GenerateRoutingJSON(proxies, strategy, json.RawMessage(existing))
+	data, err := GenerateRoutingJSON(proxies, profiles, json.RawMessage(existing))
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -416,12 +427,12 @@ func TestGenerateRoutingJSON_ExistingWithBalancerSwitch(t *testing.T) {
 	}
 	json.Unmarshal(result["routing"], &routing)
 
-	// Should have exactly one balancer
+	// Should have exactly one balancer (from default profile)
 	if len(routing.Balancers) != 1 {
 		t.Errorf("expected 1 balancer, got %d", len(routing.Balancers))
 	}
 
-	// Should have block rule + proxy-balancer rule
+	// Should have block rule + existing balancer rule (preserved)
 	var hasBlock, hasBalancerRule bool
 	for _, rule := range routing.Rules {
 		if tag, ok := rule["outboundTag"].(string); ok && tag == "block" {
@@ -440,7 +451,8 @@ func TestGenerateRoutingJSON_ExistingWithBalancerSwitch(t *testing.T) {
 }
 
 func TestGenerateRoutingJSON_EmptyProxies(t *testing.T) {
-	_, err := GenerateRoutingJSON([]*ProxyEntry{}, RoutingStrategy{Type: "all"}, nil)
+	profiles := defaultProfiles(RoutingStrategy{Type: "all"})
+	_, err := GenerateRoutingJSON([]*ProxyEntry{}, profiles, nil)
 	if err == nil {
 		t.Fatal("expected error for empty proxy list")
 	}
@@ -493,9 +505,10 @@ func TestNeedsObservatory(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := NeedsObservatory(tt.strategy)
+		profiles := []Profile{{Enabled: true, Strategy: RoutingStrategy{Type: tt.strategy}}}
+		result := NeedsObservatory(profiles)
 		if result != tt.expected {
-			t.Errorf("NeedsObservatory(%q) = %v, expected %v", tt.strategy, result, tt.expected)
+			t.Errorf("NeedsObservatory(profile with strategy=%q) = %v, expected %v", tt.strategy, result, tt.expected)
 		}
 	}
 }
@@ -521,7 +534,8 @@ func TestGenerateOutboundsJSON_ValidJSON(t *testing.T) {
 
 func TestGenerateRoutingJSON_ValidJSON(t *testing.T) {
 	proxies := makeProxies()
-	data, err := GenerateRoutingJSON(proxies, RoutingStrategy{Type: "all"}, nil)
+	profiles := defaultProfiles(RoutingStrategy{Type: "all"})
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatalf("GenerateRoutingJSON failed: %v", err)
 	}
@@ -562,7 +576,8 @@ func TestGenerateRoutingJSON_PreservesRulesRaw(t *testing.T) {
 	}`)
 
 	strat := RoutingStrategy{Type: "random", FallbackTag: "direct"}
-	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	profiles := defaultProfiles(strat)
+	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,8 +629,8 @@ func TestGenerateRoutingJSON_StrategyAll_NoBalancer(t *testing.T) {
 		}
 	}`)
 
-	strat := RoutingStrategy{Type: "all"}
-	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	profiles := defaultProfiles(RoutingStrategy{Type: "all"})
+	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,8 +666,8 @@ func TestGenerateRoutingJSON_PreservesDomainStrategy(t *testing.T) {
 		}
 	}`)
 
-	strat := RoutingStrategy{Type: "random"}
-	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	profiles := defaultProfiles(RoutingStrategy{Type: "random"})
+	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,8 +689,8 @@ func TestGenerateRoutingJSON_NoExistingRules(t *testing.T) {
 		{Tag: "proxy-us", Outbound: json.RawMessage(`{"tag":"proxy-us","protocol":"vless"}`)},
 	}
 
-	strat := RoutingStrategy{Type: "random", FallbackTag: "direct"}
-	data, err := GenerateRoutingJSON(proxies, strat, nil)
+	profiles := defaultProfiles(RoutingStrategy{Type: "random", FallbackTag: "direct"})
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -690,13 +705,13 @@ func TestGenerateRoutingJSON_NoExistingRules(t *testing.T) {
 		t.Fatal("missing routing key")
 	}
 
-	// Should have default ad-blocking rule
+	// Should have default ad-blocking rule + fallback balancer rule
 	rules, ok := routing["rules"].([]interface{})
 	if !ok {
 		t.Fatal("missing rules")
 	}
-	if len(rules) != 1 {
-		t.Errorf("expected 1 rule (ad-block), got %d", len(rules))
+	if len(rules) != 2 {
+		t.Errorf("expected 2 rules (ad-block + fallback), got %d", len(rules))
 	}
 
 	// Should have balancer
@@ -735,9 +750,9 @@ func TestReplaceBalancerRules(t *testing.T) {
 		t.Errorf("rule 0 should be block, got %v", rules[0]["outboundTag"])
 	}
 
-	// Rule 2: balancerTag replaced
-	if rules[2]["balancerTag"] != "proxy-balancer" {
-		t.Errorf("rule 2 should have balancerTag 'proxy-balancer', got %v", rules[2]["balancerTag"])
+	// Rule 2: balancerTag replaced with "default-balancer"
+	if rules[2]["balancerTag"] != "default-balancer" {
+		t.Errorf("rule 2 should have balancerTag 'default-balancer', got %v", rules[2]["balancerTag"])
 	}
 
 	// Rule 3: outboundTag proxy — preserved
@@ -769,7 +784,8 @@ func TestGenerateRoutingJSON_WithReplaceBalancerTag(t *testing.T) {
 	}`)
 
 	strat := RoutingStrategy{Type: "random", FallbackTag: "direct", ReplaceBalancerTag: true}
-	data, err := GenerateRoutingJSON(proxies, strat, existing)
+	profiles := defaultProfiles(strat)
+	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -781,21 +797,95 @@ func TestGenerateRoutingJSON_WithReplaceBalancerTag(t *testing.T) {
 
 	routing := result["routing"].(map[string]interface{})
 
-	// Rules should have balancerTag replaced
+	// Rules should have balancerTag replaced with "default-balancer"
 	rules := routing["rules"].([]interface{})
 	if len(rules) != 3 {
 		t.Errorf("expected 3 rules, got %d", len(rules))
 	}
 
-	// Rule 1 should have new balancerTag
+	// Rule 1 should have new balancerTag "default-balancer"
 	rule1 := rules[1].(map[string]interface{})
-	if rule1["balancerTag"] != "proxy-balancer" {
-		t.Errorf("rule 1 balancerTag should be 'proxy-balancer', got %v", rule1["balancerTag"])
+	if rule1["balancerTag"] != "default-balancer" {
+		t.Errorf("rule 1 balancerTag should be 'default-balancer', got %v", rule1["balancerTag"])
 	}
 
 	// Balancer should exist
 	balancers := routing["balancers"].([]interface{})
 	if len(balancers) != 1 {
 		t.Errorf("expected 1 balancer, got %d", len(balancers))
+	}
+}
+
+// --- Multi-profile tests ---
+
+func TestGenerateRoutingJSON_MultipleProfiles(t *testing.T) {
+	proxies := makeProxies()
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: RoutingStrategy{Type: "random", FallbackTag: "direct"}},
+		{ID: "eu", Name: "EU", Enabled: true, Strategy: RoutingStrategy{Type: "roundrobin"},
+			Filter: Filter{IncludeCountries: []string{"DE", "NL"}}},
+	}
+
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	json.Unmarshal(data, &result)
+	routing := result["routing"].(map[string]interface{})
+
+	// Should have 2 balancers
+	balancers := routing["balancers"].([]interface{})
+	if len(balancers) != 2 {
+		t.Fatalf("expected 2 balancers, got %d", len(balancers))
+	}
+
+	// First balancer = default
+	b0 := balancers[0].(map[string]interface{})
+	if b0["tag"] != "default-balancer" {
+		t.Errorf("first balancer tag should be 'default-balancer', got %v", b0["tag"])
+	}
+	if b0["fallbackTag"] != "direct" {
+		t.Errorf("default balancer should have fallbackTag 'direct', got %v", b0["fallbackTag"])
+	}
+
+	// Second balancer = eu with concrete selector
+	b1 := balancers[1].(map[string]interface{})
+	if b1["tag"] != "eu-balancer" {
+		t.Errorf("second balancer tag should be 'eu-balancer', got %v", b1["tag"])
+	}
+	selector := b1["selector"].([]interface{})
+	if len(selector) == 0 {
+		t.Error("eu balancer should have non-empty selector")
+	}
+	// EU profile includes DE and NL — should have concrete tags
+	for _, s := range selector {
+		tag := s.(string)
+		if !strings.HasPrefix(tag, "proxy-") {
+			t.Errorf("expected proxy-* tag in selector, got %q", tag)
+		}
+	}
+}
+
+func TestGenerateRoutingJSON_DisabledProfile(t *testing.T) {
+	proxies := makeProxies()
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: RoutingStrategy{Type: "random"}},
+		{ID: "disabled", Name: "Disabled", Enabled: false, Strategy: RoutingStrategy{Type: "random"}},
+	}
+
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	json.Unmarshal(data, &result)
+	routing := result["routing"].(map[string]interface{})
+
+	balancers := routing["balancers"].([]interface{})
+	if len(balancers) != 1 {
+		t.Errorf("disabled profile should be skipped, expected 1 balancer, got %d", len(balancers))
 	}
 }

@@ -25,11 +25,15 @@ func TestNewStore_CreatesDefaultConfig(t *testing.T) {
 	if len(cfg.Subscriptions) != 0 {
 		t.Errorf("expected 0 subscriptions, got %d", len(cfg.Subscriptions))
 	}
-	if cfg.Strategy.Type != "all" {
-		t.Errorf("expected default strategy 'all', got %q", cfg.Strategy.Type)
+	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
+		t.Fatal("expected default profile")
 	}
-	if cfg.Strategy.FallbackTag != "direct" {
-		t.Errorf("expected fallback 'direct', got %q", cfg.Strategy.FallbackTag)
+	dp := cfg.Profiles[0]
+	if dp.Strategy.Type != "all" {
+		t.Errorf("expected default strategy 'all', got %q", dp.Strategy.Type)
+	}
+	if dp.Strategy.FallbackTag != "direct" {
+		t.Errorf("expected fallback 'direct', got %q", dp.Strategy.FallbackTag)
 	}
 }
 
@@ -41,8 +45,8 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 		Subscriptions: []Subscription{
 			{ID: "abc", Name: "Test", URL: "https://example.com/sub", Enabled: true, Interval: 5},
 		},
-		Filters:  Filter{ExcludeMarkers: []string{"0.5X", "🎮"}},
-		Strategy: RoutingStrategy{Type: "random", FallbackTag: "direct"},
+		Filters:  &Filter{ExcludeMarkers: []string{"0.5X", "🎮"}},
+		Strategy: &RoutingStrategy{Type: "random", FallbackTag: "direct"},
 	}
 	data, _ := json.MarshalIndent(existing, "", "    ")
 	os.WriteFile(path, data, 0644)
@@ -59,11 +63,16 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 	if cfg.Subscriptions[0].ID != "abc" {
 		t.Errorf("expected id 'abc', got %q", cfg.Subscriptions[0].ID)
 	}
-	if cfg.Strategy.Type != "random" {
-		t.Errorf("expected strategy 'random', got %q", cfg.Strategy.Type)
+	// Legacy fields should be migrated into default profile
+	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
+		t.Fatal("expected default profile after migration")
 	}
-	if len(cfg.Filters.ExcludeMarkers) != 2 {
-		t.Errorf("expected 2 exclude markers, got %d", len(cfg.Filters.ExcludeMarkers))
+	dp := cfg.Profiles[0]
+	if dp.Strategy.Type != "random" {
+		t.Errorf("expected strategy 'random', got %q", dp.Strategy.Type)
+	}
+	if len(dp.Filter.ExcludeMarkers) != 2 {
+		t.Errorf("expected 2 exclude markers, got %d", len(dp.Filter.ExcludeMarkers))
 	}
 }
 
@@ -78,8 +87,11 @@ func TestNewStore_CorruptFileUsesDefaults(t *testing.T) {
 	}
 
 	cfg := store.GetConfig()
-	if cfg.Strategy.Type != "all" {
-		t.Errorf("expected default strategy for corrupt file, got %q", cfg.Strategy.Type)
+	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
+		t.Fatal("expected default profile for corrupt file")
+	}
+	if cfg.Profiles[0].Strategy.Type != "all" {
+		t.Errorf("expected default strategy for corrupt file, got %q", cfg.Profiles[0].Strategy.Type)
 	}
 }
 
@@ -364,8 +376,11 @@ func TestPersistence_AcrossStoreInstances(t *testing.T) {
 	if cfg.Subscriptions[0].Name != "Persist" {
 		t.Errorf("expected 'Persist', got %q", cfg.Subscriptions[0].Name)
 	}
-	if cfg.Filters.MaxProxies != 15 {
-		t.Errorf("expected MaxProxies=15, got %d", cfg.Filters.MaxProxies)
+	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
+		t.Fatal("expected default profile")
+	}
+	if cfg.Profiles[0].Filter.MaxProxies != 15 {
+		t.Errorf("expected MaxProxies=15, got %d", cfg.Profiles[0].Filter.MaxProxies)
 	}
 }
 

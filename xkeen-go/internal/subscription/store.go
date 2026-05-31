@@ -28,8 +28,7 @@ func NewStore(path string) (*Store, error) {
 		path: path,
 		config: &SubscriptionConfig{
 			Subscriptions: []Subscription{},
-			Filters:       Filter{},
-			Strategy:      RoutingStrategy{Type: "all", FallbackTag: "direct"},
+			Profiles: []Profile{},
 		},
 	}
 
@@ -41,6 +40,9 @@ func NewStore(path string) (*Store, error) {
 		}
 		// If the file exists but can't be parsed, keep defaults.
 	}
+
+	// Migrate legacy Filters/Strategy into default profile
+	s.migrateProfiles()
 
 	return s, nil
 }
@@ -161,22 +163,41 @@ func (s *Store) GetSubscription(id string) (*Subscription, error) {
 	return nil, fmt.Errorf("subscription %s not found", id)
 }
 
-// ---------- Filters ----------
+// ---------- Filters / Strategy (delegate to default profile) ----------
 
-// SetFilters replaces the current filter rules and saves.
+// SetFilters replaces the default profile's filter rules.
 func (s *Store) SetFilters(filters *Filter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	s.config.Filters = *filters
+	dp := s.defaultProfile()
+	dp.Filter = *filters
 	return s.saveConfig(s.config)
 }
 
-// GetFilters returns a deep copy of the current filters.
+// GetFilters returns the default profile's filter rules.
 func (s *Store) GetFilters() *Filter {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return cloneFilter(&s.config.Filters)
+	dp := s.defaultProfile()
+	return cloneFilter(&dp.Filter)
+}
+
+// SetStrategy replaces the default profile's routing strategy.
+func (s *Store) SetStrategy(strategy *RoutingStrategy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dp := s.defaultProfile()
+	dp.Strategy = *strategy
+	return s.saveConfig(s.config)
+}
+
+// GetStrategy returns the default profile's routing strategy.
+func (s *Store) GetStrategy() *RoutingStrategy {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	dp := s.defaultProfile()
+	cp := dp.Strategy
+	return &cp
 }
 
 // cloneFilter returns a deep copy of a Filter with non-nil slices.
@@ -199,23 +220,142 @@ func safeSlice(s []string) []string {
 	return cp
 }
 
-// ---------- Strategy ----------
+// ---------- Profiles ----------
 
-// SetStrategy replaces the routing strategy and saves.
-func (s *Store) SetStrategy(strategy *RoutingStrategy) error {
+// GetProfiles returns all profiles.
+func (s *Store) GetProfiles() []Profile {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cp := make([]Profile, len(s.config.Profiles))
+	copy(cp, s.config.Profiles)
+	return cp
+}
+
+// GetProfile returns a single profile by ID.
+func (s *Store) GetProfile(id string) (*Profile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, p := range s.config.Profiles {
+		if p.ID == id {
+			cp := p
+			return &cp, nil
+		}
+	}
+	return nil, fmt.Errorf("profile %s not found", id)
+}
+
+// AddProfile creates a new profile. Max MaxProfiles allowed.
+func (s *Store) AddProfile(p *Profile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.config.Strategy = *strategy
+	if len(s.config.Profiles) >= MaxProfiles {
+		return fmt.Errorf("maximum %d profiles allowed", MaxProfiles)
+	}
+	if p.ID == "" {
+		id, err := generateID()
+		if err != nil {
+			return err
+		}
+			p.ID = id
+	}
+	if p.ID == "default" {
+		return fmt.Errorf("'default' id is reserved")
+	}
+	p.IsDefault = false
+	s.config.Profiles = append(s.config.Profiles, *p)
 	return s.saveConfig(s.config)
 }
 
-// GetStrategy returns a copy of the current routing strategy.
-func (s *Store) GetStrategy() *RoutingStrategy {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	cp := s.config.Strategy
-	return &cp
+// UpdateProfile updates an existing profile by ID.
+func (s *Store) UpdateProfile(p *Profile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, existing := range s.config.Profiles {
+		if existing.ID == p.ID {
+			// Preserve IsDefault flag
+			p.IsDefault = existing.IsDefault
+			s.config.Profiles[i] = *p
+			return s.saveConfig(s.config)
+		}
+	}
+	return fmt.Errorf("profile %s not found", p.ID)
+}
+
+// DeleteProfile removes a profile. Cannot delete the default profile.
+func (s *Store) DeleteProfile(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, p := range s.config.Profiles {
+		if p.ID == id {
+			if p.IsDefault {
+				return fmt.Errorf("cannot delete the default profile")
+			}
+			s.config.Profiles = append(s.config.Profiles[:i], s.config.Profiles[i+1:]...)
+			return s.saveConfig(s.config)
+		}
+	}
+	return fmt.Errorf("profile %s not found", id)
+}
+
+// defaultProfile returns a pointer to the default profile (creates one if missing).
+// Caller must hold s.mu.
+func (s *Store) defaultProfile() *Profile {
+	for i := range s.config.Profiles {
+		if s.config.Profiles[i].IsDefault {
+			return &s.config.Profiles[i]
+		}
+	}
+	// No default found — create one
+	s.config.Profiles = append(s.config.Profiles, Profile{
+		ID:        "default",
+		Name:      "По умолчанию",
+		Enabled:   true,
+		IsDefault: true,
+		Filter:    Filter{},
+		Strategy:  RoutingStrategy{Type: "all", FallbackTag: "direct"},
+	})
+	return &s.config.Profiles[len(s.config.Profiles)-1]
+}
+
+// migrateProfiles converts legacy Filters/Strategy into a default profile.
+func (s *Store) migrateProfiles() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.config.Profiles) > 0 {
+		return // already migrated
+	}
+
+	f := s.config.Filters
+	st := s.config.Strategy
+
+	// Build default profile from legacy fields
+	dp := Profile{
+		ID:        "default",
+		Name:      "По умолчанию",
+		Enabled:   true,
+		IsDefault: true,
+	}
+	if f != nil {
+		dp.Filter = *f
+	} else {
+		dp.Filter = Filter{}
+	}
+	if st != nil {
+		dp.Strategy = *st
+	} else {
+		dp.Strategy = RoutingStrategy{Type: "all", FallbackTag: "direct"}
+	}
+
+	s.config.Profiles = []Profile{dp}
+
+	// Clear legacy fields
+	s.config.Filters = nil
+	s.config.Strategy = nil
+	s.saveConfig(s.config)
 }
 
 // ---------- Proxies (in-memory cache) ----------

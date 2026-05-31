@@ -18,3 +18,9 @@ export const applySubscriptions = () => api.post(`${BASE}/apply`);
 export const previewSubscriptions = () => api.get(`${BASE}/preview`);
 export const getAutoApply = () => api.get(`${BASE}/auto-apply`);
 export const updateAutoApply = (data) => api.put(`${BASE}/auto-apply`, data);
+
+// Profiles
+export const listProfiles = () => api.get(`${BASE}/profiles`);
+export const createProfile = (data) => api.post(`${BASE}/profiles`, data);
+export const updateProfile = (id, data) => api.put(`${BASE}/profiles/${id}`, data);
+export const deleteProfile = (id) => api.del(`${BASE}/profiles/${id}`);
