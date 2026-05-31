@@ -4,6 +4,7 @@
 :root {
     /* Keenetic dark theme — exact values from router CSS */
     --background: #1b2434;
+    --blurred-overlay-background: rgb(194 194 194 / 25%);
     --primary-text: #c2c2c2;
     --text-gray: #949b9f;
     --help-text: #6f737b;
@@ -104,6 +105,7 @@
 /* ===== Keenetic Light Theme ===== */
 html.light {
     --background: #fff;
+    --blurred-overlay-background: rgb(0 0 0 / 25%);
     --primary-text: #000;
     --text-gray: #6e6e6e;
     --help-text: #949b9f;
@@ -284,7 +286,7 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
     display: flex; align-items: center;
     padding: 0 14px; gap: 8px;
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: var(--text-small);
 }
 
 .toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
