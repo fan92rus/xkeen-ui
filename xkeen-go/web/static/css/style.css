@@ -81,8 +81,8 @@
     /* Layout */
     --radius: 8px;
     --radius-sm: 4px;
-    --sidebar-w: 52px;
-    --toolbar-h: 40px;
+    --sidebar-w: 56px;
+    --toolbar-h: 44px;
     --font: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 
@@ -214,7 +214,7 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
     justify-content: center;
     border-bottom: 1px solid var(--menu-border);
 }
-.sidebar-logo svg { width: 22px; height: 22px; }
+.sidebar-logo svg { width: 24px; height: 24px; }
 
 .sidebar-nav-items {
     flex: 1;
@@ -224,13 +224,13 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 }
 
 .nav-btn {
-    width: 100%; height: 42px;
+    width: 100%; height: 46px;
     display: flex; align-items: center; justify-content: center;
     background: none; border: none; cursor: pointer;
     position: relative; transition: background 0.05s;
     color: var(--text-gray);
 }
-.nav-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nav-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .nav-btn:hover { background: var(--menu-hover); color: var(--primary-text); }
 .nav-btn.active { color: var(--primary-color); background: var(--menu-active-item); }
 .nav-btn.active::before {
@@ -247,20 +247,20 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 }
 
 .sidebar-btn {
-    width: 36px; height: 32px;
+    width: 40px; height: 36px;
     display: flex; align-items: center; justify-content: center;
     background: none; border: none; cursor: pointer;
     border-radius: var(--radius-sm);
     color: var(--text-gray);
     transition: all 0.05s;
 }
-.sidebar-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sidebar-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .sidebar-btn:hover { color: var(--error); background: var(--status-warning-background); }
 .sidebar-btn.theme-toggle:hover { color: var(--primary-color); background: var(--status-special-background); }
 
 /* ===== Status Dot ===== */
 .status-dot {
-    width: 8px; height: 8px;
+    width: 10px; height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
     transition: background 0.05s;
@@ -293,20 +293,20 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 .toolbar-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .service-bar {
-    display: flex; align-items: center; gap: 6px;
-    padding: 0 10px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px;
     border-right: 1px solid var(--menu-border);
-    margin-right: 4px;
+    margin-right: 6px;
 }
-.service-label { font-size: var(--text-small); color: var(--text-gray); white-space: nowrap; line-height: var(--lh-small); }
+.service-label { font-size: var(--text-body); color: var(--text-gray); white-space: nowrap; line-height: var(--lh-body); font-weight: 500; }
 
 .toolbar-title {
     color: var(--text-gray);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    font-size: var(--text-small); font-weight: 500; line-height: var(--lh-small);
+    font-size: var(--text-body); font-weight: 500; line-height: var(--lh-body);
 }
 
-.toolbar .btn { padding: 4px 10px; font-size: var(--text-small); border-radius: var(--radius); line-height: var(--lh-small); height: 28px; }
+.toolbar .btn { padding: 4px 12px; font-size: var(--text-body); border-radius: var(--radius); line-height: var(--lh-body); height: 30px; }
 
 .file-select {
     padding: 4px 10px;
@@ -320,7 +320,7 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 }
 .file-select:focus { border-color: var(--primary-color); outline: none; }
 
-.toolbar .status-badge { font-size: 11px; padding: 1px 6px; border-radius: var(--radius-sm); font-weight: 500; }
+.toolbar .status-badge { font-size: var(--text-small); padding: 2px 8px; border-radius: var(--radius-sm); font-weight: 500; }
 .toolbar .status-badge.valid { color: var(--status-success-text); background: var(--status-success-background); }
 .toolbar .status-badge.invalid { color: var(--error); background: var(--status-warning-background); }
 
