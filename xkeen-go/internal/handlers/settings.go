@@ -25,6 +25,7 @@ type SettingsHandler struct {
 	cfg             *config.Config
 	configPath      string
 	OnMetricsChange func(int) *MetricsHandler
+	updateMetrics   func(port int) // called to update scheduler + write config file
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
@@ -284,6 +285,10 @@ func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http
 	})
 }
 
+func (h *SettingsHandler) SetUpdateMetrics(fn func(int)) {
+	h.updateMetrics = fn
+}
+
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
 func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +321,11 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 
 	if h.OnMetricsChange != nil {
 		h.OnMetricsChange(req.MetricsPort)
+	}
+
+	// Update scheduler and write 08_metrics.json
+	if h.updateMetrics != nil {
+		h.updateMetrics(req.MetricsPort)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{

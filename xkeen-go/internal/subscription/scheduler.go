@@ -58,9 +58,25 @@ func (s *Scheduler) SetXrayDir(dir string) {
 	s.xrayDir = dir
 }
 
-// SetMetricsPort sets the Xray metrics port for generating 06_metrics.json.
+// SetMetricsPort sets the Xray metrics port and immediately writes/removes 08_metrics.json.
 func (s *Scheduler) SetMetricsPort(port int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.metricsPort = port
+	if s.xrayDir == "" {
+		return
+	}
+	metricsPath := s.xrayDir + "/08_metrics.json"
+	if port > 0 {
+		metricsJSON := GenerateMetricsJSON(port)
+		if metricsJSON != nil {
+			if err := os.WriteFile(metricsPath, metricsJSON, 0644); err != nil {
+				log.Printf("[scheduler] failed to write metrics config: %v", err)
+			}
+		}
+	} else {
+		os.Remove(metricsPath)
+	}
 }
 
 // Start begins the per-minute subscription interval checker

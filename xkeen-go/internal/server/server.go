@@ -152,6 +152,12 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
+
+	// Wire scheduler to settings handler for metrics port changes
+	s.settingsHandler.SetUpdateMetrics(func(port int) {
+		subScheduler.SetMetricsPort(port)
+	})
+
 	subScheduler.Start()
 
 	// Setup routes
