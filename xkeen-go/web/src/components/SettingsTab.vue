@@ -64,6 +64,15 @@ async function saveAutoApply() {
 
 import { fmtTime as fmtNextRun } from '../utils/format.js';
 
+const sections = [
+  { id: 'mode', icon: '⚡', label: 'Режим' },
+  { id: 'logging', icon: '📋', label: 'Логирование' },
+  { id: 'updates', icon: '🔄', label: 'Обновления' },
+  { id: 'security', icon: '🔒', label: 'Безопасность' },
+  { id: 'autoapply', icon: '📅', label: 'Подписки' },
+  { id: 'metrics', icon: '📊', label: 'Метрики' },
+];
+
 onMounted(() => {
 	loadAutoApply();
 	loadMetricsPort();
@@ -71,217 +80,538 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="settings-container">
-    <div class="settings-grid">
-      <!-- Mode -->
-      <div class="settings-section">
-        <h3>Режим</h3>
-        <div class="setting-row">
-          <label>Активный режим:</label>
-          <div class="mode-selector">
-            <button @click="app.switchMode('xray')"
-                    :class="{ active: app.currentMode === 'xray' }"
-                    :disabled="!app.xrayAvailable" class="btn btn-mode">
-              <span class="mode-icon">X</span> Xray
-            </button>
-            <button @click="app.switchMode('mihomo')"
-                    :class="{ active: app.currentMode === 'mihomo' }"
-                    :disabled="!app.mihomoAvailable" class="btn btn-mode">
-              <span class="mode-icon">M</span> Mihomo
-            </button>
-          </div>
-        </div>
-        <div class="setting-info">
-          <p><strong>Текущий режим:</strong> {{ app.currentMode === 'mihomo' ? 'Mihomo (YAML конфигурации)' : 'Xray (JSON конфигурации)' }}</p>
-          <p v-show="!app.mihomoAvailable" class="setting-warning-inline">Директория конфигураций Mihomo не найдена</p>
-        </div>
-        <div class="setting-info">
-          <p><strong>Описание режимов:</strong></p>
-          <ul>
-            <li><strong>Xray</strong> — Использует ядро Xray с JSON файлами конфигурации</li>
-            <li><strong>Mihomo</strong> — Использует ядро Mihomo (Clash.Meta) с YAML файлами конфигурации</li>
-          </ul>
-        </div>
-      </div>
+  <div class="s">
+    <div class="s-layout">
+      <!-- Nav -->
+      <nav class="s-nav">
+        <a v-for="sec in sections" :key="sec.id" :href="'#' + sec.id" class="s-nav-item">
+          <span class="s-nav-icon">{{ sec.icon }}</span>
+          {{ sec.label }}
+        </a>
+      </nav>
 
-      <!-- Logging -->
-      <div class="settings-section">
-        <h3>Логирование</h3>
-        <div class="setting-row">
-          <label for="logLevel">Уровень логов:</label>
-          <select id="logLevel" v-model="app.xraySettings.logLevel" @change="app.updateLogLevel()">
-            <option v-for="level in app.xraySettings.logLevels" :key="level" :value="level">{{ level.toUpperCase() }}</option>
-          </select>
-        </div>
-        <div class="setting-info">
-          <p><strong>Описание уровней:</strong></p>
-          <ul>
-            <li><strong>DEBUG</strong> — Подробная отладочная информация</li>
-            <li><strong>INFO</strong> — Общая информация о работе</li>
-            <li><strong>WARNING</strong> — Только предупреждения</li>
-            <li><strong>ERROR</strong> — Только ошибки</li>
-            <li><strong>NONE</strong> — Отключить логирование</li>
-          </ul>
-        </div>
-        <div class="setting-info">
-          <p><strong>Текущие файлы логов:</strong></p>
-          <p>Лог доступа: <code>{{ app.xraySettings.accessLog }}</code></p>
-          <p>Лог ошибок: <code>{{ app.xraySettings.errorLog }}</code></p>
-        </div>
-        <div class="setting-warning" v-show="app.xraySettings.logLevel === 'none'">
-          <p>Внимание: Логирование отключено. Логи не будут записываться в файлы.</p>
-        </div>
-      </div>
+      <!-- Content -->
+      <div class="s-content">
 
-      <!-- Updates -->
-      <div class="settings-section">
-        <h3>Обновления</h3>
-        <div class="update-status">
-          <div class="setting-row">
-            <label>Текущая версия:</label>
-            <span class="version-info">{{ app.currentVersion }}</span>
-            <span v-show="app.updateInfo.is_prerelease" class="dev-badge">dev</span>
-          </div>
-          <div class="setting-row" v-show="app.updateInfo.latest_version">
-            <label>Последняя версия:</label>
-            <span class="version-info">{{ app.updateInfo.latest_version }}</span>
-            <span v-show="app.updateInfo.is_prerelease" class="dev-badge">dev</span>
-            <a v-show="app.updateInfo.release_url" :href="app.updateInfo.release_url" target="_blank" class="release-link-small">примечания</a>
-          </div>
-          <div v-if="app.updateInfo.update_available" class="update-available">
-            <p>{{ app.updateInfo.is_prerelease ? 'Доступна новая dev версия!' : 'Доступна новая версия!' }}</p>
-          </div>
-          <p v-if="!app.updateInfo.update_available && app.updateInfo.latest_version" class="up-to-date">
-            {{ app.updateInfo.is_prerelease ? 'Установлена последняя dev версия.' : 'Установлена последняя версия.' }}
-          </p>
-        </div>
-        <div class="setting-row checkbox-row">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="app.checkDevUpdates">
-            <span>Проверять dev обновления</span>
-          </label>
-          <span class="setting-hint">Development-сборки содержат последние функции, но могут быть нестабильны</span>
-        </div>
-        <div class="update-actions">
-          <button @click="app.checkUpdate()" :disabled="app.updateChecking || app.updating" class="btn">
-            {{ app.updateChecking ? 'Проверка...' : 'Проверить обновления' }}
-          </button>
-          <button v-if="app.updateInfo.update_available" @click="app.startUpdate()" :disabled="app.updating" class="btn btn-primary">
-            {{ app.updating ? 'Обновление...' : 'Обновить' }}
-          </button>
-        </div>
-        <div v-show="app.updating" class="update-progress">
-          <div class="progress-bar">
-            <div class="progress-fill" :style="'width: ' + app.updateProgress + '%'"></div>
-          </div>
-          <p class="progress-status">{{ app.updateStatus }}</p>
-        </div>
-      </div>
-
-      <!-- Security -->
-      <div class="settings-section">
-        <h3>Безопасность</h3>
-        <div class="password-change-form">
-          <div class="password-fields">
-            <div class="password-field">
-              <label for="currentPassword">Текущий пароль</label>
-              <input type="password" id="currentPassword" v-model="app.passwordChange.currentPassword"
-                     placeholder="••••••••" autocomplete="current-password">
+        <!-- Mode -->
+        <section :id="sections[0].id" class="s-section">
+          <h2 class="s-title">{{ sections[0].icon }} Режим</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Ядро</div>
+                <div class="s-row-desc">Активное ядро для обработки трафика</div>
+              </div>
+              <div class="mode-selector">
+                <button @click="app.switchMode('xray')"
+                        :class="{ active: app.currentMode === 'xray' }"
+                        :disabled="!app.xrayAvailable" class="btn-mode">
+                  <span class="mode-icon">X</span> Xray
+                </button>
+                <button @click="app.switchMode('mihomo')"
+                        :class="{ active: app.currentMode === 'mihomo' }"
+                        :disabled="!app.mihomoAvailable" class="btn-mode">
+                  <span class="mode-icon">M</span> Mihomo
+                </button>
+              </div>
             </div>
-            <div class="password-field">
-              <label for="newPassword">Новый пароль</label>
-              <input type="password" id="newPassword" v-model="app.passwordChange.newPassword"
-                     placeholder="Мин. 8 символов" autocomplete="new-password">
-            </div>
-            <div class="password-field">
-              <label for="confirmPassword">Подтверждение</label>
-              <input type="password" id="confirmPassword" v-model="app.passwordChange.confirmPassword"
-                     placeholder="••••••••" autocomplete="new-password">
+            <div class="s-row" v-show="!app.mihomoAvailable">
+              <div class="s-row-main">
+                <div class="s-row-label s-muted">Mihomo</div>
+                <div class="s-row-desc s-warn">Директория конфигураций не найдена</div>
+              </div>
             </div>
           </div>
-          <div v-show="app.passwordChange.error" class="setting-error">
-            <p>{{ app.passwordChange.error }}</p>
-          </div>
-          <div v-show="app.passwordChange.success" class="setting-success">
-            <p>Пароль успешно изменён!</p>
-          </div>
-          <div class="update-actions">
-            <button @click="app.changePassword()" :disabled="app.passwordChange.loading" class="btn btn-primary">
-              {{ app.passwordChange.loading ? 'Изменение...' : 'Изменить пароль' }}
-            </button>
-            <button @click="app.clearPasswordForm()" :disabled="app.passwordChange.loading" class="btn">Очистить</button>
-          </div>
-        </div>
-      </div>
+        </section>
 
-      <!-- Auto-Apply Subscriptions -->
-      <div class="settings-section">
-        <h3>Автообновление подписки</h3>
-        <div class="setting-row checkbox-row">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="autoApply.enabled">
-            <span>Включить автоматическое обновление</span>
-          </label>
-          <span class="setting-hint">Автоматически: обновить прокси → фильтровать → записать конфиги → перезапустить xkeen</span>
-        </div>
-        <div class="setting-row">
-          <label>Расписание (cron):</label>
-          <input type="text" v-model="autoApply.cron" placeholder="0 */6 * * *"
-                 :disabled="!autoApply.enabled" class="cron-input">
-        </div>
-        <div class="setting-info">
-          <p><strong>Формат:</strong> <code>мин час день месяц день_недели</code></p>
-          <ul>
-            <li><code>0 */6 * * *</code> — каждые 6 часов</li>
-            <li><code>0 0 * * *</code> — раз в сутки в полночь</li>
-            <li><code>*/30 * * * *</code> — каждые 30 минут</li>
-            <li><code>0 8,20 * * *</code> — в 08:00 и 20:00</li>
-          </ul>
-        </div>
-        <div v-if="autoApply.enabled && autoApply.next_run" class="setting-info">
-          <p>Следующий запуск: <strong>{{ fmtNextRun(autoApply.next_run) }}</strong></p>
-        </div>
-        <div class="update-actions">
-          <button @click="saveAutoApply()" :disabled="autoApplySaving" class="btn btn-primary">
-            {{ autoApplySaving ? 'Сохранение...' : 'Сохранить' }}
-          </button>
-        </div>
-      </div>
+        <!-- Logging -->
+        <section :id="sections[1].id" class="s-section">
+          <h2 class="s-title">📋 Логирование</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Уровень логов</div>
+                <div class="s-row-desc">
+                  Access: <code>{{ app.xraySettings.accessLog }}</code> · Error: <code>{{ app.xraySettings.errorLog }}</code>
+                </div>
+              </div>
+              <select v-model="app.xraySettings.logLevel" @change="app.updateLogLevel()" class="s-select">
+                <option v-for="level in app.xraySettings.logLevels" :key="level" :value="level">{{ level.toUpperCase() }}</option>
+              </select>
+            </div>
+          </div>
+        </section>
 
-      <!-- Metrics -->
-      <div class="settings-section">
-        <h3>Метрики Xray</h3>
-        <div class="setting-row checkbox-row">
-          <label class="checkbox-label">
-            <input type="checkbox" :checked="metricsPort > 0" @change="$event.target.checked ? metricsPort = 11111 : metricsPort = 0">
-            <span v-if="metricsPort > 0" style="color: #27ae60">● Метрики включены</span>
-            <span v-else>Метрики отключены</span>
-          </label>
-          <span class="setting-hint">Отображение трафика и состояния прокси во вкладке «Метрики»</span>
-        </div>
-        <div class="setting-row">
-          <label for="metricsPort">Порт:</label>
-          <input type="number" id="metricsPort" v-model.number="metricsPort" min="0" max="65535"
-                 :disabled="metricsPort === 0 || metricsSaving" class="port-input">
-        </div>
-        <div class="setting-info">
-          <p><strong>Описание:</strong></p>
-          <ul>
-            <li>Порт 0 — метрики выключены</li>
-            <li>Рекомендуемый порт: <code>11111</code></li>
-            <li>После включения необходимо перезапустить Xray и применить подписки</li>
-            <li>Данные доступны в отдельной вкладке «Метрики»</li>
-          </ul>
-        </div>
-        <div class="setting-warning" v-if="metricsPort > 0">
-          <p>⚠️ Метрики слушают на <code>127.0.0.1:{{ metricsPort }}</code>. Перезапустите Xray для применения.</p>
-        </div>
-        <div class="update-actions">
-          <button @click="saveMetricsPort()" :disabled="metricsSaving" class="btn btn-primary">
-            {{ metricsSaving ? 'Сохранение...' : 'Сохранить' }}
-          </button>
-        </div>
+        <!-- Updates -->
+        <section :id="sections[2].id" class="s-section">
+          <h2 class="s-title">🔄 Обновления</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Текущая версия</div>
+              </div>
+              <div class="s-row-right">
+                <span class="ver-badge">{{ app.currentVersion }}</span>
+                <span v-show="app.updateInfo.is_prerelease" class="dev-tag">dev</span>
+              </div>
+            </div>
+            <div class="s-row" v-show="app.updateInfo.latest_version">
+              <div class="s-row-main">
+                <div class="s-row-label">Последняя версия</div>
+              </div>
+              <div class="s-row-right">
+                <span class="ver-badge">{{ app.updateInfo.latest_version }}</span>
+                <a v-show="app.updateInfo.release_url" :href="app.updateInfo.release_url" target="_blank" class="s-link">примечания</a>
+              </div>
+            </div>
+            <div v-if="app.updateInfo.update_available" class="s-callout s-callout-info">
+              Доступна новая{{ app.updateInfo.is_prerelease ? ' dev' : '' }} версия!
+            </div>
+            <p v-else-if="app.updateInfo.latest_version" class="s-ok">✓ Установлена последняя версия</p>
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Dev-канал</div>
+                <div class="s-row-desc">Development-сборки с последними функциями, могут быть нестабильны</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="app.checkDevUpdates">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="s-row s-row-actions">
+              <button @click="app.checkUpdate()" :disabled="app.updateChecking || app.updating" class="btn">
+                {{ app.updateChecking ? 'Проверка...' : 'Проверить обновления' }}
+              </button>
+              <button v-if="app.updateInfo.update_available" @click="app.startUpdate()" :disabled="app.updating" class="btn btn-primary">
+                {{ app.updating ? 'Обновление...' : 'Обновить' }}
+              </button>
+            </div>
+            <div v-show="app.updating" class="s-progress">
+              <div class="s-progress-bar"><div :style="'width:' + app.updateProgress + '%'"></div></div>
+              <span class="s-progress-text">{{ app.updateStatus }}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Security -->
+        <section :id="sections[3].id" class="s-section">
+          <h2 class="s-title">🔒 Безопасность</h2>
+          <div class="s-block">
+            <div class="pw-grid">
+              <input type="password" v-model="app.passwordChange.currentPassword"
+                     placeholder="Текущий пароль" autocomplete="current-password" class="s-input">
+              <input type="password" v-model="app.passwordChange.newPassword"
+                     placeholder="Новый пароль (мин. 8 символов)" autocomplete="new-password" class="s-input">
+              <input type="password" v-model="app.passwordChange.confirmPassword"
+                     placeholder="Подтверждение пароля" autocomplete="new-password" class="s-input">
+            </div>
+            <div v-show="app.passwordChange.error" class="s-callout s-callout-err">{{ app.passwordChange.error }}</div>
+            <div v-show="app.passwordChange.success" class="s-callout s-callout-ok">Пароль успешно изменён!</div>
+            <div class="s-row s-row-actions">
+              <button @click="app.changePassword()" :disabled="app.passwordChange.loading" class="btn btn-primary">
+                {{ app.passwordChange.loading ? 'Изменение...' : 'Изменить пароль' }}
+              </button>
+              <button @click="app.clearPasswordForm()" :disabled="app.passwordChange.loading" class="btn">Очистить</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Auto-Apply -->
+        <section :id="sections[4].id" class="s-section">
+          <h2 class="s-title">📅 Автообновление подписки</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Автоматическое обновление</div>
+                <div class="s-row-desc">Обновить прокси → фильтровать → записать конфиги → перезапустить</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="autoApply.enabled">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Расписание</div>
+                <div class="s-row-desc s-cron-hint">
+                  <code>0 */6 * * *</code> каждые 6ч &nbsp;·&nbsp;
+                  <code>0 0 * * *</code> ежедневно &nbsp;·&nbsp;
+                  <code>*/30 * * * *</code> каждые 30м
+                </div>
+              </div>
+              <input type="text" v-model="autoApply.cron" placeholder="0 */6 * * *"
+                     :disabled="!autoApply.enabled" class="s-input s-input-mono">
+            </div>
+            <div v-if="autoApply.enabled && autoApply.next_run" class="s-callout s-callout-info">
+              Следующий запуск: {{ fmtNextRun(autoApply.next_run) }}
+            </div>
+            <div class="s-row s-row-actions">
+              <button @click="saveAutoApply()" :disabled="autoApplySaving" class="btn btn-primary">
+                {{ autoApplySaving ? 'Сохранение...' : 'Сохранить' }}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Metrics -->
+        <section :id="sections[5].id" class="s-section">
+          <h2 class="s-title">📊 Метрики Xray</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Сбор метрик</div>
+                <div class="s-row-desc">Трафик и состояние прокси во вкладке «Монитор»</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" :checked="metricsPort > 0" @change="$event.target.checked ? metricsPort = 11111 : metricsPort = 0">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="s-row" v-if="metricsPort > 0">
+              <div class="s-row-main">
+                <div class="s-row-label">Порт</div>
+                <div class="s-row-desc">Слушает <code>127.0.0.1:{{ metricsPort }}</code>. Перезапустите Xray для применения.</div>
+              </div>
+              <input type="number" v-model.number="metricsPort" min="1" max="65535"
+                     :disabled="metricsSaving" class="s-input s-input-port">
+            </div>
+            <div class="s-row s-row-actions">
+              <button @click="saveMetricsPort()" :disabled="metricsSaving" class="btn btn-primary">
+                {{ metricsSaving ? 'Сохранение...' : 'Сохранить' }}
+              </button>
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.s {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* ── Layout: sidebar nav + content ── */
+.s-layout {
+  display: flex;
+  max-width: 960px;
+  margin: 0 auto;
+  min-height: 100%;
+}
+
+/* ── Sidebar nav ── */
+.s-nav {
+  width: 180px;
+  flex-shrink: 0;
+  padding: 14px 0 14px 14px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.s-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-gray);
+  text-decoration: none;
+  transition: background 0.1s;
+}
+.s-nav-item:hover {
+  background: var(--menu-active-item);
+  color: var(--primary-text);
+}
+.s-nav-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+
+/* ── Content ── */
+.s-content {
+  flex: 1;
+  padding: 14px 24px 40px;
+  min-width: 0;
+}
+
+/* ── Section ── */
+.s-section {
+  margin-bottom: 8px;
+}
+.s-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary-text);
+  margin: 20px 0 6px;
+  padding: 0 4px;
+}
+.s-title:first-child {
+  margin-top: 0;
+}
+
+/* ── Block (white area) ── */
+.s-block {
+  background: var(--menu-background);
+  border: 1px solid var(--menu-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── Row ── */
+.s-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--menu-border);
+}
+.s-row:last-child {
+  border-bottom: none;
+}
+.s-row-main {
+  min-width: 0;
+  flex: 1;
+}
+.s-row-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary-text);
+}
+.s-row-desc {
+  font-size: 12px;
+  color: var(--help-text);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.s-row-desc code {
+  background: var(--background);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--primary-color);
+}
+.s-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.s-row-actions {
+  justify-content: flex-start;
+  gap: 8px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.s-muted { color: var(--help-text); }
+.s-warn { color: var(--status-caution-text); }
+
+/* ── Mode selector ── */
+.mode-selector { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.btn-mode {
+  display: flex; align-items: center; gap: 6px; padding: 5px 14px;
+  font-size: 13px; background: var(--background); color: var(--text-gray);
+  border: 1px solid var(--stroke); border-radius: 6px; cursor: pointer; transition: all 0.1s;
+}
+.btn-mode:hover:not(:disabled) { border-color: var(--primary-color); color: var(--primary-text); }
+.btn-mode.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+.btn-mode:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; font-weight: 700; font-size: 11px;
+  background: var(--menu-active-item); border-radius: 4px;
+}
+.btn-mode.active .mode-icon { background: rgba(255,255,255,0.2); }
+
+/* ── Toggle switch ── */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--stroke);
+  border-radius: 20px;
+  transition: background 0.15s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+.toggle input:checked + .toggle-slider {
+  background: var(--primary-color);
+}
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(18px);
+}
+
+/* ── Select ── */
+.s-select {
+  padding: 5px 10px;
+  background: var(--background);
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  color: var(--primary-text);
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.s-select:hover { border-color: var(--primary-color); }
+.s-select:focus { outline: none; border-color: var(--primary-color); }
+
+/* ── Inputs ── */
+.s-input {
+  padding: 7px 10px;
+  background: var(--background);
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  color: var(--primary-text);
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.s-input:focus { outline: none; border-color: var(--primary-color); }
+.s-input::placeholder { color: var(--help-text); }
+.s-input-mono { font-family: var(--font-mono); max-width: 180px; }
+.s-input-port { max-width: 90px; }
+
+/* ── Password grid ── */
+.pw-grid {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--menu-border);
+}
+.pw-grid .s-input {
+  flex: 1;
+}
+
+/* ── Version badge ── */
+.ver-badge {
+  font-family: var(--font-mono);
+  background: var(--menu-active-item);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--primary-text);
+}
+.dev-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--status-caution-text);
+  color: var(--background);
+  border-radius: 3px;
+}
+.s-link {
+  font-size: 12px;
+  color: var(--text-gray);
+  text-decoration: none;
+}
+.s-link:hover { color: var(--primary-color); }
+.s-ok { color: var(--status-success-text); font-size: 13px; padding: 8px 16px; margin: 0; }
+
+/* ── Callouts ── */
+.s-callout {
+  padding: 8px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--menu-border);
+}
+.s-callout code {
+  background: var(--background);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.s-callout-info {
+  background: var(--status-special-background);
+  border-left: 3px solid var(--primary-color);
+  color: var(--primary-text);
+}
+.s-callout-err {
+  background: var(--status-warning-background);
+  color: var(--error);
+}
+.s-callout-ok {
+  background: var(--status-success-background);
+  color: var(--status-success-text);
+}
+
+/* ── Progress ── */
+.s-progress {
+  padding: 8px 16px 12px;
+}
+.s-progress-bar {
+  height: 4px;
+  background: var(--progressbar-background);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.s-progress-bar div {
+  height: 100%;
+  background: var(--progressbar-fill);
+  transition: width 0.3s ease;
+}
+.s-progress-text {
+  font-size: 12px;
+  color: var(--text-gray);
+  margin-top: 4px;
+  display: block;
+}
+
+/* ── Cron hint ── */
+.s-cron-hint code {
+  background: var(--background);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--primary-color);
+}
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+  .s-layout { flex-direction: column; }
+  .s-nav {
+    width: auto;
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 4px;
+  }
+  .s-content { padding: 10px 14px 40px; }
+  .s-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .pw-grid { flex-direction: column; }
+}
+</style>
