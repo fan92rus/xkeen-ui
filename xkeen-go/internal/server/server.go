@@ -110,11 +110,16 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	s.serviceHandler = handlers.NewServiceHandler()
 	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
 		func(port int) *handlers.MetricsHandler {
+			// Stop old handler if any
+			if s.metricsHandler != nil {
+				s.metricsHandler.Close()
+			}
 			s.metricsHandler = nil
 			if port > 0 {
-				s.metricsHandler = handlers.NewMetricsHandler(
+				s.metricsHandler = handlers.NewMetricsHandlerWithOrigins(
 					fmt.Sprintf("http://127.0.0.1:%d", port),
 					5*time.Second,
+					cfg.CORS.AllowedOrigins,
 				)
 				log.Printf("Metrics enabled: listening on 127.0.0.1:%d", port)
 			}
@@ -284,6 +289,7 @@ func (s *Server) setupRoutes() {
 	// Metrics routes (optional)
 	if s.metricsHandler != nil {
 		handlers.RegisterMetricsRoutes(apiRouter, s.metricsHandler)
+		handlers.RegisterMetricsWSRoute(s.router, s.metricsHandler, s.middleware.AuthMiddleware)
 	}
 
 	// WebSocket routes (auth required, but no CSRF - WebSocket cannot send custom headers)
@@ -355,6 +361,11 @@ func (s *Server) Stop() error {
 	// Stop logs handler (tail processes and broadcast goroutine)
 	if s.logsHandler != nil {
 		s.logsHandler.Close()
+	}
+
+	// Stop metrics handler (background workers)
+	if s.metricsHandler != nil {
+		s.metricsHandler.Close()
 	}
 
 	// Stop session store cleanup goroutine

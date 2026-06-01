@@ -49,7 +49,7 @@ func TestGetStats_Success(t *testing.T) {
 	server := mockXrayMetricsServer(xrayFullResponse)
 	defer server.Close()
 
-	handler := NewMetricsHandler(server.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
 	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
 	w := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestGetStats_Cache(t *testing.T) {
 	}))
 	defer wrapped.Close()
 
-	handler := NewMetricsHandler(wrapped.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(wrapped.URL, 5*time.Second)
 
 	// First request — should hit the server
 	req1 := httptest.NewRequest("GET", "/api/metrics/stats", nil)
@@ -144,7 +144,7 @@ func TestGetObservatory_Success(t *testing.T) {
 	server := mockXrayMetricsServer(xrayFullResponse)
 	defer server.Close()
 
-	handler := NewMetricsHandler(server.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
 	req := httptest.NewRequest("GET", "/api/metrics/observatory", nil)
 	w := httptest.NewRecorder()
@@ -197,7 +197,7 @@ func TestGetStats_ExpvarStringFormat(t *testing.T) {
 	server := mockXrayMetricsServer(xrayExpvarStringResponse)
 	defer server.Close()
 
-	handler := NewMetricsHandler(server.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
 	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
 	w := httptest.NewRecorder()
@@ -234,7 +234,7 @@ func TestGetStats_NullStats(t *testing.T) {
 	server := mockXrayMetricsServer(xrayNullStatsResponse)
 	defer server.Close()
 
-	handler := NewMetricsHandler(server.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
 	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
 	w := httptest.NewRecorder()
@@ -280,7 +280,7 @@ func TestGetStats_NoStatsKey(t *testing.T) {
 	server := mockXrayMetricsServer(`{"cmdline":[],"memstats":{}}`)
 	defer server.Close()
 
-	handler := NewMetricsHandler(server.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
 	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
 	w := httptest.NewRecorder()
@@ -311,7 +311,7 @@ func TestGetObservatory_ExpvarStringFormat(t *testing.T) {
 	server := mockXrayMetricsServer(xrayExpvarStringResponse)
 	defer server.Close()
 
-	handler := NewMetricsHandler(server.URL, 5*time.Second)
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
 	req := httptest.NewRequest("GET", "/api/metrics/observatory", nil)
 	w := httptest.NewRecorder()
@@ -328,5 +328,121 @@ func TestGetObservatory_ExpvarStringFormat(t *testing.T) {
 	results, _ := body["results"].(map[string]interface{})
 	if len(results) == 0 {
 		t.Error("expected observatory results from string format")
+	}
+}
+
+// ── WebSocket & History tests ──
+
+func TestMetricsHistory_RingBuffer(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
+
+	// Fill the ring buffer beyond capacity
+	for i := 0; i < metricsHistoryCapacity+10; i++ {
+		handler.appendHistory(MetricsSnapshot{
+			Timestamp: int64(i),
+			Available: true,
+		})
+	}
+
+	history := handler.getHistory()
+	if len(history) != metricsHistoryCapacity {
+		t.Fatalf("expected %d entries, got %d", metricsHistoryCapacity, len(history))
+	}
+
+	// Should be in chronological order, oldest entries dropped
+	// The oldest entry should be i=10 (first 10 were overwritten)
+	if history[0].Timestamp != 10 {
+		t.Errorf("expected first entry ts=10, got %d", history[0].Timestamp)
+	}
+	if history[metricsHistoryCapacity-1].Timestamp != int64(metricsHistoryCapacity+10-1) {
+		t.Errorf("expected last entry ts=%d, got %d", metricsHistoryCapacity+10-1, history[metricsHistoryCapacity-1].Timestamp)
+	}
+}
+
+func TestMetricsHistory_Empty(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
+	history := handler.getHistory()
+	if history != nil {
+		t.Errorf("expected nil for empty history, got %v", history)
+	}
+}
+
+func TestMetricsHistory_ChronologicalOrder(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
+
+	// Add a few entries
+	for i := 0; i < 5; i++ {
+		handler.appendHistory(MetricsSnapshot{
+			Timestamp: int64(i * 100),
+		})
+	}
+
+	history := handler.getHistory()
+	for i := 1; i < len(history); i++ {
+		if history[i].Timestamp <= history[i-1].Timestamp {
+			t.Errorf("history not in chronological order at index %d: %d <= %d",
+				i, history[i].Timestamp, history[i-1].Timestamp)
+		}
+	}
+}
+
+func TestCollectSnapshot_Live(t *testing.T) {
+	server := mockXrayMetricsServer(xrayFullResponse)
+	defer server.Close()
+
+	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
+
+	snap := handler.collectSnapshot()
+	if !snap.Available {
+		t.Fatalf("expected available snapshot, got: %s", snap.Debug)
+	}
+	if snap.Timestamp == 0 {
+		t.Error("expected non-zero timestamp")
+	}
+	if snap.Inbound == nil {
+		t.Error("expected inbound data")
+	}
+	if snap.Outbound == nil {
+		t.Error("expected outbound data")
+	}
+	if snap.Observable == nil {
+		t.Error("expected observatory data")
+	}
+}
+
+func TestCollectSnapshot_Unavailable(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:59999", 1*time.Second)
+
+	snap := handler.collectSnapshot()
+	if snap.Available {
+		t.Error("expected unavailable snapshot")
+	}
+	if snap.Debug == "" {
+		t.Error("expected debug message")
+	}
+}
+
+func TestNewMetricsHandler_Close(t *testing.T) {
+	server := mockXrayMetricsServer(xrayFullResponse)
+	defer server.Close()
+
+	handler := NewMetricsHandlerWithOrigins(server.URL, 5*time.Second, nil)
+
+	// Give background goroutines time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Close should not panic
+	handler.Close()
+}
+
+func TestNewMetricsHandlerWithOrigins(t *testing.T) {
+	server := mockXrayMetricsServer(xrayFullResponse)
+	defer server.Close()
+
+	handler := NewMetricsHandlerWithOrigins(server.URL, 5*time.Second, []string{"http://localhost:3000"})
+	defer handler.Close()
+
+	if !handler.allowedOrigins["http://localhost:3000"] {
+		t.Error("expected allowed origin to be set")
 	}
 }
