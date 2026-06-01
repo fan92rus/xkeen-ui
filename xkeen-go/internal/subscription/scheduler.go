@@ -252,7 +252,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	}
 
 	// Metrics
-	metricsPath := dir + "/06_metrics.json"
+	metricsPath := dir + "/08_metrics.json"
 	if s.metricsPort > 0 {
 		metricsJSON := GenerateMetricsJSON(s.metricsPort)
 		if metricsJSON != nil {
