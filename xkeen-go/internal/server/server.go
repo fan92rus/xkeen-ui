@@ -108,7 +108,25 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	// Initialize handlers from handlers package
 	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.MihomoConfigDir, configPath, cfg.Mode)
 	s.serviceHandler = handlers.NewServiceHandler()
-	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir)
+	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
+		func(port int) *handlers.MetricsHandler {
+			s.metricsHandler = nil
+			if port > 0 {
+				s.metricsHandler = handlers.NewMetricsHandler(
+					fmt.Sprintf("http://127.0.0.1:%d", port),
+					5*time.Second,
+				)
+				log.Printf("Metrics enabled: listening on 127.0.0.1:%d", port)
+			}
+			return s.metricsHandler
+		},
+	)
+
+	// Initialize metrics handler with initial config value
+	if cfg.MetricsPort > 0 {
+		s.settingsHandler.OnMetricsChange(cfg.MetricsPort)
+	}
+
 	s.logsHandler = handlers.NewLogsHandler(handlers.LogsConfig{
 		AllowedRoots:   cfg.AllowedRoots,
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
@@ -135,15 +153,6 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
 	subScheduler.Start()
-
-	// Metrics handler (optional, only if port configured)
-	if cfg.MetricsPort > 0 {
-		s.metricsHandler = handlers.NewMetricsHandler(
-			fmt.Sprintf("http://127.0.0.1:%d", cfg.MetricsPort),
-			5*time.Second,
-		)
-		log.Printf("Metrics enabled: listening on 127.0.0.1:%d", cfg.MetricsPort)
-	}
 
 	// Setup routes
 	s.setupRoutes()

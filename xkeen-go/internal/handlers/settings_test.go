@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
+	"github.com/fan92rus/xkeen-ui/internal/config"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,7 +37,12 @@ func setupSettingsTest(t *testing.T) (*SettingsHandler, string, string) {
 		t.Fatalf("failed to create backup dir: %v", err)
 	}
 
-	handler := NewSettingsHandler([]string{tmpDir}, xrayDir, backupDir)
+	handler := NewSettingsHandler(
+		[]string{tmpDir}, xrayDir, backupDir,
+		config.DefaultConfig(),
+		filepath.Join(tmpDir, "config.json"),
+		nil, // no metrics callback in most tests
+	)
 	return handler, xrayDir, backupDir
 }
 
@@ -118,6 +125,9 @@ func TestNewSettingsHandler_ValidRoots(t *testing.T) {
 		[]string{tmpDir},
 		filepath.Join(tmpDir, "xray"),
 		filepath.Join(tmpDir, "bak"),
+		config.DefaultConfig(),
+		filepath.Join(tmpDir, "config.json"),
+		nil,
 	)
 
 	if handler == nil {
@@ -132,7 +142,7 @@ func TestNewSettingsHandler_ValidRoots(t *testing.T) {
 }
 
 func TestNewSettingsHandler_EmptyRoots(t *testing.T) {
-	handler := NewSettingsHandler([]string{}, "/opt/xray", "/opt/backups")
+	handler := NewSettingsHandler([]string{}, "/opt/xray", "/opt/backups", config.DefaultConfig(), "/opt/config.json", nil)
 	if handler == nil {
 		t.Fatal("expected non-nil handler even with empty roots")
 	}

@@ -2,11 +2,43 @@
 import { ref, onMounted } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as sub from '../services/subscription.js';
+import * as metrics from '../services/metrics.js';
 
 const app = useAppStore();
 
 const autoApply = ref({ enabled: false, cron: '0 */6 * * *', next_run: '' });
 const autoApplySaving = ref(false);
+
+// Metrics settings
+const metricsPort = ref(0);
+const metricsLoading = ref(false);
+const metricsSaving = ref(false);
+
+async function loadMetricsPort() {
+	metricsLoading.value = true;
+	try {
+		const d = await metrics.getMetricsPort();
+		metricsPort.value = d.metrics_port || 0;
+	} catch { /* ignore */ }
+	finally {
+		metricsLoading.value = false;
+	}
+}
+
+async function saveMetricsPort() {
+	metricsSaving.value = true;
+	try {
+		await metrics.updateMetricsPort(metricsPort.value);
+		app.showToast(
+			metricsPort.value > 0 ? `Метрики включены: порт ${metricsPort.value}` : 'Метрики отключены',
+			'success',
+		);
+	} catch (e) {
+		app.showToast(e.message || 'Ошибка сохранения', 'error');
+	} finally {
+		metricsSaving.value = false;
+	}
+}
 
 async function loadAutoApply() {
   try {
@@ -30,7 +62,10 @@ async function saveAutoApply() {
 
 import { fmtTime as fmtNextRun } from '../utils/format.js';
 
-onMounted(loadAutoApply);
+onMounted(() => {
+	loadAutoApply();
+	loadMetricsPort();
+});
 </script>
 
 <template>
@@ -207,6 +242,41 @@ onMounted(loadAutoApply);
         <div class="update-actions">
           <button @click="saveAutoApply()" :disabled="autoApplySaving" class="btn btn-primary">
             {{ autoApplySaving ? 'Сохранение...' : 'Сохранить' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Metrics -->
+      <div class="settings-section">
+        <h3>Метрики Xray</h3>
+        <div class="setting-row checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" :checked="metricsPort > 0" @change="$event.target.checked ? metricsPort = 11111 : metricsPort = 0">
+            <span v-if="metricsPort > 0" style="color: #27ae60">● Метрики включены</span>
+            <span v-else>Метрики отключены</span>
+          </label>
+          <span class="setting-hint">Отображение трафика и состояния прокси во вкладке «Метрики»</span>
+        </div>
+        <div class="setting-row">
+          <label for="metricsPort">Порт:</label>
+          <input type="number" id="metricsPort" v-model.number="metricsPort" min="0" max="65535"
+                 :disabled="metricsPort === 0 || metricsSaving" class="port-input">
+        </div>
+        <div class="setting-info">
+          <p><strong>Описание:</strong></p>
+          <ul>
+            <li>Порт 0 — метрики выключены</li>
+            <li>Рекомендуемый порт: <code>11111</code></li>
+            <li>После включения необходимо перезапустить Xray и применить подписки</li>
+            <li>Данные доступны в отдельной вкладке «Метрики»</li>
+          </ul>
+        </div>
+        <div class="setting-warning" v-if="metricsPort > 0">
+          <p>⚠️ Метрики слушают на <code>127.0.0.1:{{ metricsPort }}</code>. Перезапустите Xray для применения.</p>
+        </div>
+        <div class="update-actions">
+          <button @click="saveMetricsPort()" :disabled="metricsSaving" class="btn btn-primary">
+            {{ metricsSaving ? 'Сохранение...' : 'Сохранить' }}
           </button>
         </div>
       </div>

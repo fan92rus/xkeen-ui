@@ -13,26 +13,33 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/fan92rus/xkeen-ui/internal/config"
 	"github.com/fan92rus/xkeen-ui/internal/utils"
 )
 
 // SettingsHandler handles Xray settings operations.
 type SettingsHandler struct {
-	validator      *utils.PathValidator
-	logConfigPath  string
-	backupDir      string
+	validator       *utils.PathValidator
+	logConfigPath   string
+	backupDir       string
+	cfg             *config.Config
+	configPath      string
+	OnMetricsChange func(int) *MetricsHandler
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
-func NewSettingsHandler(allowedRoots []string, xrayConfigDir string, backupDir string) *SettingsHandler {
+func NewSettingsHandler(allowedRoots []string, xrayConfigDir string, backupDir string, cfg *config.Config, configPath string, onMetricsChange func(int) *MetricsHandler) *SettingsHandler {
 	validator, err := utils.NewPathValidator(allowedRoots)
 	if err != nil {
 		log.Printf("Warning: failed to create path validator: %v", err)
 	}
 	return &SettingsHandler{
-		validator:     validator,
-		logConfigPath: filepath.Join(xrayConfigDir, "01_log.json"),
-		backupDir:     backupDir,
+		validator:       validator,
+		logConfigPath:   filepath.Join(xrayConfigDir, "01_log.json"),
+		backupDir:       backupDir,
+		cfg:             cfg,
+		configPath:      configPath,
+		OnMetricsChange: onMetricsChange,
 	}
 }
 
@@ -277,10 +284,52 @@ func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http
 	})
 }
 
+// GetMetricsPort returns the current metrics port configuration.
+// GET /api/settings/metrics
+func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"metrics_port": h.cfg.MetricsPort,
+		"enabled":      h.cfg.MetricsPort > 0,
+	})
+}
+
+// UpdateMetricsPort updates the metrics port in config and triggers handler update.
+// PUT /api/settings/metrics
+func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MetricsPort int `json:"metrics_port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request"})
+		return
+	}
+	if req.MetricsPort < 0 || req.MetricsPort > 65535 {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "port must be 0-65535"})
+		return
+	}
+
+	h.cfg.MetricsPort = req.MetricsPort
+	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "save failed: " + err.Error()})
+		return
+	}
+
+	if h.OnMetricsChange != nil {
+		h.OnMetricsChange(req.MetricsPort)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":           true,
+		"metrics_port": req.MetricsPort,
+		"enabled":      req.MetricsPort > 0,
+	})
+}
 
 // RegisterSettingsRoutes registers settings-related routes.
 func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/xray/settings", handler.GetXraySettings).Methods("GET")
 	r.HandleFunc("/xray/settings/log-level", handler.UpdateLogLevel).Methods("POST")
 	r.HandleFunc("/xray/settings/backups", handler.ListBackupsForLogConfig).Methods("GET")
+	r.HandleFunc("/settings/metrics", handler.GetMetricsPort).Methods("GET")
+	r.HandleFunc("/settings/metrics", handler.UpdateMetricsPort).Methods("PUT")
 }
