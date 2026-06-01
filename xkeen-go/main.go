@@ -73,6 +73,14 @@ const defaultConfigJSON = `{
 // getInitScript returns the init script template with the given binary name.
 func getInitScript(binName string) string {
 	return fmt.Sprintf(`#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          xkeen-ui
+# Required-Start:    $network $local_fs
+# Required-Stop:     $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Description:       XKEEN-UI Web Interface for XKeen on Keenetic routers
+### END INIT INFO
 PATH=/opt/bin:/opt/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 DAEMON=/opt/bin/%s
 CONFIG=/opt/etc/xkeen-ui/config.json
@@ -82,6 +90,17 @@ NAME=xkeen-ui
 DESC="XKEEN-UI Web Interface"
 
 start() {
+    # Wait for /opt filesystem to be ready
+    i=0
+    while [ "$i" -lt 30 ] && [ ! -d /opt/bin ]; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ ! -d /opt/bin ]; then
+        echo "ERROR: /opt filesystem not ready after 30s"
+        return 1
+    fi
+
     # Clean stale PID file
     if [ -f "$PIDFILE" ]; then
         if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
