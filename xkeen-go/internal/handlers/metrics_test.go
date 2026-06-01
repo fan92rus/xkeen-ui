@@ -186,3 +186,60 @@ func TestGetObservatory_XrayUnavailable(t *testing.T) {
 		t.Fatalf("expected 503, got %d", resp.StatusCode)
 	}
 }
+
+// xrayExpvarStringResponse mimics real expvar where stats/observatory are JSON strings.
+const xrayExpvarStringResponse = `{
+	"stats": "{\"inbound\":{\"tproxy\":{\"downlink\":100,\"uplink\":50}},\"outbound\":{\"proxy-1\":{\"downlink\":999,\"uplink\":111}}}",
+	"observatory": "{\"proxy-1\":{\"alive\":true,\"delay\":120}}"
+}`
+
+func TestGetStats_ExpvarStringFormat(t *testing.T) {
+	server := mockXrayMetricsServer(xrayExpvarStringResponse)
+	defer server.Close()
+
+	handler := NewMetricsHandler(server.URL, 5*time.Second)
+
+	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	w := httptest.NewRecorder()
+	handler.GetStats(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+
+	if body["available"] != true {
+		t.Errorf("expected available=true")
+	}
+	outbound, _ := body["outbound"].(map[string]interface{})
+	if len(outbound) == 0 {
+		t.Error("expected outbound data from string format")
+	}
+}
+
+func TestGetObservatory_ExpvarStringFormat(t *testing.T) {
+	server := mockXrayMetricsServer(xrayExpvarStringResponse)
+	defer server.Close()
+
+	handler := NewMetricsHandler(server.URL, 5*time.Second)
+
+	req := httptest.NewRequest("GET", "/api/metrics/observatory", nil)
+	w := httptest.NewRecorder()
+	handler.GetObservatory(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+
+	results, _ := body["results"].(map[string]interface{})
+	if len(results) == 0 {
+		t.Error("expected observatory results from string format")
+	}
+}

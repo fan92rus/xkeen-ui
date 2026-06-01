@@ -94,14 +94,30 @@ func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, _ := vars["stats"].(map[string]interface{})
-	inbound, _ := stats["inbound"].(map[string]interface{})
-	outbound, _ := stats["outbound"].(map[string]interface{})
+	// expvar publishes stats as a JSON string — need double parse
+	statsRaw, ok := vars["stats"]
+	if !ok {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"available": true, "inbound": nil, "outbound": nil})
+		return
+	}
+	var stats struct {
+		Inbound  map[string]map[string]interface{} `json:"inbound"`
+		Outbound map[string]map[string]interface{} `json:"outbound"`
+	}
+	switch v := statsRaw.(type) {
+	case string:
+		if err := json.Unmarshal([]byte(v), &stats); err != nil {
+			log.Printf("MetricsHandler: failed to parse stats string: %v", err)
+		}
+	default:
+		b, _ := json.Marshal(v)
+		json.Unmarshal(b, &stats)
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"available": true,
-		"inbound":   inbound,
-		"outbound":  outbound,
+		"inbound":   stats.Inbound,
+		"outbound":  stats.Outbound,
 	})
 }
 
@@ -127,7 +143,22 @@ func (h *MetricsHandler) GetObservatory(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	observatory, _ := vars["observatory"].(map[string]interface{})
+	// expvar publishes observatory as a JSON string — need double parse
+	obsRaw, ok := vars["observatory"]
+	if !ok {
+		respondJSON(w, http.StatusOK, map[string]interface{}{"available": true, "results": nil})
+		return
+	}
+	var observatory map[string]interface{}
+	switch v := obsRaw.(type) {
+	case string:
+		if err := json.Unmarshal([]byte(v), &observatory); err != nil {
+			log.Printf("MetricsHandler: failed to parse observatory string: %v", err)
+		}
+	default:
+		b, _ := json.Marshal(v)
+		json.Unmarshal(b, &observatory)
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"available": true,
