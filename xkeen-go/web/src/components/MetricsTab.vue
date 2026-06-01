@@ -13,8 +13,7 @@ function formatBytes(bytes) {
     if (bytes == null || bytes === 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(1024));
-    const val = (Math.abs(bytes) / Math.pow(1024, i)).toFixed(1);
-    return val + ' ' + units[i];
+    return (Math.abs(bytes) / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
 }
 
 function delayColor(ms) {
@@ -85,301 +84,319 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 </script>
 
 <template>
-  <div class="m-wrap">
+  <div class="metrics-page">
     <!-- Unavailable -->
-    <div v-if="!loading && !available" class="m-empty">
-      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-           style="color:var(--error);opacity:.6;margin-bottom:16px">
+    <div v-if="!loading && !available" class="metrics-empty">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none"
+           stroke="var(--error)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
         <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
-      <p class="m-empty-title">Метрики недоступны</p>
-      <p class="m-empty-hint">Проверьте настройку <code>metrics_port</code> в конфигурации</p>
+      <p>Метрики недоступны</p>
+      <span>Включите <code>metrics_port</code> в настройках и перезапустите Xray</span>
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="m-loading">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <div v-if="loading" class="metrics-loading">
+      <span></span><span></span><span></span>
     </div>
 
-    <!-- Content -->
-    <div v-if="available" class="m-content">
-      <div class="m-head">
+    <!-- Dashboard -->
+    <template v-if="available">
+      <!-- Header -->
+      <div class="metrics-header">
         <h2>Метрики Xray</h2>
-        <span v-if="lastUpdate" class="m-time">{{ lastUpdate.toLocaleTimeString() }}</span>
+        <span v-if="lastUpdate" class="metrics-updated">{{ lastUpdate.toLocaleTimeString() }}</span>
       </div>
 
-      <!-- Cards -->
-      <div class="m-cards">
+      <!-- Summary cards -->
+      <div class="metrics-cards">
         <div class="m-card">
-          <div class="m-card-icon" style="color:var(--primary-color)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+          <div class="m-card-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
           </div>
-          <div class="m-card-val">{{ formatBytes(totalDown) }}</div>
-          <div class="m-card-lbl">Downlink</div>
+          <div class="m-card-body">
+            <div class="m-card-val">{{ formatBytes(totalDown) }}</div>
+            <div class="m-card-lbl">Downlink</div>
+          </div>
         </div>
 
         <div class="m-card">
-          <div class="m-card-icon" style="color:var(--primary-color)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+          <div class="m-card-icon up">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
           </div>
-          <div class="m-card-val">{{ formatBytes(totalUp) }}</div>
-          <div class="m-card-lbl">Uplink</div>
+          <div class="m-card-body">
+            <div class="m-card-val">{{ formatBytes(totalUp) }}</div>
+            <div class="m-card-lbl">Uplink</div>
+          </div>
         </div>
 
         <div class="m-card">
-          <div class="m-card-icon" style="color:var(--primary-color)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+          <div class="m-card-icon out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2L2 7l10 5 10-5-10-5z"/>
               <path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
             </svg>
           </div>
-          <div class="m-card-val">{{ outboundList.length }}</div>
-          <div class="m-card-lbl">Outbound</div>
+          <div class="m-card-body">
+            <div class="m-card-val">{{ outboundList.length }}</div>
+            <div class="m-card-lbl">Outbound</div>
+          </div>
         </div>
 
         <div class="m-card">
-          <div class="m-card-icon" style="color:var(--primary-color)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none"
+          <div class="m-card-icon obs">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </div>
-          <div class="m-card-val">{{ observatoryList.length }}</div>
-          <div class="m-card-lbl">Observatory</div>
+          <div class="m-card-body">
+            <div class="m-card-val">{{ observatoryList.length }}</div>
+            <div class="m-card-lbl">Observatory</div>
+          </div>
         </div>
       </div>
 
-      <!-- Outbound table -->
-      <div class="m-section">
+      <!-- Outbound traffic -->
+      <div v-if="outboundList.length" class="metrics-section">
         <h3>Трафик по outbound</h3>
-        <div class="m-tbl-wrap">
-          <table class="m-tbl">
+        <div class="metrics-table-wrap">
+          <table>
             <thead>
-              <tr>
-                <th>Тег</th>
-                <th class="num">Downlink</th>
-                <th class="num">Uplink</th>
-                <th class="num">Всего</th>
-              </tr>
+              <tr><th>Тег</th><th class="r">Downlink</th><th class="r">Uplink</th><th class="r">Всего</th></tr>
             </thead>
             <tbody>
-              <tr v-for="[tag, data] in outboundList" :key="tag">
+              <tr v-for="[tag, d] in outboundList" :key="tag">
                 <td class="tag">{{ tag }}</td>
-                <td class="num">
-                  <span>{{ formatBytes(data?.downlink || 0) }}</span>
-                  <div class="bar" :style="{width: ((data?.downlink || 0) / maxDown * 100) + '%'}"></div>
+                <td class="r">
+                  <span>{{ formatBytes(d?.downlink || 0) }}</span>
+                  <div class="bar" :style="{ width: ((d?.downlink || 0) / maxDown * 100) + '%' }"></div>
                 </td>
-                <td class="num">{{ formatBytes(data?.uplink || 0) }}</td>
-                <td class="num">{{ formatBytes((data?.downlink || 0) + (data?.uplink || 0)) }}</td>
+                <td class="r">{{ formatBytes(d?.uplink || 0) }}</td>
+                <td class="r">{{ formatBytes((d?.downlink || 0) + (d?.uplink || 0)) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Observatory table -->
-      <div v-if="observatoryList.length" class="m-section">
+      <!-- Observatory -->
+      <div v-if="observatoryList.length" class="metrics-section">
         <h3>Observatory</h3>
-        <div class="m-tbl-wrap">
-          <table class="m-tbl">
+        <div class="metrics-table-wrap">
+          <table>
             <thead>
-              <tr>
-                <th>Тег</th>
-                <th>Статус</th>
-                <th class="num">Задержка</th>
-                <th>Проверка</th>
-              </tr>
+              <tr><th>Тег</th><th>Статус</th><th class="r">Задержка</th><th>Проверка</th></tr>
             </thead>
             <tbody>
-              <tr v-for="[tag, data] in observatoryList" :key="tag">
+              <tr v-for="[tag, d] in observatoryList" :key="tag">
                 <td class="tag">{{ tag }}</td>
                 <td>
-                  <span :class="['badge', data?.alive ? 'ok' : 'fail']">{{ data?.alive ? 'Alive' : 'Dead' }}</span>
+                  <span :class="['badge', d?.alive ? 'alive' : 'dead']">{{ d?.alive ? 'Alive' : 'Dead' }}</span>
                 </td>
-                <td class="num">
-                  <span v-if="data?.delay != null" :class="['ms', delayColor(data.delay)]">{{ data.delay }} ms</span>
+                <td class="r">
+                  <span v-if="d?.delay != null" :class="['delay', delayColor(d.delay)]">{{ d.delay }} ms</span>
                   <span v-else>—</span>
                 </td>
-                <td class="num">{{ timeAgo(data?.last_try_time) }}</td>
+                <td class="r light">{{ timeAgo(d?.last_try_time) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
-    </div>
+
+      <!-- Debug info -->
+      <div v-if="stats?.debug" class="metrics-debug">{{ stats.debug }}</div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-/* Wrapper */
-.m-wrap {
+/* Page */
+.metrics-page {
   padding: 16px;
+  overflow-y: auto;
   font-family: var(--font);
   color: var(--primary-text);
 }
 
-/* Unavailable */
-.m-empty {
+/* Empty state */
+.metrics-empty {
   text-align: center;
   padding: 64px 16px;
+  color: var(--text-gray);
 }
-.m-empty-title {
-  font-size: var(--text-h3);
-  font-weight: 500;
-  color: var(--primary-text);
-  margin: 0 0 8px;
-}
-.m-empty-hint {
-  font-size: var(--text-small);
-  color: var(--help-text);
-  margin: 0;
-}
-.m-empty-hint code {
+.metrics-empty svg { opacity: .5; margin-bottom: 12px; }
+.metrics-empty p { font-size: var(--text-h4); font-weight: 500; color: var(--primary-text); margin: 0 0 6px; }
+.metrics-empty span { font-size: var(--text-small); color: var(--help-text); }
+.metrics-empty code {
   background: var(--menu-background);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  padding: 1px 5px;
   font-family: var(--font-mono);
+  font-size: var(--text-small);
 }
 
 /* Loading */
-.m-loading { text-align: center; padding: 64px 16px; }
-.m-loading .dot {
-  display: inline-block;
+.metrics-loading {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 64px 16px;
+}
+.metrics-loading span {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--primary-color);
-  margin: 0 4px;
-  animation: pulse 1.4s ease-in-out infinite both;
+  animation: dotPulse 1.4s ease-in-out infinite both;
 }
-.m-loading .dot:nth-child(2) { animation-delay: .16s; }
-.m-loading .dot:nth-child(3) { animation-delay: .32s; }
-@keyframes pulse {
-  0%, 80%, 100% { transform: scale(.4); opacity: .3; }
+.metrics-loading span:nth-child(2) { animation-delay: .16s; }
+.metrics-loading span:nth-child(3) { animation-delay: .32s; }
+@keyframes dotPulse {
+  0%, 80%, 100% { transform: scale(.35); opacity: .25; }
   40% { transform: scale(1); opacity: 1; }
 }
 
-/* Content */
-.m-content { max-width: 100%; }
-
-.m-head {
+/* Header */
+.metrics-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
-.m-head h2 {
+.metrics-header h2 {
   margin: 0;
-  font-size: var(--text-h3);
+  font-size: var(--text-h4);
   font-weight: 600;
 }
-.m-time {
+.metrics-updated {
   font-size: var(--text-small);
   color: var(--help-text);
 }
 
-/* Cards */
-.m-cards {
+/* ---- Cards ---- */
+.metrics-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
-@media (max-width: 720px) { .m-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .metrics-cards { grid-template-columns: repeat(2, 1fr); } }
 
 .m-card {
   background: var(--menu-background);
-  border: 1px solid var(--stroke);
+  border: 1px solid var(--menu-border);
   border-radius: var(--radius);
-  padding: 16px;
-  text-align: center;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--box-shadow-3);
 }
 .m-card-icon {
-  margin: 0 auto 8px;
-  width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--status-special-background);
+  color: var(--primary-color);
 }
-.m-card-icon svg { display: block; }
+.m-card-icon.up { background: var(--status-caution-background); color: var(--status-caution-text); }
+.m-card-icon.out { background: var(--status-success-background); color: var(--status-success-text); }
+.m-card-icon.obs { background: var(--status-special-background); color: var(--primary-color); }
+
+.m-card-body { min-width: 0; }
 .m-card-val {
   font-size: var(--text-h4);
   font-weight: 700;
-  color: var(--primary-color);
-  line-height: 1.4;
+  color: var(--primary-text);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .m-card-lbl {
   font-size: var(--text-small);
   color: var(--help-text);
-  margin-top: 4px;
+  line-height: 1.3;
 }
 
-/* Sections */
-.m-section { margin-bottom: 24px; }
-.m-section h3 {
-  margin: 0 0 8px;
-  font-size: var(--text-body);
-  font-weight: 600;
-  color: var(--text-gray);
-}
-
-/* Table */
-.m-tbl-wrap {
+/* ---- Sections ---- */
+.metrics-section {
+  background: var(--menu-background);
+  border: 1px solid var(--menu-border);
   border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--table-border);
+  padding: 0;
+  margin-bottom: 16px;
+  box-shadow: var(--box-shadow-3);
 }
-.m-tbl {
+.metrics-section h3 {
+  font-size: var(--text-body);
+  margin: 0;
+  padding: 12px 16px 8px;
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+/* ---- Table ---- */
+.metrics-table-wrap {
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow-x: auto;
+}
+.metrics-section table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--menu-background);
   font-size: var(--text-body);
 }
-.m-tbl thead { background: var(--table-header); }
-.m-tbl th {
+.metrics-section thead {
+  background: var(--table-header);
+}
+.metrics-section th {
   padding: 8px 16px;
   text-align: left;
   font-size: var(--text-small);
   text-transform: uppercase;
-  letter-spacing: .03em;
+  letter-spacing: .04em;
   color: var(--help-text);
   font-weight: 600;
+  border-bottom: 1px solid var(--table-border);
 }
-.m-tbl td {
+.metrics-section td {
   padding: 8px 16px;
   border-bottom: 1px solid var(--table-border);
 }
-.m-tbl tbody tr:last-child td { border-bottom: none; }
-.m-tbl tbody tr:hover { background: var(--table-row-hover); }
-.m-tbl .num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.m-tbl .tag {
+.metrics-section tbody tr:last-child td { border-bottom: none; }
+.metrics-section tbody tr:hover { background: var(--table-row-hover); }
+.metrics-section .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metrics-section .tag {
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--primary-color);
   font-weight: 500;
 }
+.metrics-section .light { color: var(--help-text); }
 
-/* Sparkline bar */
+/* Sparkline */
 .bar {
   height: 3px;
   border-radius: 2px;
   background: var(--primary-color);
-  opacity: .25;
-  margin-top: 4px;
+  opacity: .2;
+  margin-top: 3px;
   min-width: 2px;
 }
 
@@ -390,13 +407,26 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
   border-radius: 10px;
   font-size: var(--text-small);
   font-weight: 600;
+  line-height: 1.5;
 }
-.badge.ok { color: var(--status-success-text); background: var(--status-success-background); }
-.badge.fail { color: var(--error); background: var(--status-warning-background); }
+.badge.alive { color: var(--status-success-text); background: var(--status-success-background); }
+.badge.dead  { color: var(--error); background: var(--status-warning-background); }
 
 /* Delay */
-.ms { font-variant-numeric: tabular-nums; }
-.ms.green { color: var(--indicator-online); }
-.ms.yellow { color: var(--status-caution-text); }
-.ms.red { color: var(--error); }
+.delay { font-variant-numeric: tabular-nums; }
+.delay.green  { color: var(--indicator-online); }
+.delay.yellow { color: var(--status-caution-text); }
+.delay.red    { color: var(--error); }
+
+/* Debug */
+.metrics-debug {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--menu-background);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+  color: var(--help-text);
+  font-family: var(--font-mono);
+}
 </style>

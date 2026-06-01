@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -94,10 +95,16 @@ func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// expvar publishes stats as a JSON string — need double parse
+	// expvar publishes stats — may be nested object or JSON string
 	statsRaw := vars["stats"]
 	if statsRaw == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"available": true, "inbound": nil, "outbound": nil})
+		// No stats at all — Xray likely doesn't have policy.system stats enabled
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"available": true,
+			"inbound":  nil,
+			"outbound": nil,
+			"debug":    fmt.Sprintf("no stats key; vars keys: %v", sortedKeys(vars)),
+		})
 		return
 	}
 	var stats struct {
@@ -170,4 +177,13 @@ func (h *MetricsHandler) GetObservatory(w http.ResponseWriter, r *http.Request) 
 func RegisterMetricsRoutes(r *mux.Router, handler *MetricsHandler) {
 	r.HandleFunc("/metrics/stats", handler.GetStats).Methods("GET")
 	r.HandleFunc("/metrics/observatory", handler.GetObservatory).Methods("GET")
+}
+
+func sortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
