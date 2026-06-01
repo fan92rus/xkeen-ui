@@ -65,7 +65,7 @@ Chart.defaults.borderColor = 'rgba(255,255,255,0.04)';
 Chart.defaults.font.family = 'Roboto, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif';
 Chart.defaults.font.size = 11;
 Chart.defaults.plugins.legend.display = false;
-Chart.defaults.animation.duration = 400;
+Chart.defaults.animation.duration = 0;
 
 // ---- Computed: totals ----
 const totalDown = computed(() => {
@@ -142,9 +142,9 @@ const sparkDownData = computed(() => ({
     backgroundColor: 'rgba(61,220,132,0.08)',
     borderWidth: 1.5,
     fill: true,
-    tension: 0.4,
+    tension: 0,
     pointRadius: 0,
-    pointHitRadius: 0
+    pointHitRadius: 8
   }]
 }));
 
@@ -155,9 +155,26 @@ const sparkDownOptions = {
     x: { display: false },
     y: { display: false }
   },
-  plugins: { tooltip: { enabled: false }, legend: { display: false } },
-  elements: { line: { borderCapStyle: 'round' } },
-  animation: { duration: 300 }
+  plugins: {
+    tooltip: {
+      enabled: true,
+      mode: 'index',
+      intersect: false,
+      backgroundColor: 'rgba(22,28,39,0.95)',
+      borderColor: '#2e3d57',
+      borderWidth: 1,
+      titleFont: { size: 10 },
+      bodyFont: { size: 11 },
+      padding: 8,
+      callbacks: {
+        title: () => 'Downlink',
+        label: (ctx) => ctx.datasetIndex === 0 ? formatBytes(ctx.raw) + '/интервал' : null
+      }
+    },
+    legend: { display: false }
+  },
+  interaction: { mode: 'index', intersect: false },
+  animation: { duration: 0 }
 };
 
 // ---- Chart data: Upload sparkline ----
@@ -169,13 +186,40 @@ const sparkUpData = computed(() => ({
     backgroundColor: 'rgba(0,151,220,0.08)',
     borderWidth: 1.5,
     fill: true,
-    tension: 0.4,
+    tension: 0,
     pointRadius: 0,
-    pointHitRadius: 0
+    pointHitRadius: 8
   }]
 }));
 
-const sparkUpOptions = sparkDownOptions;
+const sparkUpOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  scales: {
+    x: { display: false },
+    y: { display: false }
+  },
+  plugins: {
+    tooltip: {
+      enabled: true,
+      mode: 'index',
+      intersect: false,
+      backgroundColor: 'rgba(22,28,39,0.95)',
+      borderColor: '#2e3d57',
+      borderWidth: 1,
+      titleFont: { size: 10 },
+      bodyFont: { size: 11 },
+      padding: 8,
+      callbacks: {
+        title: () => 'Uplink',
+        label: (ctx) => ctx.datasetIndex === 0 ? formatBytes(ctx.raw) + '/интервал' : null
+      }
+    },
+    legend: { display: false }
+  },
+  interaction: { mode: 'index', intersect: false },
+  animation: { duration: 0 }
+};
 
 // ---- Chart data: Outbound Bar (top 10) ----
 const outboundChartData = computed(() => {
@@ -183,18 +227,12 @@ const outboundChartData = computed(() => {
   return {
     labels: top10.map(([tag]) => tag),
     datasets: [{
+      label: 'Downlink',
       data: top10.map(([, d]) => d?.downlink || 0),
-      backgroundColor: top10.map((_, i) => {
-        const colors = [
-          'rgba(0,151,220,0.7)', 'rgba(61,220,132,0.7)', 'rgba(255,187,87,0.7)',
-          'rgba(222,61,61,0.7)', 'rgba(61,80,115,0.7)', 'rgba(37,196,120,0.7)',
-          'rgba(108,124,133,0.7)', 'rgba(0,91,179,0.7)', 'rgba(160,120,220,0.7)',
-          'rgba(220,160,60,0.7)'
-        ];
-        return colors[i % colors.length];
-      }),
+      backgroundColor: 'rgba(0,151,220,0.6)',
+      hoverBackgroundColor: 'rgba(0,151,220,0.85)',
       borderRadius: 3,
-      barThickness: 18
+      barThickness: 16
     }]
   };
 });
@@ -215,21 +253,43 @@ const outboundBarOptions = {
     },
     y: {
       grid: { display: false },
+      afterFit: (axis) => {
+        axis.width = 120;
+      },
       ticks: {
-        font: { size: 11, family: "'JetBrains Mono', 'Fira Code', Consolas, monospace" },
-        color: '#8899aa'
+        font: { size: 10, family: "'JetBrains Mono', 'Fira Code', Consolas, monospace" },
+        color: '#8899aa',
+        autoSkip: false,
+        padding: 2
       }
     }
   },
   plugins: {
     tooltip: {
+      backgroundColor: 'rgba(22,28,39,0.95)',
+      borderColor: '#2e3d57',
+      borderWidth: 1,
+      padding: 10,
       callbacks: {
-        label: (ctx) => formatBytes(ctx.raw)
+        label: (ctx) => 'Downlink: ' + formatBytes(ctx.raw)
       }
     },
-    legend: { display: false }
+    legend: {
+      display: true,
+      position: 'top',
+      align: 'end',
+      labels: {
+        boxWidth: 10,
+        boxHeight: 10,
+        padding: 12,
+        font: { size: 10 },
+        color: '#8899aa',
+        usePointStyle: true,
+        pointStyle: 'rectRounded'
+      }
+    }
   },
-  animation: { duration: 400 }
+  animation: { duration: 0 }
 };
 
 // ---- Chart data: Observatory doughnut ----
@@ -249,14 +309,30 @@ const doughnutOptions = {
   maintainAspectRatio: false,
   cutout: '65%',
   plugins: {
-    legend: { display: false },
+    legend: {
+      display: true,
+      position: 'bottom',
+      labels: {
+        boxWidth: 10,
+        boxHeight: 10,
+        padding: 8,
+        font: { size: 10 },
+        color: '#8899aa',
+        usePointStyle: true,
+        pointStyle: 'circle'
+      }
+    },
     tooltip: {
+      backgroundColor: 'rgba(22,28,39,0.95)',
+      borderColor: '#2e3d57',
+      borderWidth: 1,
+      padding: 8,
       callbacks: {
         label: (ctx) => ctx.label + ': ' + ctx.raw
       }
     }
   },
-  animation: { duration: 400 }
+  animation: { duration: 0 }
 };
 
 // ---- Sort toggle ----
@@ -344,37 +420,40 @@ onUnmounted(() => {
         <span v-if="lastUpdate" class="metrics-header__clock">{{ lastUpdate.toLocaleTimeString() }}</span>
       </div>
 
-      <!-- Overview cards -->
+      <!-- Overview cards - 2x2 grid -->
       <section class="metrics-overview">
-        <!-- Download card -->
+        <!-- Row 1: Download + Upload cards -->
         <div class="overview-card overview-card--down">
           <div class="overview-card__top">
-            <span class="overview-card__label">Downlink</span>
+            <span class="overview-card__label">
+              <span class="legend-dot legend-dot--down"></span> Downlink
+            </span>
             <span class="overview-card__value overview-card__value--down">{{ formatBytes(totalDown) }}</span>
           </div>
           <div class="overview-card__chart">
             <Line v-if="historyDown.length >= 2" :data="sparkDownData" :options="sparkDownOptions" />
           </div>
           <div :class="['overview-card__delta', deltaDown > 0 ? 'overview-card__delta--positive' : '']">
-            {{ deltaDown > 0 ? '+' : '' }}{{ formatBytes(deltaDown) }}
+            {{ deltaDown > 0 ? '+' : '' }}{{ formatBytes(deltaDown) }}/интервал
           </div>
         </div>
 
-        <!-- Upload card -->
         <div class="overview-card overview-card--up">
           <div class="overview-card__top">
-            <span class="overview-card__label">Uplink</span>
+            <span class="overview-card__label">
+              <span class="legend-dot legend-dot--up"></span> Uplink
+            </span>
             <span class="overview-card__value overview-card__value--up">{{ formatBytes(totalUp) }}</span>
           </div>
           <div class="overview-card__chart">
             <Line v-if="historyUp.length >= 2" :data="sparkUpData" :options="sparkUpOptions" />
           </div>
           <div :class="['overview-card__delta', deltaUp > 0 ? 'overview-card__delta--positive' : '']">
-            {{ deltaUp > 0 ? '+' : '' }}{{ formatBytes(deltaUp) }}
+            {{ deltaUp > 0 ? '+' : '' }}{{ formatBytes(deltaUp) }}/интервал
           </div>
         </div>
 
-        <!-- Outbound count card -->
+        <!-- Row 2: Outbound count + Proxy health -->
         <div class="overview-card overview-card--stat">
           <div class="overview-card__stat-icon">&#9650;</div>
           <div class="overview-card__stat-body">
@@ -383,7 +462,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Proxy health card -->
         <div v-if="observatoryList.length" class="overview-card overview-card--stat">
           <div class="overview-card__stat-icon overview-card__stat-icon--health">&#9733;</div>
           <div class="overview-card__stat-body">
@@ -393,96 +471,64 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- Outbound traffic section -->
-      <section v-if="outboundList.length" class="metrics-section">
-        <div class="metrics-section__header">
-          <h3 class="metrics-section__title">Трафик по outbound</h3>
-          <button class="sort-toggle" @click="cycleSort" :title="'Sort: ' + sortLabel">
-            <span class="sort-toggle__icon">⇅</span>
-            <span class="sort-toggle__label">{{ sortLabel }}</span>
-          </button>
-        </div>
-
-        <!-- Horizontal bar chart -->
-        <div class="metrics-section__bar-chart">
-          <Bar v-if="outboundList.length" :data="outboundChartData" :options="outboundBarOptions" />
-        </div>
-
-        <!-- Table -->
-        <div class="metrics-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Tag</th>
-                <th class="cell--center">Share</th>
-                <th class="cell--min140">Downlink</th>
-                <th class="cell--right">Uplink</th>
-                <th class="cell--right">Всего</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="[tag, d] in outboundList" :key="tag">
-                <td class="cell--tag">{{ tag }}</td>
-                <td class="cell--center">
-                  <span class="share-badge">{{ outboundShare(d) }}</span>
-                </td>
-                <td>
-                  <span class="dl-value">{{ formatBytes(d?.downlink || 0) }}</span>
-                  <div class="progress-track">
-                    <div class="progress-fill"
-                         :style="{ width: ((d?.downlink || 0) / maxDown * 100) + '%' }"></div>
-                  </div>
-                </td>
-                <td class="cell--right">{{ formatBytes(d?.uplink || 0) }}</td>
-                <td class="cell--right">{{ formatBytes((d?.downlink || 0) + (d?.uplink || 0)) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Observatory section -->
-      <section v-if="observatoryList.length" class="metrics-section">
-        <div class="metrics-section__header">
-          <h3 class="metrics-section__title">Observatory</h3>
-          <div class="health-badges">
-            <span class="health-badge health-badge--alive">{{ aliveCount }} alive</span>
-            <span v-if="deadCount" class="health-badge health-badge--dead">{{ deadCount }} dead</span>
+      <!-- Bottom sections: 2 columns -->
+      <div class="metrics-bottom-grid">
+        <!-- Outbound traffic section -->
+        <section v-if="outboundList.length" class="metrics-section">
+          <div class="metrics-section__header">
+            <h3 class="metrics-section__title">Трафик по outbound</h3>
+            <button class="sort-toggle" @click="cycleSort" :title="'Sort: ' + sortLabel">
+              <span class="sort-toggle__icon">⇅</span>
+              <span class="sort-toggle__label">{{ sortLabel }}</span>
+            </button>
           </div>
-        </div>
 
-        <div class="observatory-layout">
-          <!-- Doughnut chart -->
-          <div class="observatory-doughnut">
-            <Doughnut :data="doughnutData" :options="doughnutOptions" />
-            <div class="observatory-doughnut__center">
-              <span class="observatory-doughnut__pct">{{ healthPercent }}%</span>
+          <div class="metrics-section__bar-chart">
+            <Bar v-if="outboundList.length" :data="outboundChartData" :options="outboundBarOptions" />
+          </div>
+        </section>
+
+        <!-- Observatory section -->
+        <section v-if="observatoryList.length" class="metrics-section">
+          <div class="metrics-section__header">
+            <h3 class="metrics-section__title">Observatory</h3>
+            <div class="health-badges">
+              <span class="health-badge health-badge--alive">{{ aliveCount }} alive</span>
+              <span v-if="deadCount" class="health-badge health-badge--dead">{{ deadCount }} dead</span>
             </div>
           </div>
 
-          <!-- Proxy cards grid -->
-          <div class="observatory-grid">
-            <div v-for="[tag, d] in observatoryList" :key="tag"
-                 :class="['obs-card', d?.alive ? 'obs-card--alive' : 'obs-card--dead']">
-              <div class="obs-card__header">
-                <span :class="['obs-card__dot', d?.alive ? 'obs-card__dot--alive' : 'obs-card__dot--dead']"></span>
-                <span class="obs-card__tag">{{ tag }}</span>
+          <div class="observatory-layout">
+            <div class="observatory-doughnut">
+              <Doughnut :data="doughnutData" :options="doughnutOptions" />
+              <div class="observatory-doughnut__center">
+                <span class="observatory-doughnut__pct">{{ healthPercent }}%</span>
               </div>
-              <div class="obs-card__latency-bar">
-                <div v-if="d?.alive && d?.delay != null"
-                     :class="['obs-card__latency-fill', delayColorClass(d.delay)]"
-                     :style="{ width: Math.min(d.delay / 1000 * 100, 100) + '%' }"></div>
+            </div>
+
+            <div class="observatory-grid">
+              <div v-for="[tag, d] in observatoryList" :key="tag"
+                   :class="['obs-card', d?.alive ? 'obs-card--alive' : 'obs-card--dead']">
+                <div class="obs-card__header">
+                  <span :class="['obs-card__dot', d?.alive ? 'obs-card__dot--alive' : 'obs-card__dot--dead']"></span>
+                  <span class="obs-card__tag">{{ tag }}</span>
+                </div>
+                <div class="obs-card__latency-bar">
+                  <div v-if="d?.alive && d?.delay != null"
+                       :class="['obs-card__latency-fill', delayColorClass(d.delay)]"
+                       :style="{ width: Math.min(d.delay / 1000 * 100, 100) + '%' }"></div>
+                </div>
+                <div class="obs-card__latency-value">
+                  <span v-if="d?.delay != null && d?.alive"
+                        :class="['delay-value', delayColorClass(d.delay)]">{{ d.delay }} ms</span>
+                  <span v-else class="delay-value delay-value--none">&mdash;</span>
+                </div>
+                <div class="obs-card__time">{{ timeAgo(d?.last_try_time) }}</div>
               </div>
-              <div class="obs-card__latency-value">
-                <span v-if="d?.delay != null && d?.alive"
-                      :class="['delay-value', delayColorClass(d.delay)]">{{ d.delay }} ms</span>
-                <span v-else class="delay-value delay-value--none">&mdash;</span>
-              </div>
-              <div class="obs-card__time">{{ timeAgo(d?.last_try_time) }}</div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   </div>
 </template>
@@ -490,21 +536,22 @@ onUnmounted(() => {
 <style scoped>
 /* ===== Page ===== */
 .metrics-page {
-  padding: 16px;
+  padding: 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   color: var(--primary-text);
+  height: 100%;
 }
 
 /* ===== Empty state ===== */
 .metrics-empty {
   text-align: center;
-  padding: 64px 16px;
+  padding: 48px 16px;
   color: var(--text-gray);
 }
 .metrics-empty__icon {
-  font-size: 36px;
+  font-size: 32px;
   color: var(--error);
   opacity: 0.6;
   margin-bottom: 12px;
@@ -533,7 +580,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   gap: 6px;
-  padding: 64px 16px;
+  padding: 48px 16px;
 }
 .metrics-loading__dot {
   width: 8px;
@@ -553,28 +600,28 @@ onUnmounted(() => {
 .metrics-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 /* ===== Header ===== */
 .metrics-header {
   display: flex;
   align-items: center;
-  height: 32px;
+  height: 28px;
   flex-shrink: 0;
 }
 .metrics-header__title {
   margin: 0;
-  font-size: var(--text-h4);
+  font-size: var(--text-body);
   font-weight: 600;
 }
 .metrics-header__pulse {
-  margin-left: 12px;
+  margin-left: 10px;
 }
 .pulse-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--indicator-online);
   animation: livePulse 2s ease-in-out infinite;
@@ -593,29 +640,41 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* ===== Overview cards ===== */
+/* ===== Legend dots ===== */
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.legend-dot--down { background: #3ddc84; }
+.legend-dot--up { background: #0097dc; }
+
+/* ===== Overview cards — 2x2 grid ===== */
 .metrics-overview {
   display: grid;
-  grid-template-columns: 1fr 1fr auto auto;
-  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .overview-card {
   background: var(--menu-background);
   border: 1px solid var(--menu-border);
   border-radius: var(--radius);
-  padding: 14px 16px 10px;
+  padding: 10px 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
-  transition: box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 .overview-card--stat {
   flex-direction: row;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 10px 12px;
 }
 
 .overview-card__top {
@@ -627,10 +686,10 @@ onUnmounted(() => {
   font-size: var(--text-small);
   color: var(--help-text);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 .overview-card__value {
-  font-size: var(--text-h3);
+  font-size: var(--text-h4);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -639,13 +698,13 @@ onUnmounted(() => {
 
 .overview-card__chart {
   width: 100%;
-  height: 44px;
-  margin-top: 4px;
+  height: 40px;
+  margin-top: 2px;
   position: relative;
 }
 
 .overview-card__delta {
-  font-size: var(--text-small);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--help-text);
 }
@@ -655,15 +714,15 @@ onUnmounted(() => {
 
 /* Stat card inner */
 .overview-card__stat-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--status-special-background);
   color: var(--primary-color);
-  font-size: 14px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 .overview-card__stat-icon--health {
@@ -673,14 +732,21 @@ onUnmounted(() => {
   min-width: 0;
 }
 .overview-card__stat-value {
-  font-size: var(--text-h4);
+  font-size: var(--text-body);
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.2;
 }
 .overview-card__stat-label {
-  font-size: var(--text-small);
+  font-size: 10px;
   color: var(--help-text);
-  line-height: 1.3;
+  line-height: 1.2;
+}
+
+/* ===== Bottom grid: 2 columns ===== */
+.metrics-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 /* ===== Section ===== */
@@ -689,31 +755,35 @@ onUnmounted(() => {
   border: 1px solid var(--menu-border);
   border-radius: var(--radius);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .metrics-section__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px 8px;
+  padding: 8px 12px 4px;
 }
 .metrics-section__title {
-  font-size: var(--text-body);
+  font-size: var(--text-small);
   font-weight: 600;
   margin: 0;
   color: var(--primary-text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* Sort toggle */
 .sort-toggle {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: none;
   border: 1px solid var(--menu-border);
   border-radius: var(--radius-sm);
-  padding: 3px 8px;
+  padding: 2px 6px;
   color: var(--help-text);
-  font-size: var(--text-small);
+  font-size: 10px;
   cursor: pointer;
   font-family: var(--font);
   transition: color 0.15s ease, border-color 0.15s ease;
@@ -723,105 +793,27 @@ onUnmounted(() => {
   border-color: var(--primary-color);
 }
 .sort-toggle__icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* Bar chart container */
 .metrics-section__bar-chart {
-  padding: 4px 16px 12px;
-  height: 220px;
+  padding: 4px 10px 8px;
+  height: 260px;
   position: relative;
-}
-
-/* ===== Table ===== */
-.metrics-table-wrap {
-  overflow-x: auto;
-}
-.metrics-section table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-body);
-}
-.metrics-section thead {
-  background: var(--table-header);
-}
-.metrics-section th {
-  padding: 8px 16px;
-  text-align: left;
-  font-size: var(--text-small);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--help-text);
-  font-weight: 600;
-  border-bottom: 1px solid var(--table-border);
-}
-.metrics-section td {
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--table-border);
-}
-.metrics-section tbody tr:last-child td {
-  border-bottom: none;
-}
-.metrics-section tbody tr:hover {
-  background: var(--table-row-hover);
-}
-
-/* Table cell helpers */
-.cell--tag {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--primary-color);
-  font-weight: 500;
-}
-.cell--right {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.cell--center {
-  text-align: center;
-}
-.cell--min140 {
-  min-width: 140px;
-}
-
-/* Share badge */
-.share-badge {
-  font-size: var(--text-small);
-  color: var(--help-text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Downlink column with inline bar */
-.dl-value {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  display: block;
-}
-.progress-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--progressbar-background);
-  margin-top: 3px;
-  min-width: 60px;
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--primary-color), var(--primary-color-hover));
-  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 1;
+  min-height: 0;
 }
 
 /* ===== Health badges ===== */
 .health-badges {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 .health-badge {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: var(--text-small);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
   font-weight: 600;
 }
 .health-badge--alive {
@@ -835,15 +827,17 @@ onUnmounted(() => {
 
 /* ===== Observatory layout ===== */
 .observatory-layout {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 16px;
-  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 10px;
 }
 
 .observatory-doughnut {
   position: relative;
-  height: 140px;
+  height: 120px;
+  max-width: 180px;
+  margin: 0 auto;
 }
 .observatory-doughnut__center {
   position: absolute;
@@ -854,7 +848,7 @@ onUnmounted(() => {
   pointer-events: none;
 }
 .observatory-doughnut__pct {
-  font-size: var(--text-h3);
+  font-size: var(--text-h4);
   font-weight: 700;
   color: var(--primary-text);
 }
@@ -862,45 +856,45 @@ onUnmounted(() => {
 /* Observatory card grid */
 .observatory-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
 }
 
 /* Observatory card */
 .obs-card {
   background: var(--dashboard-background, var(--menu-background));
   border: 1px solid var(--menu-border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  border-radius: 6px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
   transition: border-left-color 0.15s ease;
 }
-.obs-card--alive { border-left: 3px solid var(--indicator-online); }
-.obs-card--dead { border-left: 3px solid var(--error); }
+.obs-card--alive { border-left: 2px solid var(--indicator-online); }
+.obs-card--dead { border-left: 2px solid var(--error); }
 
 .obs-card__header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 .obs-card__dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 .obs-card__dot--alive {
   background: var(--indicator-online);
-  box-shadow: 0 0 6px var(--indicator-online);
+  box-shadow: 0 0 4px var(--indicator-online);
 }
 .obs-card__dot--dead {
   background: var(--error);
 }
 .obs-card__tag {
   font-family: var(--font-mono);
-  font-size: var(--text-small);
+  font-size: 10px;
   color: var(--primary-color);
   font-weight: 500;
   overflow: hidden;
@@ -910,15 +904,15 @@ onUnmounted(() => {
 
 /* Latency bar */
 .obs-card__latency-bar {
-  height: 4px;
-  border-radius: 2px;
+  height: 3px;
+  border-radius: 1.5px;
   background: var(--progressbar-background);
   overflow: hidden;
 }
 .obs-card__latency-fill {
   height: 100%;
-  border-radius: 2px;
-  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 1.5px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .obs-card__latency-fill.green { background: #3ddc84; }
 .obs-card__latency-fill.yellow { background: var(--status-caution-text); }
@@ -926,7 +920,7 @@ onUnmounted(() => {
 
 /* Latency value */
 .obs-card__latency-value {
-  font-size: var(--text-small);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   align-self: flex-end;
@@ -938,53 +932,39 @@ onUnmounted(() => {
 .delay-value--none { color: var(--help-text); }
 
 .obs-card__time {
-  font-size: var(--text-small);
+  font-size: 10px;
   color: var(--help-text);
   align-self: flex-end;
 }
 
 /* ===== RESPONSIVE ===== */
-@media (max-width: 900px) {
-  .metrics-overview {
-    grid-template-columns: 1fr 1fr;
+@media (max-width: 800px) {
+  .metrics-bottom-grid {
+    grid-template-columns: 1fr;
   }
   .sort-toggle__label {
     display: none;
-  }
-  .observatory-layout {
-    grid-template-columns: 1fr;
-  }
-  .observatory-doughnut {
-    height: 120px;
-    max-width: 200px;
-    margin: 0 auto;
-  }
-  .observatory-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 }
 
 @media (max-width: 600px) {
   .metrics-page {
-    padding: 12px;
+    padding: 8px;
   }
   .metrics-overview {
     grid-template-columns: 1fr;
   }
   .overview-card__chart {
-    height: 36px;
+    height: 32px;
   }
   .overview-card__value {
-    font-size: var(--text-h4);
+    font-size: var(--text-body);
   }
   .observatory-grid {
     grid-template-columns: repeat(2, 1fr);
   }
   .metrics-section__bar-chart {
-    height: 180px;
-  }
-  .cell--center {
-    display: none;
+    height: 200px;
   }
 }
 
@@ -994,10 +974,6 @@ onUnmounted(() => {
   }
   .overview-card__chart {
     height: 28px;
-  }
-  .metrics-section table th:nth-child(4),
-  .metrics-section table td:nth-child(4) {
-    display: none;
   }
 }
 </style>
