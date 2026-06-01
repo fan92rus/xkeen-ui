@@ -17,9 +17,11 @@
         "@codemirror/theme-one-dark": "^6.1.2",
         "@codemirror/view": "^6.26.3",
         "ansi_up": "^6.0.2",
+        "chart.js": "^4.5.1",
         "codemirror": "^6.0.1",
         "pinia": "^3.0.0",
-        "vue": "^3.5.0"
+        "vue": "^3.5.0",
+        "vue-chartjs": "^5.3.3"
     },
     "devDependencies": {
         "@vitejs/plugin-vue": "^5.2.0",
