@@ -32,7 +32,7 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 		if isExcludedCountry(p, filter) {
 			continue
 		}
-		if !passesAllIncludeRegexes(p, includeRes) {
+		if !passesAnyIncludeRegex(p, includeRes) {
 			continue
 		}
 		if isExcludedByAnyRegex(p, excludeRes) {
@@ -119,18 +119,18 @@ func isExcludedCountry(p *ProxyEntry, f *Filter) bool {
 	return false
 }
 
-// passesAllIncludeRegexes returns true if the proxy's remarks match ALL include regexes (AND).
+// passesAnyIncludeRegex returns true if the proxy's remarks match ANY include regex (OR).
 // Empty list means no filter (pass through).
-func passesAllIncludeRegexes(p *ProxyEntry, includeRes []*regexp.Regexp) bool {
+func passesAnyIncludeRegex(p *ProxyEntry, includeRes []*regexp.Regexp) bool {
 	if len(includeRes) == 0 {
 		return true
 	}
 	for _, re := range includeRes {
-		if !re.MatchString(p.Remarks) {
-			return false
+		if re.MatchString(p.Remarks) {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // isExcludedByAnyRegex returns true if the proxy's remarks match ANY exclude regex (OR).

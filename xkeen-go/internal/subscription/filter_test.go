@@ -1,6 +1,9 @@
 package subscription
 
-import "testing"
+import (
+	"regexp"
+	"testing"
+)
 
 func makeProxy(marker, country, remarks string) *ProxyEntry {
 	return &ProxyEntry{
@@ -212,7 +215,7 @@ func TestApplyFilter_IncludeRegexes_Single(t *testing.T) {
 }
 
 func TestApplyFilter_IncludeRegexes_Multiple(t *testing.T) {
-	// AND logic: proxy must match ALL include regexes
+	// OR logic: proxy passes if it matches ANY include regex
 	proxies := []*ProxyEntry{
 		makeProxy("⚡", "DE", "Germany Fast Server"),
 		makeProxy("⭐", "NL", "Netherlands Fast"),
@@ -223,12 +226,20 @@ func TestApplyFilter_IncludeRegexes_Multiple(t *testing.T) {
 		IncludeRegexes: []string{"Fast|Premium", "Server"},
 	}
 	result := ApplyFilter(proxies, filter)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 (must match both regexes), got %d", len(result))
+	if len(result) != 4 {
+		t.Fatalf("expected 4 (OR: any regex match), got %d", len(result))
 	}
+	// Verify each result matches at least one of the include regexes
 	for _, p := range result {
-		if !contains(p.Remarks, "Server") {
-			t.Errorf("expected remarks to contain 'Server', got %q", p.Remarks)
+		matched := false
+		for _, re := range filter.IncludeRegexes {
+			if ok, _ := regexp.MatchString(re, p.Remarks); ok {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("remarks should match at least one include regex, got %q", p.Remarks)
 		}
 	}
 }
