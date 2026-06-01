@@ -1,8 +1,22 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 export default defineConfig({
     plugins: [vue()],
+    server: isDev ? {
+        port: 5173,
+        proxy: {
+            // Proxy API & WS to Go backend
+            '/api': 'http://localhost:8089',
+            '/ws': {
+                target: 'http://localhost:8089',
+                ws: true,
+            },
+            '/health': 'http://localhost:8089',
+        },
+    } : undefined,
     build: {
         outDir: 'static/dist',
         emptyOutDir: true,
@@ -14,8 +28,8 @@ export default defineConfig({
             output: {
                 format: 'es',
                 entryFileNames: 'bundle.js',
-                inlineDynamicImports: true
-            }
-        }
-    }
+                inlineDynamicImports: true,
+            },
+        },
+    },
 });

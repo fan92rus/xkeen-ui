@@ -1,0 +1,15 @@
+{
+  "port": 8089,
+  "mode": "xray",
+  "xray_config_dir": "C:/tmp/xkeen-dev/xray",
+  "xkeen_binary": "echo",
+  "mihomo_config_dir": "",
+  "allowed_roots": ["C:/tmp/xkeen-dev"],
+  "metrics_port": 11111,
+  "cors": {
+    "allowed_origins": ["http://localhost:5173"]
+  },
+  "auth": {
+    "session_timeout": 24
+  }
+}

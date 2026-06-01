@@ -1,0 +1,28 @@
+{
+    "subscriptions": [],
+    "profiles": [
+        {
+            "id": "default",
+            "name": "По умолчанию",
+            "enabled": true,
+            "is_default": true,
+            "filter": {
+                "include_countries": [],
+                "exclude_countries": [],
+                "include_regexes": [],
+                "exclude_regexes": [],
+                "max_proxies": 0
+            },
+            "strategy": {
+                "type": "all",
+                "fallback_tag": "direct",
+                "replace_balancer_tag": false
+            }
+        }
+    ],
+    "generated_at": "0001-01-01T00:00:00Z",
+    "outbounds_file": "",
+    "routing_file": "",
+    "auto_apply_enabled": false,
+    "auto_apply_cron": ""
+}
