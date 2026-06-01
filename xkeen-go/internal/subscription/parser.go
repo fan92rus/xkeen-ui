@@ -220,9 +220,6 @@ func buildTLSSettings(params url.Values) map[string]interface{} {
 	if alpn := params.Get("alpn"); alpn != "" {
 		tls["alpn"] = strings.Split(alpn, ",")
 	}
-	if allowInsecure := params.Get("allowInsecure"); allowInsecure == "true" {
-		tls["allowInsecure"] = true
-	}
 	return tls
 }
 
@@ -451,8 +448,7 @@ func buildHysteria2Outbound(password, host string, port int, params url.Values, 
 		"network":  "tcp",
 		"security": "tls",
 		"tlsSettings": map[string]interface{}{
-			"serverName":   params.Get("sni"),
-			"allowInsecure": params.Get("insecure") == "true" || params.Get("allowInsecure") == "true",
+			"serverName": params.Get("sni"),
 		},
 	}
 	if alpn := params.Get("alpn"); alpn != "" {
