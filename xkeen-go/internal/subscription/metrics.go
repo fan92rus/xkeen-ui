@@ -16,6 +16,7 @@ func GenerateMetricsJSON(port int) []byte {
 	}
 
 	result := map[string]interface{}{
+		"stats": map[string]interface{}{},
 		"metrics": map[string]interface{}{
 			"tag":    "Metrics",
 			"listen": fmt.Sprintf("127.0.0.1:%d", port),
