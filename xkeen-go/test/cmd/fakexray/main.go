@@ -43,24 +43,24 @@ func main() {
 						"downlink": dl,
 						"uplink":   ul,
 					},
+					"http_inbound": map[string]interface{}{
+						"downlink": dl / 10,
+						"uplink":   ul / 10,
+					},
 				},
-				"http_inbound": map[string]interface{}{
-					"downlink": dl / 10,
-					"uplink":   ul / 10,
-				},
-			},
-			"outbound": map[string]interface{}{
-				"proxy-DE-1": map[string]interface{}{
-					"downlink": dl * 3 / 4,
-					"uplink":   ul * 3 / 5,
-				},
-				"proxy-US-1": map[string]interface{}{
-					"downlink": dl / 4,
-					"uplink":   ul * 2 / 5,
-				},
-				"direct": map[string]interface{}{
-					"downlink": dl / 20,
-					"uplink":   ul / 20,
+				"outbound": map[string]interface{}{
+					"proxy-DE-1": map[string]interface{}{
+						"downlink": dl * 3 / 4,
+						"uplink":   ul * 3 / 5,
+					},
+					"proxy-US-1": map[string]interface{}{
+						"downlink": dl / 4,
+						"uplink":   ul * 2 / 5,
+					},
+					"direct": map[string]interface{}{
+						"downlink": dl / 20,
+						"uplink":   ul / 20,
+					},
 				},
 			},
 			"observatory": map[string]interface{}{
