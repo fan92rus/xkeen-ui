@@ -1,0 +1,29 @@
+{
+  "name": "medium",
+  "description": "🟡 Medium: scout → worker → reviewer для задач на 3-8 файлов",
+  "steps": [
+    {
+      "agent": "scout",
+      "task": "Разведай контекст задачи: {task}. Найди все затронутые файлы, зависимости, тесты. Верни сжатый отчёт с файлами и ключом к пониманию.",
+      "as": "scoutReport",
+      "phase": "Разведка"
+    },
+    {
+      "agent": "worker",
+      "task": "Реализуй задачу: {task}\n\nКонтекст разведки:\n{outputs.scoutReport}\n\nПравила:\n- TDD: сначала тест, потом код\n- go test перед завершением\n- Не расширяй scope\n- Верни отчёт: изменённые файлы, результат тестов, что не сделано",
+      "as": "workerReport",
+      "phase": "Реализация",
+      "acceptance": {
+        "criteria": [
+          { "id": "tests-pass", "must": "go test проходит", "severity": "required" }
+        ],
+        "maxFinalizationTurns": 3
+      }
+    },
+    {
+      "agent": "reviewer",
+      "task": "Проверь реализацию задачи: {task}\n\nОтчёт worker:\n{outputs.workerReport}\n\nПроверь:\n- Корректность и регрессии\n- Качество тестов\n- Простота и читаемость\n- Go best practices\n\nВерни конкретные findings с файлами и строками.",
+      "phase": "Ревью"
+    }
+  ]
+}

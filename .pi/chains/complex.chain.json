@@ -1,0 +1,55 @@
+{
+  "name": "complex",
+  "description": "🔴 Complex: scout → planner → worker → reviewers для задач на 8+ файлов",
+  "steps": [
+    {
+      "agent": "scout",
+      "task": "Глубокая разведка задачи: {task}. Найди ВСЕ затронутые файлы, модули, зависимости, тесты, конфиги. Определи риски и точки интеграции. Верни детальный отчёт.",
+      "as": "scoutReport",
+      "phase": "Разведка"
+    },
+    {
+      "agent": "planner",
+      "task": "Спланируй реализацию задачи: {task}\n\nРазведка:\n{outputs.scoutReport}\n\nСоздай план:\n1. Что менять (файлы, функции)\n2. Порядок изменений\n3. Тесты для каждого шага\n4. Риски и как их минимизировать\n5. Что НЕ менять (scope guard)",
+      "as": "plan",
+      "output": "plan.md",
+      "phase": "Планирование"
+    },
+    {
+      "agent": "worker",
+      "task": "Реализуй задачу по плану: {task}\n\nПлан:\n{outputs.plan}\n\nПравила:\n- TDD: сначала тест, потом код\n- go test после каждого логического шага\n- Не выходи за рамки плана\n- Верни отчёт: изменённые файлы, результат тестов, что не сделано, surprises",
+      "as": "workerReport",
+      "phase": "Реализация",
+      "acceptance": {
+        "criteria": [
+          { "id": "tests-pass", "must": "go test проходит", "severity": "required" },
+          { "id": "scope", "must": "Не вышел за рамки плана", "severity": "required" }
+        ],
+        "maxFinalizationTurns": 3
+      }
+    },
+    {
+      "parallel": [
+        {
+          "agent": "reviewer",
+          "task": "Ревью корректности: {task}\n\nОтчёт worker:\n{outputs.workerReport}\n\nПроверь: регрессии, баги, edge cases, race conditions. Ссылки на файлы и строки.",
+          "phase": "Ревью",
+          "label": "Корректность"
+        },
+        {
+          "agent": "reviewer",
+          "task": "Ревью тестов и валидации: {task}\n\nОтчёт worker:\n{outputs.workerReport}\n\nПроверь: покрытие, edge cases в тестах, meaningful assertions, test naming.",
+          "phase": "Ревью",
+          "label": "Тесты"
+        },
+        {
+          "agent": "reviewer",
+          "task": "Ревью простоты и Go best practices: {task}\n\nОтчёт worker:\n{outputs.workerReport}\n\nПроверь: идиоматичный Go, читаемость, отсутствие overengineering, error handling.",
+          "phase": "Ревью",
+          "label": "Качество кода"
+        }
+      ],
+      "concurrency": 3
+    }
+  ]
+}
