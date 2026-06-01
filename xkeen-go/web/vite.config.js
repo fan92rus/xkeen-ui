@@ -3,8 +3,20 @@ import vue from '@vitejs/plugin-vue';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+function devEntryPlugin() {
+	return {
+		name: 'dev-entry',
+		transformIndexHtml(html) {
+			return html.replace(
+				'<script src="/static/dist/bundle.js"></script>',
+				'<script type="module" src="/src/main.js"></script>'
+			);
+		},
+	};
+}
+
 export default defineConfig({
-    plugins: [vue()],
+    plugins: [vue(), ...(isDev ? [devEntryPlugin()] : [])],
     server: isDev ? {
         port: 5173,
         proxy: {
