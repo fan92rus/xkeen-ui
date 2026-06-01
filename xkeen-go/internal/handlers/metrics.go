@@ -95,15 +95,33 @@ func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// expvar publishes stats — may be nested object or JSON string
-	statsRaw := vars["stats"]
-	if statsRaw == nil {
-		// No stats at all — Xray likely doesn't have policy.system stats enabled
+	// expvar publishes stats — key exists when stats feature is loaded,
+	// but value may be null if no counters are registered (policy.system
+	// stats flags not applied, or no traffic yet).
+	statsRaw, statsKeyExists := vars["stats"]
+	if !statsKeyExists {
+		// Stats feature not loaded at all — "stats": {} missing from Xray config
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"available": true,
 			"inbound":  nil,
 			"outbound": nil,
 			"debug":    fmt.Sprintf("no stats key; vars keys: %v", sortedKeys(vars)),
+		})
+		return
+	}
+	if statsRaw == nil {
+		// Stats feature loaded but no counters — Xray returns "stats": null.
+		// In current Xray-core the expvar.Func always returns {"inbound":{},"outbound":{},"user":{}},
+		// so null means either: (a) old Xray version with different metrics handler,
+		// or (b) stats feature loaded but policy.system not applied (no counters created).
+		// Return available with empty data so frontend shows "no traffic" instead of error.
+		log.Printf("MetricsHandler: stats key present but null — no counters registered; "+
+			"Xray may need restart or policy.system stats flags are not applied")
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"available": true,
+			"inbound":   map[string]interface{}{},
+			"outbound":  map[string]interface{}{},
+			"debug":     "stats: null — counters not registered; restart Xray or check policy.system",
 		})
 		return
 	}

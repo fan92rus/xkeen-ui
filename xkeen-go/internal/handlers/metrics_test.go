@@ -220,6 +220,93 @@ func TestGetStats_ExpvarStringFormat(t *testing.T) {
 	}
 }
 
+// xrayNullStatsResponse mimics Xray where stats feature is loaded
+// (key exists) but no counters registered (value is JSON null).
+// This happens when policy.system stats flags are not applied.
+const xrayNullStatsResponse = `{
+	"cmdline": ["/usr/bin/xray"],
+	"memstats": {"Alloc": 123456},
+	"stats": null,
+	"observatory": "{\"proxy-1\":{\"alive\":true,\"delay\":120}}"
+}`
+
+func TestGetStats_NullStats(t *testing.T) {
+	server := mockXrayMetricsServer(xrayNullStatsResponse)
+	defer server.Close()
+
+	handler := NewMetricsHandler(server.URL, 5*time.Second)
+
+	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	w := httptest.NewRecorder()
+	handler.GetStats(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if body["available"] != true {
+		t.Errorf("expected available=true, got %v", body["available"])
+	}
+	// When stats is null (no counters), should return empty maps, not nil
+	if body["inbound"] == nil {
+		t.Error("expected non-nil inbound (empty map), got nil")
+	}
+	if body["outbound"] == nil {
+		t.Error("expected non-nil outbound (empty map), got nil")
+	}
+	// Empty maps should have zero entries
+	inbound, _ := body["inbound"].(map[string]interface{})
+	if len(inbound) != 0 {
+		t.Errorf("expected empty inbound map, got %d entries", len(inbound))
+	}
+	outbound, _ := body["outbound"].(map[string]interface{})
+	if len(outbound) != 0 {
+		t.Errorf("expected empty outbound map, got %d entries", len(outbound))
+	}
+	// Debug field should explain the null stats situation
+	if body["debug"] == nil {
+		t.Error("expected debug field explaining null stats")
+	}
+}
+
+func TestGetStats_NoStatsKey(t *testing.T) {
+	// Xray response without stats key at all (stats feature not loaded)
+	server := mockXrayMetricsServer(`{"cmdline":[],"memstats":{}}`)
+	defer server.Close()
+
+	handler := NewMetricsHandler(server.URL, 5*time.Second)
+
+	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	w := httptest.NewRecorder()
+	handler.GetStats(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if body["available"] != true {
+		t.Errorf("expected available=true, got %v", body["available"])
+	}
+	if body["inbound"] != nil {
+		t.Errorf("expected nil inbound (no stats key), got %v", body["inbound"])
+	}
+	if body["debug"] == nil {
+		t.Error("expected debug field when stats key missing")
+	}
+}
+
 func TestGetObservatory_ExpvarStringFormat(t *testing.T) {
 	server := mockXrayMetricsServer(xrayExpvarStringResponse)
 	defer server.Close()
