@@ -436,7 +436,6 @@ func TestGetFilters_NeverReturnsNilSlices(t *testing.T) {
 
 	filters := store.GetFilters()
 	for _, slice := range [][]string{
-		filters.IncludeMarkers,
 		filters.ExcludeMarkers,
 		filters.IncludeCountries,
 		filters.ExcludeCountries,
@@ -453,7 +452,6 @@ func TestGetFilters_NilSlicesAfterSetFilters(t *testing.T) {
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 
 	store.SetFilters(&Filter{
-		IncludeMarkers:   nil,
 		ExcludeMarkers:   nil,
 		IncludeCountries: nil,
 		ExcludeCountries: nil,
@@ -461,7 +459,6 @@ func TestGetFilters_NilSlicesAfterSetFilters(t *testing.T) {
 
 	filters := store.GetFilters()
 	for _, slice := range [][]string{
-		filters.IncludeMarkers,
 		filters.ExcludeMarkers,
 		filters.IncludeCountries,
 		filters.ExcludeCountries,
@@ -910,7 +907,6 @@ func TestDefaultProfile_FilterNeverNilSlices(t *testing.T) {
 		t.Fatalf("GetProfile: %v", err)
 	}
 	for name, slice := range map[string][]string{
-		"IncludeMarkers":   dp.Filter.IncludeMarkers,
 		"ExcludeMarkers":   dp.Filter.ExcludeMarkers,
 		"IncludeCountries": dp.Filter.IncludeCountries,
 		"ExcludeCountries": dp.Filter.ExcludeCountries,
@@ -1104,7 +1100,6 @@ func TestConcurrentProfileReadWrite(t *testing.T) {
 
 func emptyFilter() Filter {
 	return Filter{
-		IncludeMarkers:   []string{},
 		ExcludeMarkers:   []string{},
 		IncludeCountries: []string{},
 		ExcludeCountries: []string{},

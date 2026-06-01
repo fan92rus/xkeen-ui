@@ -41,7 +41,7 @@ const dp = computed(() => profiles.value.find(p => p.is_default) || null);
 const filters = computed(() => {
     const p = activeProfile.value;
     return p?.filter || {
-        include_markers: [], exclude_markers: [],
+        exclude_markers: [],
         include_countries: [], exclude_countries: [],
         include_regexes: [], exclude_regexes: [], max_proxies: 0
     };
@@ -107,10 +107,6 @@ const filteredProxies = computed(() => {
     if (f.exclude_markers?.length) {
         const ex = new Set(f.exclude_markers);
         list = list.filter(p => !ex.has(p.marker));
-    }
-    if (f.include_markers?.length) {
-        const inc = new Set(f.include_markers);
-        list = list.filter(p => !p.marker || inc.has(p.marker));
     }
     if (f.exclude_countries?.length) {
         const ex = new Set(f.exclude_countries.map(c => c.toUpperCase()));
@@ -357,7 +353,7 @@ async function confirmNewProfile() {
         await api.createProfile({
             name,
             enabled: true,
-            filter: { exclude_markers: [], include_markers: [], exclude_countries: [], include_countries: [], include_regexes: [], exclude_regexes: [], max_proxies: 0 },
+            filter: { exclude_markers: [], exclude_countries: [], include_countries: [], include_regexes: [], exclude_regexes: [], max_proxies: 0 },
             strategy: { type: 'random' }
         });
         showNewProfileInput.value = false;

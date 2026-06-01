@@ -298,7 +298,7 @@ func TestGetFilters(t *testing.T) {
 
 	// Verify no null arrays — frontend crashes on .length of null
 	result := parseResponse(t, resp)
-	for _, key := range []string{"include_markers", "exclude_markers", "include_countries", "exclude_countries"} {
+	for _, key := range []string{"exclude_markers", "include_countries", "exclude_countries"} {
 		val, exists := result[key]
 		if !exists || val == nil {
 			t.Errorf("%s is null, expected empty array", key)
@@ -314,7 +314,6 @@ func TestUpdateFilters(t *testing.T) {
 	router := newTestRouter(h)
 
 	resp := doRequest(t, router, "PUT", "/subscriptions/filters", map[string]interface{}{
-		"include_markers":   []string{"⚡"},
 		"exclude_markers":   []string{"0.5X", "🎮"},
 		"include_countries": []string{"DE", "NL"},
 		"max_proxies":       50,
@@ -326,9 +325,6 @@ func TestUpdateFilters(t *testing.T) {
 
 	// Verify
 	filters := h.store.GetFilters()
-	if len(filters.IncludeMarkers) != 1 || filters.IncludeMarkers[0] != "⚡" {
-		t.Fatalf("expected include_markers=[⚡], got %v", filters.IncludeMarkers)
-	}
 	if filters.MaxProxies != 50 {
 		t.Fatalf("expected max_proxies=50, got %d", filters.MaxProxies)
 	}

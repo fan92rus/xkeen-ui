@@ -20,9 +20,7 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 	result := make([]*ProxyEntry, 0, len(proxies))
 
 	for _, p := range proxies {
-		if !passesIncludeMarkers(p, filter) {
-			continue
-		}
+
 		if isExcludedMarker(p, filter) {
 			continue
 		}
@@ -65,22 +63,7 @@ func compileRegexes(patterns []string) []*regexp.Regexp {
 	return res
 }
 
-// passesIncludeMarkers returns true if the proxy's marker is in IncludeMarkers,
-// if IncludeMarkers is empty (no filter), or if the proxy has no marker (pass through).
-func passesIncludeMarkers(p *ProxyEntry, f *Filter) bool {
-	if len(f.IncludeMarkers) == 0 {
-		return true
-	}
-	if p.Marker == "" {
-		return true // proxies without markers pass through include filter
-	}
-	for _, m := range f.IncludeMarkers {
-		if p.Marker == m {
-			return true
-		}
-	}
-	return false
-}
+
 
 // isExcludedMarker returns true if the proxy's marker is in ExcludeMarkers.
 func isExcludedMarker(p *ProxyEntry, f *Filter) bool {

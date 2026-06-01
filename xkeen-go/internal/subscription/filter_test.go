@@ -43,58 +43,6 @@ func TestApplyFilter_EmptyInput(t *testing.T) {
 	}
 }
 
-// --- IncludeMarkers ---
-
-func TestApplyFilter_IncludeMarkers(t *testing.T) {
-	proxies := []*ProxyEntry{
-		makeProxy("⚡", "DE", "Fast"),
-		makeProxy("⭐", "NL", "Standard"),
-		makeProxy("🎮", "US", "Gaming"),
-	}
-	filter := &Filter{
-		IncludeMarkers: []string{"⚡", "⭐"},
-	}
-	result := ApplyFilter(proxies, filter)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 (fast+standard), got %d", len(result))
-	}
-	for _, p := range result {
-		if p.Marker == "🎮" {
-			t.Error("gaming should be excluded")
-		}
-	}
-}
-
-func TestApplyFilter_IncludeMarkers_EmptyMarkerPasses(t *testing.T) {
-	// Proxies without a marker should pass through include_markers filter
-	proxies := []*ProxyEntry{
-		makeProxy("⚡", "DE", "Fast"),
-		makeProxy("", "NL", "Standard"),
-		makeProxy("🎮", "US", "Gaming"),
-	}
-	filter := &Filter{
-		IncludeMarkers: []string{"⚡"},
-	}
-	result := ApplyFilter(proxies, filter)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 (⚡ + empty marker passes), got %d", len(result))
-	}
-}
-
-func TestApplyFilter_IncludeMarkers_EmptyPassesAll(t *testing.T) {
-	proxies := []*ProxyEntry{
-		makeProxy("⚡", "DE", "Fast"),
-		makeProxy("⭐", "NL", "Standard"),
-	}
-	filter := &Filter{
-		IncludeMarkers: []string{}, // empty
-	}
-	result := ApplyFilter(proxies, filter)
-	if len(result) != 2 {
-		t.Fatalf("empty include markers should pass all, got %d", len(result))
-	}
-}
-
 // --- ExcludeMarkers ---
 
 func TestApplyFilter_ExcludeMarkers(t *testing.T) {
@@ -117,22 +65,6 @@ func TestApplyFilter_ExcludeMarkers(t *testing.T) {
 	}
 }
 
-func TestApplyFilter_IncludeAndExcludeMarkers(t *testing.T) {
-	proxies := []*ProxyEntry{
-		makeProxy("⚡", "DE", "Fast"),
-		makeProxy("⭐", "NL", "Standard"),
-		makeProxy("0.5X", "DE", "Mobile"),
-	}
-	filter := &Filter{
-		IncludeMarkers: []string{"⚡", "⭐", "0.5X"},
-		ExcludeMarkers: []string{"0.5X"},
-	}
-	// Include passes all three, then exclude removes mobile
-	result := ApplyFilter(proxies, filter)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 (mobile excluded by exclude), got %d", len(result))
-	}
-}
 
 // --- IncludeCountries ---
 
@@ -364,7 +296,6 @@ func TestApplyFilter_CombinedMarkersAndCountries(t *testing.T) {
 		makeProxy("⚡", "RU", "Russia Fast"),
 	}
 	filter := &Filter{
-		IncludeMarkers:   []string{"⚡", "⭐"},
 		ExcludeMarkers:   []string{"0.5X"},
 		IncludeCountries: []string{"DE", "NL"},
 		ExcludeCountries: []string{"RU"},
@@ -394,7 +325,6 @@ func TestApplyFilter_AllRulesCombined(t *testing.T) {
 		makeProxy("🎮", "DE", "Germany Gaming"),
 	}
 	filter := &Filter{
-		IncludeMarkers:   []string{"⚡"},
 		ExcludeMarkers:   []string{"0.5X", "🎮"},
 		IncludeCountries: []string{"DE"},
 		ExcludeCountries: []string{"RU"},

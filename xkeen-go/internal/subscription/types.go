@@ -58,7 +58,6 @@ type ProxyEntry struct {
 
 // Filter rules for proxy filtering.
 type Filter struct {
-	IncludeMarkers   []string `json:"include_markers"`
 	ExcludeMarkers   []string `json:"exclude_markers"`
 	IncludeCountries []string `json:"include_countries"`
 	ExcludeCountries []string `json:"exclude_countries"`
