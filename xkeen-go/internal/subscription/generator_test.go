@@ -834,16 +834,16 @@ func TestCollectFilteredProxies_NoFilters(t *testing.T) {
 }
 
 func TestCollectFilteredProxies_DefaultFilterExcludesAll(t *testing.T) {
-	proxies := makeProxies() // all have marker "⚡"
+	proxies := makeProxies()
 	profiles := []Profile{
 		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
-			Filter: Filter{ExcludeMarkers: []string{"⚡"}},
+			Filter: Filter{ExcludeRegexes: []string{"⚡"}},
 			Strategy: RoutingStrategy{Type: "all"}},
 	}
 
 	result := CollectFilteredProxies(proxies, profiles)
 	if len(result) != 0 {
-		t.Errorf("expected 0 proxies (all excluded), got %d", len(result))
+		t.Errorf("expected 0 proxies (all excluded by regex), got %d", len(result))
 	}
 }
 

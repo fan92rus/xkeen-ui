@@ -53,12 +53,12 @@ type ProxyEntry struct {
 	RawURI   string          `json:"raw_uri"`  // original share URI
 	Remarks  string          `json:"remarks"`  // decoded name from #fragment
 	Country  string          `json:"country"`  // country code like "DE", "US"
-	Marker   string          `json:"marker"`   // known marker: "⚡️", "⭐️", "🎮", "0.5X", "⬇️", "💎"
+
 }
 
 // Filter rules for proxy filtering.
 type Filter struct {
-	ExcludeMarkers   []string `json:"exclude_markers"`
+
 	IncludeCountries []string `json:"include_countries"`
 	ExcludeCountries []string `json:"exclude_countries"`
 	IncludeRegexes   []string `json:"include_regexes"`

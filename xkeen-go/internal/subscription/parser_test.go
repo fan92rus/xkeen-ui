@@ -107,9 +107,6 @@ func TestParseVlessRealityGermanNode(t *testing.T) {
 	if entry.Country != "DE" {
 		t.Errorf("Country = %q, want %q", entry.Country, "DE")
 	}
-	if entry.Marker != "⚡" {
-		t.Errorf("Marker = %q, want ⚡", entry.Marker)
-	}
 	if entry.Remarks == "" {
 		t.Error("Remarks is empty")
 	}
@@ -211,91 +208,6 @@ func TestExtractCountry(t *testing.T) {
 		got := extractCountry(tt.remarks)
 		if got != tt.want {
 			t.Errorf("extractCountry(%q) = %q, want %q", tt.remarks, got, tt.want)
-		}
-	}
-}
-
-// --- Marker Extraction ---
-
-func TestExtractMarker(t *testing.T) {
-	tests := []struct {
-		remarks string
-		want    string
-	}{
-		// Flag + emoji + country name format
-		{"🇩🇪 ⚡ Германия", "⚡"},
-		{"🇳🇱 ⭐ Нидерланды", "⭐"},
-		{"🇪🇪 🎮 Гейминг", "🎮"},
-		{"🇷🇺 0.5X Мобильные", "0.5X"},
-		{"⬇ Быстрые", "⬇"},
-		{"💎 Авто", "💎"},
-
-		// No marker (only flag + country name)
-		{"🇩🇪 Германия", ""},
-
-		// Empty
-		{"", ""},
-
-		// Marzban/V2Board style: CC | number | category | domain
-		{"US | 01 | IPLC | com.twitter", "IPLC"},
-		{"DE | 02 | CDN | google.com", "CDN"},
-		{"NL | 1 | VIP", "VIP"},
-
-		// Simple text without structure → no marker (no flag, no pipe)
-		{"My Server", ""},
-
-		// Only flag, no text marker
-		{"🇩🇪", ""},
-
-		// ⚡️ with variation selector
-		{"🇩🇪 ⚡️ Fast", "⚡"},
-
-		// Mixed: flag + short text marker + text
-		{"🇩🇪 1X Standard", "1X"},
-	}
-
-	for _, tt := range tests {
-		got := extractMarker(tt.remarks)
-		if got != tt.want {
-			t.Errorf("extractMarker(%q) = %q, want %q", tt.remarks, got, tt.want)
-		}
-	}
-}
-
-func TestExtractAllMarkers(t *testing.T) {
-	entries := []*ProxyEntry{
-		{Marker: "⚡"},
-		{Marker: "⚡"},
-		{Marker: "⭐"},
-		{Marker: "⭐"},
-		{Marker: "⭐"},
-		{Marker: "🎮"},
-		{Marker: ""},
-		{Marker: "unique-once"}, // should be filtered out (count=1)
-	}
-
-	markers := ExtractAllMarkers(entries)
-
-	// Must contain ⚡ and ⭐ (count >= 2)
-	want := []string{"⚡", "⭐"}
-	if len(markers) != len(want) {
-		t.Fatalf("got %d markers, want %d: %v", len(markers), len(want), markers)
-	}
-	for i, w := range want {
-		if markers[i] != w {
-			t.Errorf("markers[%d] = %q, want %q", i, markers[i], w)
-		}
-	}
-
-	// Verify single-occurrence markers are excluded
-	for _, m := range markers {
-		if m == "unique-once" {
-			t.Error("single-occurrence marker should be filtered out")
-		}
-	}
-	for _, m := range markers {
-		if m == "🎮" {
-			t.Error("single-occurrence marker 🎮 should be filtered out")
 		}
 	}
 }
@@ -467,22 +379,8 @@ func TestParseVless_SpecialCharsInName(t *testing.T) {
 	if entry.Country != "DE" {
 		t.Errorf("Country = %q, want DE", entry.Country)
 	}
-	if entry.Marker != "⚡" {
-		t.Errorf("Marker = %q, want ⚡", entry.Marker)
-	}
 }
 
-func TestParseVless_MobileMarker(t *testing.T) {
-	uri := "vless://uuid@1.2.3.4:443?security=reality&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%200.5X%20Mobile"
-
-	entry, err := ParseURI(uri)
-	if err != nil {
-		t.Fatalf("ParseURI failed: %v", err)
-	}
-	if entry.Marker != "0.5X" {
-		t.Errorf("Marker = %q, want 0.5X", entry.Marker)
-	}
-}
 
 func TestParseVless_MultipleSameCountry(t *testing.T) {
 	uris := []string{
@@ -807,7 +705,7 @@ func TestParseTrojan_WS(t *testing.T) {
 	}
 }
 
-func TestParseTrojan_CountryMarker(t *testing.T) {
+func TestParseTrojan_CountryExtraction(t *testing.T) {
 	uri := "trojan://pass@host:443?security=tls&sni=host#%F0%9F%87%A9%F0%9F%87%AA%20%E2%9A%A1%20Fast%20Trojan"
 	entry, err := ParseURI(uri)
 	if err != nil {
@@ -815,9 +713,6 @@ func TestParseTrojan_CountryMarker(t *testing.T) {
 	}
 	if entry.Country != "DE" {
 		t.Errorf("expected country DE, got %q", entry.Country)
-	}
-	if entry.Marker != "\u26A1" {
-		t.Errorf("expected marker ⚡, got %q", entry.Marker)
 	}
 }
 
@@ -874,7 +769,7 @@ func TestParseHysteria2_WithALPN(t *testing.T) {
 	}
 }
 
-func TestParseHysteria2_CountryMarker(t *testing.T) {
+func TestParseHysteria2_CountryExtraction(t *testing.T) {
 	uri := "hysteria2://pass@host:443?sni=host#%F0%9F%87%BA%F0%9F%87%B8%20%F0%9F%8E%AE%20Gaming"
 	entry, err := ParseURI(uri)
 	if err != nil {
@@ -882,10 +777,6 @@ func TestParseHysteria2_CountryMarker(t *testing.T) {
 	}
 	if entry.Country != "US" {
 		t.Errorf("expected country US, got %q", entry.Country)
-	}
-	// Game emoji \U0001F3AE
-	if entry.Marker != "\U0001F3AE" {
-		t.Errorf("expected marker 🎮, got %q", entry.Marker)
 	}
 }
 
@@ -933,101 +824,6 @@ func TestParseSubscriptionContent_Base64MixedProtocols(t *testing.T) {
 	}
 	if !protocols["vless"] || !protocols["trojan"] || !protocols["hysteria2"] {
 		t.Errorf("expected all 3 protocols, got %v", protocols)
-	}
-}
-
-// --- isLetterOrDigit ---
-
-func TestIsLetterOrDigit(t *testing.T) {
-	tests := []struct {
-		input rune
-		want  bool
-	}{
-		{'a', true},
-		{'z', true},
-		{'A', true},
-		{'Z', true},
-		{'0', true},
-		{'9', true},
-		// Cyrillic range 0x0400-0x04FF
-		{0x0410, true},  // А
-		{0x044F, true},  // я
-		{0x0400, true},  // Ѐ
-		{0x04FF, true},  // ӿ
-		// Non-matching
-		{'-', false},
-		{'.', false},
-		{'@', false},
-		{' ', false},
-		{'\n', false},
-		{0x00E9, false}, // é (Latin extended)
-		{0x0500, false}, // not in Cyrillic range
-		{0x03FF, false}, // Greek, not Cyrillic
-	}
-	for _, tt := range tests {
-		got := isLetterOrDigit(tt.input)
-		if got != tt.want {
-			t.Errorf("isLetterOrDigit(%q [=U+%04X]) = %v, want %v", tt.input, tt.input, got, tt.want)
-		}
-	}
-}
-
-// --- jsonInt ---
-
-func TestJsonInt(t *testing.T) {
-	tests := []struct {
-		name  string
-		input any
-		want  int
-	}{
-		{"float64", float64(42), 42},
-		{"float64_zero", float64(0), 0},
-		{"string_number", "123", 123},
-		{"string_zero", "0", 0},
-		{"int", 99, 99},
-		{"invalid_string", "abc", 0},
-		{"nil", nil, 0},
-		{"bool", true, 0},
-		{"float_string", "12.5", 0}, // Atoi can't parse float
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := jsonInt(tt.input)
-			if got != tt.want {
-				t.Errorf("jsonInt(%v) = %d, want %d", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-// --- isEmojiToken ---
-
-func TestIsEmojiToken(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  bool
-	}{
-		{"empty", "", false},
-		{"starts_with_letter", "hello", false},
-		{"starts_with_uppercase", "Hello", false},
-		{"starts_with_digit", "123abc", false},
-		{"starts_with_cyrillic", "Россия", false},
-		{"star_emoji", "\u2B50", true},      // ⭐
-		{"lightning", "\u26A1", true},         // ⚡
-		{"game_emoji", "\U0001F3AE", true},    // 🎮
-		{"dash", "-", true},                   // non-letter/digit
-		{"punctuation", "!", true},             // non-letter/digit
-		{"variation_selector_then_emoji", "\uFE0F\u2B50", true}, // VS then star
-		{"zwj_then_emoji", "\u200D\u2B50", true},               // ZWJ then star
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isEmojiToken(tt.input)
-			if got != tt.want {
-				t.Errorf("isEmojiToken(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
 	}
 }
 

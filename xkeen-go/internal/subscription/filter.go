@@ -6,7 +6,7 @@ import (
 )
 
 // ApplyFilter filters a list of proxies according to the given Filter rules.
-// Rules are applied in order: markers → countries → regex → max.
+// Rules are applied in order: countries → regex → max.
 // Nil filter returns the input unchanged.
 func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 	if filter == nil || len(proxies) == 0 {
@@ -21,9 +21,6 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 
 	for _, p := range proxies {
 
-		if isExcludedMarker(p, filter) {
-			continue
-		}
 		if !passesIncludeCountries(p, filter) {
 			continue
 		}
@@ -64,16 +61,6 @@ func compileRegexes(patterns []string) []*regexp.Regexp {
 }
 
 
-
-// isExcludedMarker returns true if the proxy's marker is in ExcludeMarkers.
-func isExcludedMarker(p *ProxyEntry, f *Filter) bool {
-	for _, m := range f.ExcludeMarkers {
-		if p.Marker == m {
-			return true
-		}
-	}
-	return false
-}
 
 // passesIncludeCountries returns true if the proxy's country is in IncludeCountries,
 // if IncludeCountries is empty (no filter), or if the proxy has no country (pass through).

@@ -206,7 +206,6 @@ func (s *Store) GetStrategy() *RoutingStrategy {
 // cloneFilter returns a deep copy of a Filter with non-nil slices.
 func cloneFilter(f *Filter) *Filter {
 	cp := *f
-	cp.ExcludeMarkers = safeSlice(f.ExcludeMarkers)
 	cp.IncludeCountries = safeSlice(f.IncludeCountries)
 	cp.ExcludeCountries = safeSlice(f.ExcludeCountries)
 	cp.IncludeRegexes = safeSlice(f.IncludeRegexes)
@@ -325,7 +324,6 @@ func (s *Store) defaultProfile() *Profile {
 		Enabled:   true,
 		IsDefault: true,
 		Filter: Filter{
-			ExcludeMarkers:   []string{},
 			IncludeCountries: []string{},
 			ExcludeCountries: []string{},
 			IncludeRegexes:   []string{},
@@ -359,7 +357,6 @@ func (s *Store) migrateProfiles() {
 		dp.Filter = *f
 	} else {
 		dp.Filter = Filter{
-			ExcludeMarkers:   []string{},
 			IncludeCountries: []string{},
 			ExcludeCountries: []string{},
 			IncludeRegexes:   []string{},

@@ -17,7 +17,6 @@ const edit = reactive({ name: '', url: '', interval: 0, enabled: true });
 const newUrl = ref('');
 const proxyQ = ref('');
 const showPreview = ref(false);
-const markers = ref([]);
 
 /* ---- active profile ---- */
 const activeProfileId = ref(null);
@@ -41,7 +40,6 @@ const dp = computed(() => profiles.value.find(p => p.is_default) || null);
 const filters = computed(() => {
     const p = activeProfile.value;
     return p?.filter || {
-        exclude_markers: [],
         include_countries: [], exclude_countries: [],
         include_regexes: [], exclude_regexes: [], max_proxies: 0
     };
@@ -104,10 +102,6 @@ const filteredProxies = computed(() => {
     const f = filters.value;
     if (!f) return list;
 
-    if (f.exclude_markers?.length) {
-        const ex = new Set(f.exclude_markers);
-        list = list.filter(p => !ex.has(p.marker));
-    }
     if (f.exclude_countries?.length) {
         const ex = new Set(f.exclude_countries.map(c => c.toUpperCase()));
         list = list.filter(p => !ex.has((p.country || '').toUpperCase()));
@@ -156,17 +150,11 @@ function _fmtJson(obj) {
               .replace(/:\s*(true|false)/g, ': <span class="pb">$1</span>')
               .replace(/:\s*(null)/g, ': <span class="pu">$1</span>');
 }
-function _extractMarkers(px) {
-    const counts = {};
-    for (const p of px) { if (p.marker) counts[p.marker] = (counts[p.marker] || 0) + 1; }
-    return Object.keys(counts).filter(m => counts[m] >= 2).sort();
-}
 function _toast(msg, type) { app.showToast(msg, type); }
 function _err(e) { console.error('[sub]', e); _toast(e.message || 'Ошибка', 'error'); }
 async function _reload() {
     subs.value = (await api.listSubscriptions()).subscriptions || [];
 }
-function countByMarker(m) { return proxies.value.filter(p => p.marker === m).length; }
 function countByCountry(c) { return proxies.value.filter(p => p.country === c).length; }
 
 /* ---- persist active profile ---- */
@@ -226,7 +214,6 @@ async function fetchOne(id) {
             const cached = await api.getProxies();
             if (cached.proxies?.length) {
                 proxies.value = cached.proxies;
-                markers.value = cached.markers || _extractMarkers(cached.proxies);
             }
         } catch { /* ignore */ }
     } finally { busy.value = false; }
@@ -250,24 +237,10 @@ async function loadProxies() {
     try {
         const d = await api.getProxies();
         proxies.value = d.proxies || [];
-        markers.value = d.markers || _extractMarkers(d.proxies || []);
     } catch (e) {
         console.error('[sub] loadProxies error:', e);
         proxies.value = [];
     }
-}
-
-/* ---- markers ---- */
-function markerExcl(id) { return filters.value?.exclude_markers?.includes(id); }
-async function toggleMarker(id) {
-    const p = activeProfile.value;
-    if (!p) return;
-    const arr = p.filter.exclude_markers || [];
-    const i = arr.indexOf(id);
-    if (i >= 0) arr.splice(i, 1);
-    else arr.push(id);
-    await _persistProfile();
-    await loadProfiles();
 }
 
 /* ---- countries ---- */
@@ -353,7 +326,6 @@ async function confirmNewProfile() {
         await api.createProfile({
             name,
             enabled: true,
-            filter: { exclude_markers: [], exclude_countries: [], include_countries: [], include_regexes: [], exclude_regexes: [], max_proxies: 0 },
             strategy: { type: 'random' }
         });
         showNewProfileInput.value = false;
@@ -512,17 +484,6 @@ onMounted(async () => {
           </span>
         </div>
 
-        <!-- Markers -->
-        <div v-if="markers.length">
-          <div class="sub-row-label">Маркеры</div>
-          <div class="marker-pills">
-            <button v-for="m in markers" :key="m" class="mpill" :class="{ excl: markerExcl(m) }"
-                    @click="toggleMarker(m)" :title="markerExcl(m) ? 'Вернуть' : 'Исключить'">
-              {{ m }} <span class="mpill-cnt">{{ countByMarker(m) }}</span>
-            </button>
-          </div>
-        </div>
-
         <!-- Countries -->
         <div v-if="allCountries.length">
           <div class="sub-row-label">Страны</div>
@@ -589,7 +550,6 @@ onMounted(async () => {
                  class="px-row"
                  :style="{ position: 'absolute', top: (visibleProxies.start + idx) * ITEM_HEIGHT + 'px', left: 0, right: 0 }">
               <span class="px-country" :title="p.remarks">{{ p.country || '?' }}</span>
-              <span class="px-marker" v-if="p.marker">{{ p.marker }}</span>
               <span class="px-remarks">{{ p.remarks || p.tag }}</span>
               <span class="px-tag mono">{{ p.tag }}</span>
             </div>

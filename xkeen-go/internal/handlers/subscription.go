@@ -181,15 +181,11 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	}
 	h.store.SetProxies(merged)
 
-	// Extract markers from merged data
-	markers := subscription.ExtractAllMarkers(merged)
-
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,
 		"proxy_count": len(entries),
 		"total":       len(entries),
 		"proxies":     entries,
-		"markers":     markers,
 	})
 }
 
@@ -199,12 +195,10 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 // GET /api/subscriptions/proxies
 func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request) {
 	allProxies := h.store.GetProxies()
-	markers := subscription.ExtractAllMarkers(allProxies)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"total":    len(allProxies),
-		"markers":  markers,
-		"proxies":  allProxies,
+		"total":   len(allProxies),
+		"proxies": allProxies,
 	})
 }
 

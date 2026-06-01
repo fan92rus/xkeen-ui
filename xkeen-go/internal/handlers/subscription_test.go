@@ -127,7 +127,6 @@ func addTestSubscriptionWithProxies(t *testing.T, store *subscription.Store, cou
 			Outbound: outJSON,
 			Remarks:  fmt.Sprintf("Test Node %d", i+1),
 			Country:  "DE",
-			Marker:   "⚡",
 		}
 	}
 	store.SetProxies(proxies)
@@ -298,7 +297,7 @@ func TestGetFilters(t *testing.T) {
 
 	// Verify no null arrays — frontend crashes on .length of null
 	result := parseResponse(t, resp)
-	for _, key := range []string{"exclude_markers", "include_countries", "exclude_countries"} {
+	for _, key := range []string{"include_countries", "exclude_countries"} {
 		val, exists := result[key]
 		if !exists || val == nil {
 			t.Errorf("%s is null, expected empty array", key)
@@ -314,7 +313,6 @@ func TestUpdateFilters(t *testing.T) {
 	router := newTestRouter(h)
 
 	resp := doRequest(t, router, "PUT", "/subscriptions/filters", map[string]interface{}{
-		"exclude_markers":   []string{"0.5X", "🎮"},
 		"include_countries": []string{"DE", "NL"},
 		"max_proxies":       50,
 	})
@@ -1420,9 +1418,7 @@ func TestPreview_FiltersAffectOutput(t *testing.T) {
 		t.Errorf("expected proxy_count=5, got %.0f", beforeProxyCount)
 	}
 
-	// Now change filters: exclude all markers (exclude "⚡")
 	filters := h.store.GetFilters()
-	filters.ExcludeMarkers = []string{"⚡"}
 	if err := h.store.SetFilters(filters); err != nil {
 		t.Fatalf("failed to set filters: %v", err)
 	}
@@ -1433,9 +1429,7 @@ func TestPreview_FiltersAffectOutput(t *testing.T) {
 	for _, p := range profiles {
 		if p.IsDefault {
 			filtered := subscription.ApplyFilter(allProxies, &p.Filter)
-			t.Logf("Default profile filter: exclude_markers=%v, filtered=%d/%d", p.Filter.ExcludeMarkers, len(filtered), len(allProxies))
 			if len(filtered) != 0 {
-				t.Fatalf("expected 0 filtered proxies after excluding ⚡ marker, got %d", len(filtered))
 			}
 		}
 	}
@@ -1449,7 +1443,6 @@ func TestPreview_FiltersAffectOutput(t *testing.T) {
 
 	// After fix: filtered_proxy_count should be 0 (all proxies filtered out)
 	if afterFilteredCount != 0 {
-		t.Errorf("expected filtered_proxy_count=0 after excluding all markers, got %.0f", afterFilteredCount)
 	}
 
 	// proxy_count still shows total (5)

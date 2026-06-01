@@ -284,10 +284,6 @@ async function main() {
         assert(tabCount >= 1, `Should have 1+ profile tabs, got ${tabCount}`);
     });
 
-    await test('Marker pills render', async () => {
-        await page.evaluate(() => document.querySelectorAll('.marker-pills .mpill').length);
-    });
-
     await test('Country cloud renders', async () => {
         await page.evaluate(() => document.querySelectorAll('.country-cloud .cc').length);
     });

@@ -45,7 +45,7 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 		Subscriptions: []Subscription{
 			{ID: "abc", Name: "Test", URL: "https://example.com/sub", Enabled: true, Interval: 5},
 		},
-		Filters:  &Filter{ExcludeMarkers: []string{"0.5X", "🎮"}},
+		Filters:  &Filter{ExcludeCountries: []string{"RU"}},
 		Strategy: &RoutingStrategy{Type: "random", FallbackTag: "direct"},
 	}
 	data, _ := json.MarshalIndent(existing, "", "    ")
@@ -71,8 +71,8 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 	if dp.Strategy.Type != "random" {
 		t.Errorf("expected strategy 'random', got %q", dp.Strategy.Type)
 	}
-	if len(dp.Filter.ExcludeMarkers) != 2 {
-		t.Errorf("expected 2 exclude markers, got %d", len(dp.Filter.ExcludeMarkers))
+	if len(dp.Filter.ExcludeCountries) != 1 {
+		t.Errorf("expected 1 exclude country, got %d", len(dp.Filter.ExcludeCountries))
 	}
 }
 
@@ -228,7 +228,7 @@ func TestSetGetFilters(t *testing.T) {
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 
 	f := &Filter{
-		ExcludeMarkers:   []string{"0.5X", "🎮"},
+		ExcludeCountries: []string{"RU"},
 		IncludeCountries: []string{"DE", "NL"},
 		MaxProxies:       20,
 	}
@@ -237,8 +237,8 @@ func TestSetGetFilters(t *testing.T) {
 	}
 
 	got := store.GetFilters()
-	if len(got.ExcludeMarkers) != 2 {
-		t.Errorf("expected 2 exclude markers, got %d", len(got.ExcludeMarkers))
+	if len(got.ExcludeCountries) != 1 {
+		t.Errorf("expected 1 exclude country, got %d", len(got.ExcludeCountries))
 	}
 	if got.MaxProxies != 20 {
 		t.Errorf("expected MaxProxies=20, got %d", got.MaxProxies)
@@ -436,7 +436,7 @@ func TestGetFilters_NeverReturnsNilSlices(t *testing.T) {
 
 	filters := store.GetFilters()
 	for _, slice := range [][]string{
-		filters.ExcludeMarkers,
+		filters.ExcludeCountries,
 		filters.IncludeCountries,
 		filters.ExcludeCountries,
 	} {
@@ -452,14 +452,13 @@ func TestGetFilters_NilSlicesAfterSetFilters(t *testing.T) {
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 
 	store.SetFilters(&Filter{
-		ExcludeMarkers:   nil,
 		IncludeCountries: nil,
 		ExcludeCountries: nil,
 	})
 
 	filters := store.GetFilters()
 	for _, slice := range [][]string{
-		filters.ExcludeMarkers,
+		filters.ExcludeCountries,
 		filters.IncludeCountries,
 		filters.ExcludeCountries,
 	} {
@@ -564,7 +563,7 @@ func TestAddProfile_Valid(t *testing.T) {
 	p := &Profile{
 		Name:     "Test Profile",
 		Enabled:  true,
-		Filter:   Filter{ExcludeMarkers: []string{"mobile"}, MaxProxies: 20},
+		Filter:   Filter{ExcludeCountries: []string{"RU"}, MaxProxies: 20},
 		Strategy: RoutingStrategy{Type: "leastping"},
 	}
 	if err := store.AddProfile(p); err != nil {
@@ -590,8 +589,8 @@ func TestAddProfile_Valid(t *testing.T) {
 	if got.Filter.MaxProxies != 20 {
 		t.Errorf("expected MaxProxies=20, got %d", got.Filter.MaxProxies)
 	}
-	if len(got.Filter.ExcludeMarkers) != 1 || got.Filter.ExcludeMarkers[0] != "mobile" {
-		t.Errorf("exclude_markers not persisted: %v", got.Filter.ExcludeMarkers)
+	if len(got.Filter.ExcludeCountries) != 1 || got.Filter.ExcludeCountries[0] != "RU" {
+		t.Errorf("exclude_countries not persisted: %v", got.Filter.ExcludeCountries)
 	}
 }
 
@@ -680,7 +679,7 @@ func TestUpdateProfile_ChangesFields(t *testing.T) {
 
 	p.Name = "Updated"
 	p.Strategy.Type = "roundrobin"
-	p.Filter.ExcludeMarkers = []string{"mobile"}
+	p.Filter.ExcludeCountries = []string{"RU"}
 	p.Enabled = true
 	if err := store.UpdateProfile(p); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -696,8 +695,8 @@ func TestUpdateProfile_ChangesFields(t *testing.T) {
 	if got.Strategy.Type != "roundrobin" {
 		t.Errorf("expected strategy 'roundrobin', got %q", got.Strategy.Type)
 	}
-	if len(got.Filter.ExcludeMarkers) != 1 || got.Filter.ExcludeMarkers[0] != "mobile" {
-		t.Errorf("exclude_markers not updated: %v", got.Filter.ExcludeMarkers)
+	if len(got.Filter.ExcludeCountries) != 1 || got.Filter.ExcludeCountries[0] != "RU" {
+		t.Errorf("exclude_countries not updated: %v", got.Filter.ExcludeCountries)
 	}
 }
 
@@ -907,9 +906,8 @@ func TestDefaultProfile_FilterNeverNilSlices(t *testing.T) {
 		t.Fatalf("GetProfile: %v", err)
 	}
 	for name, slice := range map[string][]string{
-		"ExcludeMarkers":   dp.Filter.ExcludeMarkers,
+		"ExcludeCountries":   dp.Filter.ExcludeCountries,
 		"IncludeCountries": dp.Filter.IncludeCountries,
-		"ExcludeCountries": dp.Filter.ExcludeCountries,
 		"IncludeRegexes":   dp.Filter.IncludeRegexes,
 		"ExcludeRegexes":   dp.Filter.ExcludeRegexes,
 	} {
@@ -926,17 +924,17 @@ func TestGetProfiles_DeepCopyIsolation(t *testing.T) {
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 
 	// Modify default profile filters to have data
-	store.SetFilters(&Filter{ExcludeMarkers: []string{"original"}})
+	store.SetFilters(&Filter{ExcludeCountries: []string{"original"}})
 
 	profiles1 := store.GetProfiles()
 	// Modify returned slice
-	profiles1[0].Filter.ExcludeMarkers[0] = "tampered"
+	profiles1[0].Filter.ExcludeCountries[0] = "tampered"
 	profiles1[0].Name = "hacked"
 
 	// Get fresh copy — should be unaffected
 	profiles2 := store.GetProfiles()
-	if profiles2[0].Filter.ExcludeMarkers[0] != "original" {
-		t.Errorf("deep copy isolation failed: got %q", profiles2[0].Filter.ExcludeMarkers[0])
+	if profiles2[0].Filter.ExcludeCountries[0] != "original" {
+		t.Errorf("deep copy isolation failed: got %q", profiles2[0].Filter.ExcludeCountries[0])
 	}
 	if profiles2[0].Name != "По умолчанию" {
 		t.Errorf("deep copy isolation failed: got %q", profiles2[0].Name)
@@ -1100,9 +1098,8 @@ func TestConcurrentProfileReadWrite(t *testing.T) {
 
 func emptyFilter() Filter {
 	return Filter{
-		ExcludeMarkers:   []string{},
-		IncludeCountries: []string{},
 		ExcludeCountries: []string{},
+		IncludeCountries: []string{},
 		IncludeRegexes:   []string{},
 		ExcludeRegexes:   []string{},
 	}
@@ -1128,7 +1125,7 @@ func TestStore_PersistenceWithFilters(t *testing.T) {
 	store1, _ := NewStore(path)
 	store1.AddSubscription(&Subscription{Name: "Test", URL: "https://a.com", Enabled: true})
 	store1.SetFilters(&Filter{
-		ExcludeMarkers:   []string{"mobile"},
+		ExcludeCountries: []string{"RU"},
 		MaxProxies:       50,
 		IncludeRegexes:  []string{"speed"},
 	})
@@ -1137,8 +1134,8 @@ func TestStore_PersistenceWithFilters(t *testing.T) {
 	// Create new store instance — should load from disk
 	store2, _ := NewStore(path)
 	filters := store2.GetFilters()
-	if len(filters.ExcludeMarkers) != 1 || filters.ExcludeMarkers[0] != "mobile" {
-		t.Errorf("exclude_markers not persisted: %v", filters.ExcludeMarkers)
+	if len(filters.ExcludeCountries) != 1 || filters.ExcludeCountries[0] != "RU" {
+		t.Errorf("exclude_countries not persisted: %v", filters.ExcludeCountries)
 	}
 	if filters.MaxProxies != 50 {
 		t.Errorf("max_proxies not persisted: %d", filters.MaxProxies)

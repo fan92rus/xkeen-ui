@@ -562,8 +562,8 @@ func TestScheduler_RunAutoApply_AllFilteredOut(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 	store.AddSubscription(&Subscription{Name: "Test", URL: server.URL, Enabled: true})
-	// Exclude the ⚡ marker which all proxies have
-	store.SetFilters(&Filter{ExcludeMarkers: []string{"\u26A1"}})
+	// Exclude by regex which all proxies match (⚡ in remarks)
+	store.SetFilters(&Filter{ExcludeRegexes: []string{"⚡"}})
 
 	fetcher := NewFetcher()
 	sched := NewScheduler(store, fetcher)
