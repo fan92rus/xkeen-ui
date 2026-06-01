@@ -7,6 +7,7 @@ import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
 import SettingsTab from './components/SettingsTab.vue';
 const CommandsTab = defineAsyncComponent(() => import('./components/CommandsTab.vue'));
+const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vue'));
 
 const app = useAppStore();
 
@@ -17,6 +18,7 @@ const tabs = computed(() => {
         { id: 'logs', label: 'Логи' },
         { id: 'settings', label: 'Настройки' },
         { id: 'commands', label: 'Команды' },
+        { id: 'metrics', label: 'Монитор' },
     ];
     return list;
 });
@@ -36,6 +38,7 @@ const icons = {
     logs: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',
     settings: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
     commands: 'M4 17l6-6-6-6M12 19h8',
+    metrics: 'M18 20V10M12 20V4M6 20v-6',
     play: 'M6 3l14 9-14 9V3z',
     stop: 'M3.6 3.6h16.8v16.8H3.6z',
     restart: 'M21 12a9 9 0 1 1-6.219-8.56M21 3v6h-6',
@@ -145,6 +148,7 @@ onUnmounted(() => {
       <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
       <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />
       <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content" />
+      <MetricsTab v-if="app.activeTab === 'metrics'" :active="app.activeTab === 'metrics'" class="tab-content" />
     </div>
 
     <!-- Output Modal -->
