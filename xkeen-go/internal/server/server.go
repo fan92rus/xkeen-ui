@@ -132,6 +132,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subFetcher := subscription.NewFetcher()
 	subScheduler := subscription.NewScheduler(subStore, subFetcher)
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
+	subScheduler.SetMetricsPort(cfg.MetricsPort)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
 	subScheduler.Start()
 

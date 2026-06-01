@@ -36,6 +36,9 @@ type Scheduler struct {
 
 	// xrayDir is the xray config directory for writing generated files.
 	xrayDir string
+
+	// metricsPort is the Xray metrics port (0 = disabled).
+	metricsPort int
 }
 
 // NewScheduler creates a new scheduler.
@@ -53,6 +56,11 @@ func NewScheduler(store *Store, fetcher *Fetcher) *Scheduler {
 // SetXrayDir sets the xray config directory for auto-apply file writes.
 func (s *Scheduler) SetXrayDir(dir string) {
 	s.xrayDir = dir
+}
+
+// SetMetricsPort sets the Xray metrics port for generating 06_metrics.json.
+func (s *Scheduler) SetMetricsPort(port int) {
+	s.metricsPort = port
 }
 
 // Start begins the per-minute subscription interval checker
@@ -241,6 +249,19 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 		}
 	} else {
 		os.Remove(obsPath)
+	}
+
+	// Metrics
+	metricsPath := dir + "/06_metrics.json"
+	if s.metricsPort > 0 {
+		metricsJSON := GenerateMetricsJSON(s.metricsPort)
+		if metricsJSON != nil {
+			if err := os.WriteFile(metricsPath, metricsJSON, 0644); err != nil {
+				return fmt.Errorf("write metrics: %w", err)
+			}
+		}
+	} else {
+		os.Remove(metricsPath)
 	}
 
 	return nil
