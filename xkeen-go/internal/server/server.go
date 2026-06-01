@@ -45,6 +45,7 @@ type Server struct {
 	updateHandler        *handlers.UpdateHandler
 	interactiveHandler   *handlers.InteractiveHandler
 	subscriptionHandler  *handlers.SubscriptionHandler
+	metricsHandler       *handlers.MetricsHandler
 
 	// Shutdown state
 	shutdown   bool
@@ -133,6 +134,15 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
 	subScheduler.Start()
+
+	// Metrics handler (optional, only if port configured)
+	if cfg.MetricsPort > 0 {
+		s.metricsHandler = handlers.NewMetricsHandler(
+			fmt.Sprintf("http://127.0.0.1:%d", cfg.MetricsPort),
+			5*time.Second,
+		)
+		log.Printf("Metrics enabled: listening on 127.0.0.1:%d", cfg.MetricsPort)
+	}
 
 	// Setup routes
 	s.setupRoutes()
@@ -253,6 +263,11 @@ func (s *Server) setupRoutes() {
 	// Subscription routes
 	if s.subscriptionHandler != nil {
 		handlers.RegisterSubscriptionRoutes(apiRouter, s.subscriptionHandler)
+	}
+
+	// Metrics routes (optional)
+	if s.metricsHandler != nil {
+		handlers.RegisterMetricsRoutes(apiRouter, s.metricsHandler)
 	}
 
 	// WebSocket routes (auth required, but no CSRF - WebSocket cannot send custom headers)

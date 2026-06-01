@@ -29,6 +29,9 @@ type Config struct {
 	// MihomoBinary is the path or name of the mihomo binary.
 	MihomoBinary string `json:"mihomo_binary"`
 
+	// MetricsPort is the port for Xray metrics endpoint (0 = disabled).
+	MetricsPort int `json:"metrics_port"`
+
 	// AllowedRoots defines the allowed directories for file operations.
 	AllowedRoots []string `json:"allowed_roots"`
 
