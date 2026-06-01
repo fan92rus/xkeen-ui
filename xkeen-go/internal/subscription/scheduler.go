@@ -59,6 +59,7 @@ func (s *Scheduler) SetXrayDir(dir string) {
 }
 
 // SetMetricsPort sets the Xray metrics port and immediately writes/removes 08_metrics.json.
+// It also updates 06_policy.json with traffic stats settings.
 func (s *Scheduler) SetMetricsPort(port int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -67,6 +68,7 @@ func (s *Scheduler) SetMetricsPort(port int) {
 		return
 	}
 	metricsPath := s.xrayDir + "/08_metrics.json"
+	policyPath := s.xrayDir + "/06_policy.json"
 	if port > 0 {
 		metricsJSON := GenerateMetricsJSON(port)
 		if metricsJSON != nil {
@@ -74,8 +76,26 @@ func (s *Scheduler) SetMetricsPort(port int) {
 				log.Printf("[scheduler] failed to write metrics config: %v", err)
 			}
 		}
+		// Inject traffic stats into existing policy
+		existing, _ := os.ReadFile(policyPath)
+		policyJSON := PolicyWithStats(existing)
+		if policyJSON != nil {
+			if err := os.WriteFile(policyPath, policyJSON, 0644); err != nil {
+				log.Printf("[scheduler] failed to write policy with stats: %v", err)
+			}
+		}
 	} else {
 		os.Remove(metricsPath)
+		// Remove stats from policy, keep other settings
+		existing, _ := os.ReadFile(policyPath)
+		if len(existing) > 0 {
+			policyJSON := PolicyWithoutStats(existing)
+			if policyJSON != nil {
+				os.WriteFile(policyPath, policyJSON, 0644)
+			} else {
+				os.Remove(policyPath)
+			}
+		}
 	}
 }
 
@@ -269,11 +289,20 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 
 	// Metrics
 	metricsPath := dir + "/08_metrics.json"
+	policyPath := dir + "/06_policy.json"
 	if s.metricsPort > 0 {
 		metricsJSON := GenerateMetricsJSON(s.metricsPort)
 		if metricsJSON != nil {
 			if err := os.WriteFile(metricsPath, metricsJSON, 0644); err != nil {
 				return fmt.Errorf("write metrics: %w", err)
+			}
+		}
+		// Inject traffic stats into existing policy
+		existing, _ := os.ReadFile(policyPath)
+		policyJSON := PolicyWithStats(existing)
+		if policyJSON != nil {
+			if err := os.WriteFile(policyPath, policyJSON, 0644); err != nil {
+				return fmt.Errorf("write policy stats: %w", err)
 			}
 		}
 	} else {

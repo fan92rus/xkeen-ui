@@ -95,8 +95,8 @@ func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// expvar publishes stats as a JSON string — need double parse
-	statsRaw, ok := vars["stats"]
-	if !ok {
+	statsRaw := vars["stats"]
+	if statsRaw == nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"available": true, "inbound": nil, "outbound": nil})
 		return
 	}
