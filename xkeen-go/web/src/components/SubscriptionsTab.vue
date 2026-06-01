@@ -616,7 +616,8 @@ onMounted(async () => {
       </div>
       <div class="modal-body" v-if="previewData">
         <div class="preview-summary">
-          <span>Прокси: <strong>{{ previewData.proxy_count }}</strong></span>
+          <span>Всего прокси: <strong>{{ previewData.proxy_count }}</strong></span>
+          <span v-if="previewData.filtered_proxy_count !== undefined">После фильтров: <strong>{{ previewData.filtered_proxy_count }}</strong></span>
           <span v-if="previewData.profiles?.length">Профили: <strong>{{ previewData.profiles.length }}</strong></span>
         </div>
         <details>

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1385,6 +1386,163 @@ func TestRegisterSubscriptionRoutes_Profiles(t *testing.T) {
 		if !r.Match(req, match) {
 			t.Errorf("route %s %s not registered", route.method, route.path)
 		}
+	}
+}
+
+// ---------- Bug Confirmation: Preview shows applied config, ignoring filter changes ----------
+
+func TestPreview_FiltersAffectOutput(t *testing.T) {
+	// This test verifies that filter changes are reflected in the preview output.
+	// Previously, filters had no effect on preview for the default profile with strategy "all".
+	// After the fix:
+	//   - filtered_proxy_count reflects how many proxies pass the filter
+	//   - outbounds only includes filtered proxies
+	//   - when all proxies are filtered out, preview returns a message
+
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	addTestSubscriptionWithProxies(t, h.store, 5)
+
+	// Apply with default filters (strategy="all", no filter rules)
+	resp := doRequest(t, router, "POST", "/subscriptions/apply", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("apply failed: %d", resp.StatusCode)
+	}
+
+	// Preview BEFORE filter changes
+	resp = doRequest(t, router, "GET", "/subscriptions/preview", nil)
+	beforeResult := parseResponse(t, resp)
+	beforeFilteredCount := beforeResult["filtered_proxy_count"].(float64)
+	beforeProxyCount := beforeResult["proxy_count"].(float64)
+	t.Logf("BEFORE filter: proxy_count=%.0f, filtered_proxy_count=%.0f", beforeProxyCount, beforeFilteredCount)
+
+	if beforeFilteredCount != 5 {
+		t.Errorf("expected filtered_proxy_count=5 (no filter), got %.0f", beforeFilteredCount)
+	}
+	if beforeProxyCount != 5 {
+		t.Errorf("expected proxy_count=5, got %.0f", beforeProxyCount)
+	}
+
+	// Now change filters: exclude all markers (exclude "⚡")
+	filters := h.store.GetFilters()
+	filters.ExcludeMarkers = []string{"⚡"}
+	if err := h.store.SetFilters(filters); err != nil {
+		t.Fatalf("failed to set filters: %v", err)
+	}
+
+	// Verify filter was applied correctly
+	profiles := h.store.GetProfiles()
+	allProxies := h.store.GetProxies()
+	for _, p := range profiles {
+		if p.IsDefault {
+			filtered := subscription.ApplyFilter(allProxies, &p.Filter)
+			t.Logf("Default profile filter: exclude_markers=%v, filtered=%d/%d", p.Filter.ExcludeMarkers, len(filtered), len(allProxies))
+			if len(filtered) != 0 {
+				t.Fatalf("expected 0 filtered proxies after excluding ⚡ marker, got %d", len(filtered))
+			}
+		}
+	}
+
+	// Preview AFTER filter changes
+	resp = doRequest(t, router, "GET", "/subscriptions/preview", nil)
+	afterResult := parseResponse(t, resp)
+	afterFilteredCount := afterResult["filtered_proxy_count"].(float64)
+	afterProxyCount := afterResult["proxy_count"].(float64)
+	t.Logf("AFTER filter: proxy_count=%.0f, filtered_proxy_count=%.0f", afterProxyCount, afterFilteredCount)
+
+	// After fix: filtered_proxy_count should be 0 (all proxies filtered out)
+	if afterFilteredCount != 0 {
+		t.Errorf("expected filtered_proxy_count=0 after excluding all markers, got %.0f", afterFilteredCount)
+	}
+
+	// proxy_count still shows total (5)
+	if afterProxyCount != 5 {
+		t.Errorf("expected proxy_count=5 (total), got %.0f", afterProxyCount)
+	}
+
+	// The preview should indicate no proxies pass filters
+	if msg, ok := afterResult["message"].(string); ok {
+		if !strings.Contains(msg, "filter") {
+			t.Errorf("expected filter-related message, got: %q", msg)
+		}
+	}
+}
+
+func TestPreview_NonDefaultProfile_FilterAffectsBalancer(t *testing.T) {
+	// For non-default profiles with strategy != "all",
+	// filters DO affect the balancer selector. But the outbounds still
+	// include ALL proxies regardless of any profile's filter.
+
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	addTestSubscriptionWithProxies(t, h.store, 5)
+
+	// Create a non-default profile with country filter and random strategy
+	profile := &subscription.Profile{
+		Name:    "EU Only",
+		Enabled: true,
+		Filter: subscription.Filter{
+			IncludeCountries: []string{"DE"}, // only DE proxies
+		},
+		Strategy: subscription.RoutingStrategy{Type: "random"},
+	}
+	if err := h.store.AddProfile(profile); err != nil {
+		t.Fatalf("failed to add profile: %v", err)
+	}
+
+	resp := doRequest(t, router, "GET", "/subscriptions/preview", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("preview failed: %d", resp.StatusCode)
+	}
+
+	result := parseResponse(t, resp)
+
+	// proxy_count still shows ALL proxies (not filtered)
+	proxyCount := result["proxy_count"].(float64)
+	if proxyCount != 5 {
+		t.Errorf("expected proxy_count=5 (all), got %.0f", proxyCount)
+	}
+
+	// But routing should have a balancer for the non-default profile
+	// with selector containing only DE proxy tags
+	routingMap, ok := result["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected routing object")
+	}
+	routingInner, ok := routingMap["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected routing inner object")
+	}
+
+	balancers, ok := routingInner["balancers"].([]interface{})
+	if !ok || len(balancers) < 1 {
+		t.Fatal("expected at least 1 balancer")
+	}
+
+	// Find the EU profile's balancer
+	var euBalancer map[string]interface{}
+	for _, b := range balancers {
+		bm := b.(map[string]interface{})
+		if bm["tag"] == profile.ID+"-balancer" {
+			euBalancer = bm
+			break
+		}
+	}
+	if euBalancer == nil {
+		t.Fatal("EU profile balancer not found")
+	}
+
+	selector, ok := euBalancer["selector"].([]interface{})
+	if !ok {
+		t.Fatal("expected selector array in EU balancer")
+	}
+
+	t.Logf("EU balancer selector has %d proxies (all test proxies are DE)", len(selector))
+	// All test proxies are DE country, so they should all be included
+	if len(selector) == 0 {
+		t.Error("EU balancer selector should have proxies")
 	}
 }
 

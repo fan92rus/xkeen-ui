@@ -304,8 +304,16 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate outbounds for ALL proxies (profiles select subsets via balancer selectors)
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies)
+	// Collect only proxies needed by enabled profiles (respecting filters)
+	filteredProxies := subscription.CollectFilteredProxies(allProxies, profiles)
+
+	if len(filteredProxies) == 0 {
+		respondError(w, http.StatusBadRequest, "no proxies pass the current filters; adjust filter settings")
+		return
+	}
+
+	// Generate outbounds for filtered proxies only
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
@@ -369,11 +377,11 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	// Update generated timestamp
 	_ = h.store.SetGeneratedAt(time.Now())
 
-	log.Printf("[subscription] applied %d proxies with %d profiles: %s, %s", len(allProxies), len(profiles), outboundsPath, routingPath)
+	log.Printf("[subscription] applied %d/%d proxies with %d profiles: %s, %s", len(filteredProxies), len(allProxies), len(profiles), outboundsPath, routingPath)
 
 	response := map[string]interface{}{
 		"success":     true,
-		"proxy_count": len(allProxies),
+		"proxy_count": len(filteredProxies),
 		"files": map[string]string{
 			"outbounds":   outboundsPath,
 			"routing":     routingPath,
@@ -395,16 +403,32 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	if len(allProxies) == 0 {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"proxy_count": 0,
-			"outbounds":   nil,
-			"routing":     nil,
-			"observatory": nil,
-			"message":     "no proxies available",
+			"proxy_count":         0,
+			"filtered_proxy_count": 0,
+			"outbounds":           nil,
+			"routing":             nil,
+			"observatory":         nil,
+			"message":             "no proxies available",
 		})
 		return
 	}
 
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies)
+	// Collect only proxies needed by enabled profiles (respecting filters)
+	filteredProxies := subscription.CollectFilteredProxies(allProxies, profiles)
+
+	if len(filteredProxies) == 0 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"proxy_count":         len(allProxies),
+			"filtered_proxy_count": 0,
+			"outbounds":           nil,
+			"routing":             nil,
+			"observatory":         nil,
+			"message":             "no proxies pass the current filters",
+		})
+		return
+	}
+
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
@@ -431,11 +455,12 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"proxy_count": len(allProxies),
-		"outbounds":   json.RawMessage(outboundsJSON),
-		"routing":     json.RawMessage(routingJSON),
-		"observatory": observatoryJSON,
-		"profiles":    profiles,
+		"proxy_count":         len(allProxies),
+		"filtered_proxy_count": len(filteredProxies),
+		"outbounds":           json.RawMessage(outboundsJSON),
+		"routing":             json.RawMessage(routingJSON),
+		"observatory":         observatoryJSON,
+		"profiles":            profiles,
 	})
 }
 

@@ -6,6 +6,60 @@ import (
 	"sort"
 )
 
+// CollectFilteredProxies returns the union of proxies needed by all enabled profiles.
+// For the default profile, its filter is applied to determine which proxies belong to it.
+// For non-default profiles, each profile's filter is applied independently.
+// The result is the union of all filtered sets, ensuring every profile's balancer
+// can find its proxy tags in the outbounds.
+func CollectFilteredProxies(allProxies []*ProxyEntry, profiles []Profile) []*ProxyEntry {
+	if len(allProxies) == 0 || len(profiles) == 0 {
+		return allProxies
+	}
+
+	// Check if any profile has non-trivial filters
+	hasFilters := false
+	for _, p := range profiles {
+		if !p.Enabled {
+			continue
+		}
+		f := p.Filter
+		if len(f.ExcludeMarkers) > 0 || len(f.IncludeMarkers) > 0 ||
+			len(f.ExcludeCountries) > 0 || len(f.IncludeCountries) > 0 ||
+			len(f.IncludeRegexes) > 0 || len(f.ExcludeRegexes) > 0 ||
+			f.MaxProxies > 0 {
+			hasFilters = true
+			break
+		}
+	}
+
+	// No filters active — return all proxies
+	if !hasFilters {
+		return allProxies
+	}
+
+	// Collect union of tags from all enabled profiles' filtered sets
+	neededTags := make(map[string]bool)
+	for _, p := range profiles {
+		if !p.Enabled {
+			continue
+		}
+		filtered := ApplyFilter(allProxies, &p.Filter)
+		for _, fp := range filtered {
+			neededTags[fp.Tag] = true
+		}
+	}
+
+	// Build result preserving order of allProxies
+	result := make([]*ProxyEntry, 0, len(neededTags))
+	for _, p := range allProxies {
+		if neededTags[p.Tag] {
+			result = append(result, p)
+		}
+	}
+
+	return result
+}
+
 // GenerateOutboundsJSON generates the content for 04_outbounds.json.
 // The first proxy gets tag "proxy" (the default outbound). All others keep
 // their assigned tags. "direct" and "block" outbounds are appended at the end.
@@ -157,8 +211,16 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 
 		var selector []string
 		if profile.IsDefault {
-			// Default profile matches all outbounds via regex prefix.
-			selector = []string{"proxy-"}
+			// Default profile uses filtered proxy tags for its balancer selector.
+			filtered := ApplyFilter(proxies, &profile.Filter)
+			for _, p := range filtered {
+				selector = append(selector, p.Tag)
+			}
+			sort.Strings(selector)
+			// Fallback: if filter removes all proxies, use regex to match any
+			if len(selector) == 0 {
+				selector = []string{"proxy-"}
+			}
 		} else {
 			// Concrete tag list from filtered proxies.
 			filtered := ApplyFilter(proxies, &profile.Filter)

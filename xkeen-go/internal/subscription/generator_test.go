@@ -223,8 +223,13 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 	if balancer.Tag != "default-balancer" {
 		t.Errorf("expected balancer tag 'default-balancer', got %q", balancer.Tag)
 	}
-	if len(balancer.Selector) != 1 || balancer.Selector[0] != "proxy-" {
-		t.Errorf("expected selector ['proxy-'], got %v", balancer.Selector)
+	if len(balancer.Selector) != 3 {
+		t.Errorf("expected selector with 3 concrete tags (no filter = all pass), got %v", balancer.Selector)
+	}
+	for _, s := range balancer.Selector {
+		if !strings.HasPrefix(s, "proxy-") {
+			t.Errorf("expected proxy-* tag in selector, got %q", s)
+		}
 	}
 	if balancer.Strategy["type"] != "random" {
 		t.Errorf("expected strategy type 'random', got %v", balancer.Strategy["type"])
@@ -813,6 +818,79 @@ func TestGenerateRoutingJSON_WithReplaceBalancerTag(t *testing.T) {
 	balancers := routing["balancers"].([]interface{})
 	if len(balancers) != 1 {
 		t.Errorf("expected 1 balancer, got %d", len(balancers))
+	}
+}
+
+func TestCollectFilteredProxies_NoFilters(t *testing.T) {
+	proxies := makeProxies()
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: RoutingStrategy{Type: "all"}},
+	}
+
+	result := CollectFilteredProxies(proxies, profiles)
+	if len(result) != len(proxies) {
+		t.Errorf("expected %d proxies (no filter), got %d", len(proxies), len(result))
+	}
+}
+
+func TestCollectFilteredProxies_DefaultFilterExcludesAll(t *testing.T) {
+	proxies := makeProxies() // all have marker "⚡"
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
+			Filter: Filter{ExcludeMarkers: []string{"⚡"}},
+			Strategy: RoutingStrategy{Type: "all"}},
+	}
+
+	result := CollectFilteredProxies(proxies, profiles)
+	if len(result) != 0 {
+		t.Errorf("expected 0 proxies (all excluded), got %d", len(result))
+	}
+}
+
+func TestCollectFilteredProxies_UnionOfMultipleProfiles(t *testing.T) {
+	proxies := makeProxies() // DE, NL, EE countries
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
+			Filter: Filter{IncludeCountries: []string{"DE"}},
+			Strategy: RoutingStrategy{Type: "all"}},
+		{ID: "eu", Name: "EU", Enabled: true,
+			Filter: Filter{IncludeCountries: []string{"NL"}},
+			Strategy: RoutingStrategy{Type: "random"}},
+	}
+
+	result := CollectFilteredProxies(proxies, profiles)
+	// DE + NL = 2 proxies
+	if len(result) != 2 {
+		t.Errorf("expected 2 proxies (DE+NL), got %d", len(result))
+	}
+}
+
+func TestCollectFilteredProxies_DisabledProfileSkipped(t *testing.T) {
+	proxies := makeProxies()
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
+			Filter: Filter{IncludeCountries: []string{"DE"}},
+			Strategy: RoutingStrategy{Type: "all"}},
+		{ID: "disabled", Name: "Disabled", Enabled: false,
+			Filter: Filter{IncludeCountries: []string{"NL", "EE"}},
+			Strategy: RoutingStrategy{Type: "random"}},
+	}
+
+	result := CollectFilteredProxies(proxies, profiles)
+	// Only default profile counts → DE only = 1 proxy
+	if len(result) != 1 {
+		t.Errorf("expected 1 proxy (DE only, disabled skipped), got %d", len(result))
+	}
+}
+
+func TestCollectFilteredProxies_EmptyProxies(t *testing.T) {
+	profiles := []Profile{
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: RoutingStrategy{Type: "all"}},
+	}
+
+	result := CollectFilteredProxies(nil, profiles)
+	if result != nil {
+		t.Errorf("expected nil for nil proxies, got %v", result)
 	}
 }
 
