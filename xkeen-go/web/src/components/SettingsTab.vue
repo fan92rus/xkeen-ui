@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, inject } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as sub from '../services/subscription.js';
 import * as metrics from '../services/metrics.js';
 
 const app = useAppStore();
+const reloadMetricsState = inject('reloadMetricsState', () => {});
 
 const autoApply = ref({ enabled: false, cron: '0 */6 * * *', next_run: '' });
 const autoApplySaving = ref(false);
@@ -33,6 +34,7 @@ async function saveMetricsPort() {
 			metricsPort.value > 0 ? `Метрики включены: порт ${metricsPort.value}` : 'Метрики отключены',
 			'success',
 		);
+		reloadMetricsState();
 	} catch (e) {
 		app.showToast(e.message || 'Ошибка сохранения', 'error');
 	} finally {

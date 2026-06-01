@@ -2,6 +2,7 @@
 import { defineAsyncComponent } from 'vue';
 import { onMounted, onUnmounted, ref, computed, provide } from 'vue';
 import { useAppStore } from './stores/app.js';
+import * as api from './services/api.js';
 const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
@@ -11,14 +12,28 @@ const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vu
 
 const app = useAppStore();
 
-const tabs = [
-    { id: 'editor', label: 'Редактор' },
-    { id: 'subscriptions', label: 'Подписки' },
-    { id: 'logs', label: 'Логи' },
-    { id: 'settings', label: 'Настройки' },
-    { id: 'commands', label: 'Команды' },
-    { id: 'metrics', label: 'Метрики' },
-];
+const metricsEnabled = ref(false);
+
+async function loadMetricsState() {
+    try {
+        const d = await api.get('/api/settings/metrics');
+        metricsEnabled.value = d.enabled === true;
+    } catch { metricsEnabled.value = false; }
+}
+
+const tabs = computed(() => {
+    const list = [
+        { id: 'editor', label: 'Редактор' },
+        { id: 'subscriptions', label: 'Подписки' },
+        { id: 'logs', label: 'Логи' },
+        { id: 'settings', label: 'Настройки' },
+        { id: 'commands', label: 'Команды' },
+    ];
+    if (metricsEnabled.value) {
+        list.push({ id: 'metrics', label: 'Метрики' });
+    }
+    return list;
+});
 
 /* SVG icon paths (24x24 viewBox, stroke-based, Lucide-style) */
 const theme = ref(localStorage.getItem('theme') || 'dark');
@@ -47,6 +62,7 @@ const icons = {
 
 const editorRef = ref(null);
 provide('isDark', isDark);
+provide('reloadMetricsState', loadMetricsState);
 
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -62,6 +78,7 @@ onMounted(() => {
     document.documentElement.classList.toggle('light', theme.value === 'light');
     window.addEventListener('keydown', onKeydown);
     app.init();
+    loadMetricsState();
 });
 onUnmounted(() => {
     window.removeEventListener('keydown', onKeydown);
@@ -145,7 +162,7 @@ onUnmounted(() => {
       <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
       <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />
       <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content" />
-      <MetricsTab v-if="app.activeTab === 'metrics'" class="tab-content" />
+      <MetricsTab v-if="metricsEnabled && app.activeTab === 'metrics'" class="tab-content" />
     </div>
 
     <!-- Output Modal -->
