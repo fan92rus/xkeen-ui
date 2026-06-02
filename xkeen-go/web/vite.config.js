@@ -76,4 +76,7 @@ export default defineConfig({
             },
         },
     },
+    test: {
+        exclude: ['test/**', 'node_modules/**'],
+    },
 });

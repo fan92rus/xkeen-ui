@@ -202,7 +202,6 @@ async function fetchOne(id) {
     busy.value = true;
     try {
         const d = await api.fetchSubscription(id);
-        console.log('[sub] fetch result:', d.total, d.proxy_count, d.proxies?.length);
         // Reload ALL proxies from backend (now merged across subscriptions)
         await loadProxies();
         await _reload();
