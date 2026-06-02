@@ -5,12 +5,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -99,6 +97,9 @@ func NewLogsHandler(cfg LogsConfig) *LogsHandler {
 		CheckOrigin:     h.checkOrigin,
 	}
 
+	// Kill orphaned tail processes from previous runs
+	killOrphanedTails(logFiles)
+
 	// Start broadcast goroutine
 	h.wg.Add(1)
 	go h.runBroadcast()
@@ -167,13 +168,16 @@ func (h *LogsHandler) runBroadcast() {
 	}
 }
 
-// tailFile runs tail -F on a log file and sends new lines to broadcast.
-// Uses -F (follow with retry) instead of -f to handle log rotation.
-// tail -F will wait for file to appear if it doesn't exist yet.
+// tailFile tails a log file using native Go file reading (no external tail process).
+// Handles: missing files (waits for creation), log rotation (reopens), and context cancellation.
+// All resources are freed when context is cancelled — no orphan processes.
 func (h *LogsHandler) tailFile(path string) {
 	defer h.wg.Done()
 
-	log.Printf("Starting tail -F on: %s", path)
+	log.Printf("[logs] Native tail starting: %s", path)
+
+	var lastSize int64 = -1 // -1 = first read, start from beginning
+	var lastInode uint64 = 0
 
 	for {
 		select {
@@ -182,62 +186,91 @@ func (h *LogsHandler) tailFile(path string) {
 		default:
 		}
 
-		// Run tail -F (follow with retry - handles log rotation and missing files)
-		cmd := exec.CommandContext(h.ctx, "tail", "-F", path)
-		stdout, err := cmd.StdoutPipe()
+		// Wait for file to exist
+		info, err := os.Stat(path)
 		if err != nil {
-			log.Printf("Failed to create pipe for tail: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		if err := cmd.Start(); err != nil {
-			log.Printf("Failed to start tail: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		// Read lines from tail output
-		scanner := bufio.NewReader(stdout)
-		for {
 			select {
 			case <-h.ctx.Done():
-				cmd.Process.Kill()
-				cmd.Wait()
 				return
-			default:
+			case <-time.After(2 * time.Second):
 			}
+			continue
+		}
 
-			line, err := scanner.ReadString('\n')
-			if err != nil {
-				if err != io.EOF && h.ctx.Err() == nil {
-					log.Printf("Tail read error for %s: %v", path, err)
-				}
-				break
+		// Detect rotation: inode changed (file was replaced)
+		currentInode := getFileInode(info)
+		if currentInode != 0 {
+			if lastInode != 0 && currentInode != lastInode {
+				lastSize = -1
+				log.Printf("[logs] File rotated, reopening from start: %s", path)
 			}
+			lastInode = currentInode
+		}
 
-			line = strings.TrimSpace(line)
+		// Open file
+		f, err := os.Open(path)
+		if err != nil {
+			select {
+			case <-h.ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
+			continue
+		}
+
+		// First read or after rotation: seek to end (stream new lines only)
+		// File truncated: read from start
+		// Otherwise: seek to last known position
+		if lastSize < 0 {
+			f.Seek(0, 2)
+		} else if info.Size() < lastSize {
+			f.Seek(0, 0)
+		} else {
+			f.Seek(lastSize, 0)
+		}
+
+		// Read available new lines
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1MB max line
+		linesRead := false
+
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
 			if line == "" {
 				continue
 			}
 
-			// Parse and send to broadcast channel (non-blocking)
 			msg := h.parseLogLine(line, path)
 			select {
 			case h.broadcast <- msg:
-				log.Printf("[LOG] %s: %s", filepath.Base(path), truncate(line, 50))
+			case <-h.ctx.Done():
+				f.Close()
+				return
 			default:
-				// Channel full, skip message
-				log.Printf("Broadcast channel full, dropping message from %s", path)
+				// Channel full, drop message
 			}
+			linesRead = true
 		}
 
-		// Wait for command to finish and restart
-		cmd.Wait()
+		// Update last known position
+		if pos, err := f.Seek(0, 1); err == nil {
+			lastSize = pos
+		} else if linesRead {
+			lastSize = info.Size()
+		}
 
-		if h.ctx.Err() == nil {
-			log.Printf("Tail process ended for %s, restarting in 2s...", path)
-			time.Sleep(2 * time.Second)
+		f.Close()
+
+		// Poll interval: fast when active, slower when idle
+		interval := 500 * time.Millisecond
+		if !linesRead {
+			interval = 2 * time.Second
+		}
+
+		select {
+		case <-h.ctx.Done():
+			return
+		case <-time.After(interval):
 		}
 	}
 }
@@ -407,7 +440,6 @@ func (h *LogsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
 
 // RegisterLogsRoutes registers logs-related routes (protected API routes).
 func RegisterLogsRoutes(r *mux.Router, handler *LogsHandler) {
