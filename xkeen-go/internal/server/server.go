@@ -158,13 +158,8 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
 
-	// Wire scheduler to settings handler for metrics port changes
-	s.settingsHandler.SetUpdateMetrics(func(port int) {
-		subScheduler.SetMetricsPort(port)
-	})
-
-	// Wire scheduler to metrics handler: update proxy tag→remarks mapping after each fetch
-	subScheduler.OnUpdate = func() {
+	// Helper: build tag→remarks from current proxy cache
+	buildProxyNames := func() map[string]string {
 		proxies := subStore.GetProxies()
 		names := make(map[string]string, len(proxies))
 		for _, p := range proxies {
@@ -172,9 +167,28 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 				names[p.Tag] = p.Remarks
 			}
 		}
+		return names
+	}
+
+	// Wire scheduler to settings handler for metrics port changes + push proxy names on creation
+	s.settingsHandler.SetUpdateMetrics(func(port int) {
+		subScheduler.SetMetricsPort(port)
 		if s.metricsHandler != nil {
-			s.metricsHandler.UpdateProxyNames(names)
+			s.metricsHandler.UpdateProxyNames(buildProxyNames())
 		}
+	})
+
+	// Wire scheduler OnUpdate: push proxy names after each fetch
+	subScheduler.OnUpdate = func() {
+		if s.metricsHandler != nil {
+			s.metricsHandler.UpdateProxyNames(buildProxyNames())
+		}
+	}
+
+	// Push initial proxy names from cache into already-created metrics handler (if any).
+	// This handles the case where metrics handler was created at startup before subStore loaded cache.
+	if s.metricsHandler != nil {
+		s.metricsHandler.UpdateProxyNames(buildProxyNames())
 	}
 
 	subScheduler.Start()

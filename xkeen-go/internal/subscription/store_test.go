@@ -1150,3 +1150,169 @@ func TestStore_PersistenceWithFilters(t *testing.T) {
 	}
 }
 
+// ── Proxy cache persistence ──
+
+func TestProxyCache_PersistedAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	// Instance 1: create store, set proxies
+	store1, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store1.SetProxies([]*ProxyEntry{
+		{Tag: "proxy-DE-1", Remarks: "Germany Fast", Country: "DE"},
+		{Tag: "proxy-US-1", Remarks: "USA Premium", Country: "US"},
+		{Tag: "direct", Remarks: "", Country: ""},
+	})
+
+	// Instance 2: reload (simulates restart)
+	store2, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxies := store2.GetProxies()
+	if len(proxies) != 3 {
+		t.Fatalf("expected 3 proxies after restart, got %d", len(proxies))
+	}
+
+	// Verify data integrity
+	byTag := make(map[string]*ProxyEntry)
+	for _, p := range proxies {
+		byTag[p.Tag] = p
+	}
+	if byTag["proxy-DE-1"].Remarks != "Germany Fast" {
+		t.Errorf("proxy-DE-1 remarks: got %q", byTag["proxy-DE-1"].Remarks)
+	}
+	if byTag["proxy-US-1"].Country != "US" {
+		t.Errorf("proxy-US-1 country: got %q", byTag["proxy-US-1"].Country)
+	}
+}
+
+func TestProxyCache_OverwrittenOnNewSet(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	store, _ := NewStore(path)
+	store.SetProxies([]*ProxyEntry{
+		{Tag: "proxy-old", Remarks: "Old Proxy"},
+	})
+
+	// Overwrite with new data
+	store.SetProxies([]*ProxyEntry{
+		{Tag: "proxy-new-1", Remarks: "New One"},
+		{Tag: "proxy-new-2", Remarks: "New Two"},
+	})
+
+	// Reload
+	store2, _ := NewStore(path)
+	proxies := store2.GetProxies()
+	if len(proxies) != 2 {
+		t.Fatalf("expected 2 proxies, got %d", len(proxies))
+	}
+
+	byTag := make(map[string]string)
+	for _, p := range proxies {
+		byTag[p.Tag] = p.Remarks
+	}
+	if _, ok := byTag["proxy-old"]; ok {
+		t.Error("old proxy should not be in cache after overwrite")
+	}
+	if byTag["proxy-new-1"] != "New One" || byTag["proxy-new-2"] != "New Two" {
+		t.Errorf("new proxies mismatch: %v", byTag)
+	}
+}
+
+func TestProxyCache_EmptyStoreNoCache(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	// No cache file exists — should not error
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxies := store.GetProxies()
+	if len(proxies) != 0 {
+		t.Errorf("expected empty proxies, got %d", len(proxies))
+	}
+}
+
+func TestProxyCache_CorruptedFileGraceful(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	// Write a corrupted cache file
+	cachePath := filepath.Join(dir, "proxy-cache.json")
+	os.WriteFile(cachePath, []byte("{invalid json!!!"), 0644)
+
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxies := store.GetProxies()
+	if len(proxies) != 0 {
+		t.Errorf("expected empty proxies with corrupted cache, got %d", len(proxies))
+	}
+}
+
+func TestProxyCache_ClearOnSetEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+	cachePath := filepath.Join(dir, "proxy-cache.json")
+
+	store, _ := NewStore(path)
+	store.SetProxies([]*ProxyEntry{
+		{Tag: "proxy-1", Remarks: "Test"},
+	})
+
+	// Verify cache file exists
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		t.Fatal("cache file should exist after SetProxies")
+	}
+
+	// Clear proxies
+	store.SetProxies(nil)
+
+	// Verify cache file is cleaned up
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Error("cache file should be removed after SetProxies(nil)")
+	}
+
+	// Reload — should be empty
+	store2, _ := NewStore(path)
+	if len(store2.GetProxies()) != 0 {
+		t.Error("expected empty proxies after clear")
+	}
+}
+
+func TestProxyCache_ProxyNamesFromCache(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	// Instance 1: set proxies with tag+remarks
+	store1, _ := NewStore(path)
+	store1.SetProxies([]*ProxyEntry{
+		{Tag: "proxy-DE-1", Remarks: "Germany Fast"},
+		{Tag: "direct", Remarks: ""}, // empty remarks
+	})
+
+	// Instance 2: reload, build proxyNames map (as server.go does)
+	store2, _ := NewStore(path)
+	names := make(map[string]string)
+	for _, p := range store2.GetProxies() {
+		if p.Remarks != "" {
+			names[p.Tag] = p.Remarks
+		}
+	}
+
+	if names["proxy-DE-1"] != "Germany Fast" {
+		t.Errorf("expected 'Germany Fast', got %q", names["proxy-DE-1"])
+	}
+	if _, ok := names["direct"]; ok {
+		t.Error("'direct' with empty remarks should not be in map")
+	}
+}
+

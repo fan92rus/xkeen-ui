@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -46,6 +47,9 @@ func NewStore(path string) (*Store, error) {
 
 	// Migrate legacy string regex fields to slices
 	s.migrateRegexFields()
+
+	// Load cached proxy data (non-critical)
+	s.loadProxyCache()
 
 	return s, nil
 }
@@ -409,13 +413,50 @@ func (s *Store) migrateRegexFields() {
 	}
 }
 
-// ---------- Proxies (in-memory cache) ----------
+// ---------- Proxies (cached to proxy-cache.json) ----------
 
-// SetProxies replaces the in-memory proxy cache. Does NOT persist to disk.
+// proxyCachePath returns the path for the proxy cache file,
+// derived from the store path (subscriptions.json → proxy-cache.json).
+func (s *Store) proxyCachePath() string {
+	return filepath.Join(filepath.Dir(s.path), "proxy-cache.json")
+}
+
+// loadProxyCache reads the proxy cache from disk. Non-critical: errors are ignored.
+func (s *Store) loadProxyCache() {
+	data, err := os.ReadFile(s.proxyCachePath())
+	if err != nil {
+		return // no file or unreadable — start empty
+	}
+	var proxies []*ProxyEntry
+	if json.Unmarshal(data, &proxies) != nil {
+		return // corrupted — start empty
+	}
+	s.proxies = proxies
+}
+
+// saveProxyCache writes the current proxy cache to disk. Non-critical: errors are logged.
+func (s *Store) saveProxyCache(proxies []*ProxyEntry) {
+	cachePath := s.proxyCachePath()
+	if len(proxies) == 0 {
+		os.Remove(cachePath) // clean up empty cache
+		return
+	}
+	data, err := json.Marshal(proxies)
+	if err != nil {
+		log.Printf("[store] failed to marshal proxy cache: %v", err)
+		return
+	}
+	if err := os.WriteFile(cachePath, data, 0644); err != nil {
+		log.Printf("[store] failed to write proxy cache: %v", err)
+	}
+}
+
+// SetProxies replaces the in-memory proxy cache and persists it to disk.
 func (s *Store) SetProxies(proxies []*ProxyEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.proxies = proxies
+	s.saveProxyCache(proxies)
 }
 
 // GetProxies returns a deep copy of the in-memory proxy cache.
