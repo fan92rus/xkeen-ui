@@ -168,3 +168,4 @@ export const getMetricsStats = () => api.get('/api/metrics/stats');
 export const getMetricsObservatory = () => api.get('/api/metrics/observatory');
 export const getMetricsPort = () => api.get('/api/settings/metrics');
 export const updateMetricsPort = (port) => api.put('/api/settings/metrics', { metrics_port: port });
+export const getProxyNames = () => api.get('/api/metrics/proxy-names');

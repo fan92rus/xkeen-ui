@@ -163,6 +163,20 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		subScheduler.SetMetricsPort(port)
 	})
 
+	// Wire scheduler to metrics handler: update proxy tag→remarks mapping after each fetch
+	subScheduler.OnUpdate = func() {
+		proxies := subStore.GetProxies()
+		names := make(map[string]string, len(proxies))
+		for _, p := range proxies {
+			if p.Remarks != "" {
+				names[p.Tag] = p.Remarks
+			}
+		}
+		if s.metricsHandler != nil {
+			s.metricsHandler.UpdateProxyNames(names)
+		}
+	}
+
 	subScheduler.Start()
 
 	// Setup routes

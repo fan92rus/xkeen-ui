@@ -435,6 +435,94 @@ func TestNewMetricsHandler_Close(t *testing.T) {
 	handler.Close()
 }
 
+// ── Proxy Names tests ──
+
+func TestGetProxyNames_Empty(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
+
+	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", nil)
+	w := httptest.NewRecorder()
+	handler.GetProxyNames(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(body))
+	}
+}
+
+func TestGetProxyNames_WithData(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
+
+	// Set proxy names
+	handler.UpdateProxyNames(map[string]string{
+		"proxy-DE-1": "Germany Fast Server",
+		"proxy-US-1": "USA Premium Node",
+		"direct":     "",
+	})
+
+	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", nil)
+	w := httptest.NewRecorder()
+	handler.GetProxyNames(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if body["proxy-DE-1"] != "Germany Fast Server" {
+		t.Errorf("expected 'Germany Fast Server', got %q", body["proxy-DE-1"])
+	}
+	if body["proxy-US-1"] != "USA Premium Node" {
+		t.Errorf("expected 'USA Premium Node', got %q", body["proxy-US-1"])
+	}
+	// Empty remarks should not be in the map
+	if _, ok := body["direct"]; ok {
+		t.Error("expected 'direct' (empty remarks) to be excluded from map")
+	}
+}
+
+func TestGetProxyNames_UpdateOverwrites(t *testing.T) {
+	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
+
+	// First update
+	handler.UpdateProxyNames(map[string]string{
+		"proxy-DE-1": "Old Name",
+	})
+
+	// Second update — should replace entirely
+	handler.UpdateProxyNames(map[string]string{
+		"proxy-US-1": "USA Node",
+	})
+
+	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", nil)
+	w := httptest.NewRecorder()
+	handler.GetProxyNames(w, req)
+
+	var body map[string]string
+	resp := w.Result()
+	json.NewDecoder(resp.Body).Decode(&body)
+
+	if _, ok := body["proxy-DE-1"]; ok {
+		t.Error("expected old entry to be removed after update")
+	}
+	if body["proxy-US-1"] != "USA Node" {
+		t.Errorf("expected 'USA Node', got %q", body["proxy-US-1"])
+	}
+}
+
 func TestNewMetricsHandlerWithOrigins(t *testing.T) {
 	server := mockXrayMetricsServer(xrayFullResponse)
 	defer server.Close()

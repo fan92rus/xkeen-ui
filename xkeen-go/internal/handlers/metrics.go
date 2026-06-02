@@ -76,6 +76,10 @@ type MetricsHandler struct {
 	// WebSocket upgrader
 	upgrader       websocket.Upgrader
 	allowedOrigins map[string]bool
+
+	// Proxy tag → remarks mapping (updated from subscription store)
+	pnMu       sync.RWMutex
+	proxyNames map[string]string
 }
 
 // NewMetricsHandler creates a MetricsHandler.
@@ -102,6 +106,7 @@ func NewMetricsHandlerWithOrigins(baseURL string, timeout time.Duration, allowed
 		broadcast:      make(chan WSMessage, 64),
 		history:        make([]MetricsSnapshot, 0, metricsHistoryCapacity),
 		allowedOrigins: originsMap,
+		proxyNames:     make(map[string]string),
 	}
 
 	h.upgrader = websocket.Upgrader{
@@ -129,6 +134,7 @@ func NewMetricsHandlerHTTPOnly(baseURL string, timeout time.Duration) *MetricsHa
 		broadcast:      make(chan WSMessage),
 		history:        make([]MetricsSnapshot, 0, metricsHistoryCapacity),
 		allowedOrigins: make(map[string]bool),
+		proxyNames:     make(map[string]string),
 	}
 
 	h.upgrader = websocket.Upgrader{
@@ -480,10 +486,38 @@ func (h *MetricsHandler) GetObservatory(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// UpdateProxyNames replaces the tag→remarks mapping used by the metrics UI.
+// Entries with empty remarks are excluded. Thread-safe.
+func (h *MetricsHandler) UpdateProxyNames(names map[string]string) {
+	filtered := make(map[string]string, len(names))
+	for k, v := range names {
+		if v != "" {
+			filtered[k] = v
+		}
+	}
+	h.pnMu.Lock()
+	h.proxyNames = filtered
+	h.pnMu.Unlock()
+}
+
+// GetProxyNames returns the tag→remarks mapping as JSON.
+// GET /api/metrics/proxy-names
+func (h *MetricsHandler) GetProxyNames(w http.ResponseWriter, r *http.Request) {
+	h.pnMu.RLock()
+	copy := make(map[string]string, len(h.proxyNames))
+	for k, v := range h.proxyNames {
+		copy[k] = v
+	}
+	h.pnMu.RUnlock()
+
+	respondJSON(w, http.StatusOK, copy)
+}
+
 // RegisterMetricsRoutes registers metrics API routes (HTTP).
 func RegisterMetricsRoutes(r *mux.Router, handler *MetricsHandler) {
 	r.HandleFunc("/metrics/stats", handler.GetStats).Methods("GET")
 	r.HandleFunc("/metrics/observatory", handler.GetObservatory).Methods("GET")
+	r.HandleFunc("/metrics/proxy-names", handler.GetProxyNames).Methods("GET")
 }
 
 // RegisterMetricsWSRoute registers the WebSocket route for metrics.

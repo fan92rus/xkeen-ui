@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, shallowReactive, nextTick } from 'vue';
-import { MetricsWS } from '../services/metrics.js';
+import { MetricsWS, getProxyNames } from '../services/metrics.js';
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip } from 'chart.js';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip);
@@ -14,6 +14,7 @@ const latestSnap = ref(null);
 const wsError = ref('');
 const showInactive = ref(false);
 const chartCanvas = ref(null);
+const proxyNames = ref({}); // tag → remarks
 
 let ws = null;
 let chart = null;
@@ -285,6 +286,10 @@ function fmtDuration(seconds) {
 	const m = Math.floor((seconds % 3600) / 60);
 	return h + 'ч ' + m + 'м';
 }
+function displayName(tag) {
+	const name = proxyNames.value[tag];
+	return name ? tag + ' \u00b7 ' + name : tag;
+}
 function percentile(arr, p) {
 	if (!arr.length) return 0;
 	const sorted = [...arr].sort((a, b) => a - b);
@@ -341,7 +346,18 @@ watch(() => props.active, async (v) => {
 	if (v) { connect(); await nextTick(); initCharts(); updateCharts(); }
 	else { destroyCharts(); disconnect(); }
 });
-onMounted(async () => { if (props.active) { connect(); await nextTick(); initCharts(); updateCharts(); } });
+onMounted(async () => {
+	if (props.active) {
+		connect();
+		await nextTick();
+		initCharts();
+		updateCharts();
+	}
+	try {
+		const data = await getProxyNames();
+		if (data && typeof data === 'object') proxyNames.value = data;
+	} catch { /* non-critical */ }
+});
 onUnmounted(() => { destroyCharts(); disconnect(); });
 </script>
 
@@ -421,7 +437,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 						<thead><tr><th>Тег</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
 						<tbody>
 							<tr v-for="(r, i) in tagRates.inbound" :key="r.tag">
-								<td class="tag-cell">{{ r.tag }}</td>
+								<td class="tag-cell">{{ displayName(r.tag) }}</td>
 								<td class="rate-cell dl">{{ fmtRate(r.dl) }}</td>
 								<td class="rate-cell ul">{{ fmtRate(r.ul) }}</td>
 								<td class="vol-cell vol-sep">{{ fmtBytes(tagVolumes.inbound[i]?.dl ?? 0) }}</td>
@@ -435,7 +451,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 						<thead><tr><th>Тег</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
 						<tbody>
 							<tr v-for="(r, i) in tagRates.outbound" :key="r.tag">
-								<td class="tag-cell">{{ r.tag }}</td>
+								<td class="tag-cell">{{ displayName(r.tag) }}</td>
 								<td class="rate-cell dl">{{ fmtRate(r.dl) }}</td>
 								<td class="rate-cell ul">{{ fmtRate(r.ul) }}</td>
 								<td class="vol-cell vol-sep">{{ fmtBytes(tagVolumes.outbound[i]?.dl ?? 0) }}</td>
@@ -447,7 +463,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 					<h3 class="rates-title" style="margin-top:10px">Доля трафика</h3>
 					<div class="share-bars">
 						<div v-for="s in proxyShare" :key="s.tag" class="share-row">
-							<span class="share-tag">{{ s.tag }}</span>
+							<span class="share-tag">{{ displayName(s.tag) }}</span>
 							<div class="share-track">
 								<div class="share-fill" :style="{ width: s.pct + '%', background: s.color }"></div>
 							</div>
@@ -464,7 +480,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 							<tr v-for="e in observatory" :key="e.tag"
 								v-show="showInactive || e.alive"
 								:class="{ 'obs-dead': !e.alive }">
-								<td class="tag-cell">{{ e.tag }}</td>
+								<td class="tag-cell">{{ displayName(e.tag) }}</td>
 								<td><span class="obs-alive" :class="{ alive: e.alive }">{{ e.alive ? '✓' : '✗' }}</span></td>
 								<td class="rate-cell">{{ fmtDelay(e.delay) }}</td>
 								<td class="time-cell">{{ e.lastSeen ? fmtTime(e.lastSeen) : '—' }}</td>
@@ -544,13 +560,13 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 /* Tables */
 .rates-table, .obs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .rates-table th, .obs-table th { text-align: left; padding: 3px 8px; font-weight: 500; color: var(--help-text); border-bottom: 1px solid var(--menu-border); }
-.rates-table th:nth-child(1), .rates-table td:nth-child(1) { width: 130px; }
+.rates-table th:nth-child(1), .rates-table td:nth-child(1) { width: 220px; }
 .rates-table th:nth-child(2), .rates-table td:nth-child(2) { width: 90px; }
 .rates-table th:nth-child(3), .rates-table td:nth-child(3) { width: 90px; }
 .rates-table th:nth-child(4), .rates-table td:nth-child(4) { width: 90px; }
 .rates-table th:nth-child(5), .rates-table td:nth-child(5) { width: 90px; }
 .rates-table td, .obs-table td { padding: 3px 8px; border-bottom: 1px solid var(--menu-border); }
-.tag-cell { font-family: monospace; font-size: 11px; color: var(--primary-text); }
+.tag-cell { font-family: monospace; font-size: 11px; color: var(--primary-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .rate-cell { font-variant-numeric: tabular-nums; color: var(--primary-text); }
 .rate-cell.dl { color: #3498db; }
 .rate-cell.ul { color: #e67e22; }
