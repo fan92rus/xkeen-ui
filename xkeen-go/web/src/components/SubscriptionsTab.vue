@@ -111,12 +111,12 @@ const filteredProxies = computed(() => {
         list = list.filter(p => !p.country || inc.has(p.country.toUpperCase()));
     }
     if (f.include_regexes?.length) {
-        for (const pattern of f.include_regexes) {
-            if (!pattern) continue;
-            try {
-                const re = new RegExp(pattern, 'i');
-                list = list.filter(p => re.test(p.remarks || ''));
-            } catch { /* invalid regex — skip */ }
+        const incRes = f.include_regexes
+            .filter(p => p)
+            .map(p => { try { return new RegExp(p, 'i'); } catch { return null; } })
+            .filter(Boolean);
+        if (incRes.length > 0) {
+            list = list.filter(p => incRes.some(re => re.test(p.remarks || '')));
         }
     }
     if (f.exclude_regexes?.length) {
