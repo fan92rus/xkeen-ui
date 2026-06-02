@@ -551,7 +551,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 }
 
 /* Bottom: rates + observatory */
-.bottom-section { display: grid; grid-template-columns: 550px 1fr; gap: 14px; }
+.bottom-section { display: grid; grid-template-columns: 660px 1fr; gap: 14px; }
 .rates-column { background: var(--menu-background); border: 1px solid var(--menu-border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .rates-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text-gray); margin: 0 0 5px; }
 .obs-section { background: var(--menu-background); border: 1px solid var(--menu-border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
@@ -561,10 +561,10 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 .rates-table, .obs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .rates-table th, .obs-table th { text-align: left; padding: 3px 8px; font-weight: 500; color: var(--help-text); border-bottom: 1px solid var(--menu-border); }
 .rates-table th:nth-child(1), .rates-table td:nth-child(1) { width: 280px; }
-.rates-table th:nth-child(2), .rates-table td:nth-child(2) { width: 68px; }
-.rates-table th:nth-child(3), .rates-table td:nth-child(3) { width: 68px; }
-.rates-table th:nth-child(4), .rates-table td:nth-child(4) { width: 68px; }
-.rates-table th:nth-child(5), .rates-table td:nth-child(5) { width: 66px; }
+.rates-table th:nth-child(2), .rates-table td:nth-child(2) { width: 98px; }
+.rates-table th:nth-child(3), .rates-table td:nth-child(3) { width: 98px; }
+.rates-table th:nth-child(4), .rates-table td:nth-child(4) { width: 72px; }
+.rates-table th:nth-child(5), .rates-table td:nth-child(5) { width: 72px; }
 .rates-table td, .obs-table td { padding: 3px 8px; border-bottom: 1px solid var(--menu-border); }
 .tag-cell { font-family: monospace; font-size: 11px; color: var(--primary-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
 .rate-cell { font-variant-numeric: tabular-nums; color: var(--primary-text); }
@@ -633,7 +633,8 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 	font-family: monospace;
 	font-size: 10px;
 	color: var(--primary-text);
-	width: 72px;
+	min-width: 200px;
+	max-width: 260px;
 	flex-shrink: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
