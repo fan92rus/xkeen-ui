@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as api from '../services/subscription.js';
 import { fmtTime } from '../utils/format.js';
+import { filterProxies } from '../services/filter.js';
 
 const app = useAppStore();
 
@@ -98,39 +99,7 @@ const allCountries = computed(() => {
 });
 
 const filteredProxies = computed(() => {
-    let list = proxies.value;
-    const f = filters.value;
-    if (!f) return list;
-
-    if (f.exclude_countries?.length) {
-        const ex = new Set(f.exclude_countries.map(c => c.toUpperCase()));
-        list = list.filter(p => !ex.has((p.country || '').toUpperCase()));
-    }
-    if (f.include_countries?.length) {
-        const inc = new Set(f.include_countries.map(c => c.toUpperCase()));
-        list = list.filter(p => !p.country || inc.has(p.country.toUpperCase()));
-    }
-    if (f.include_regexes?.length) {
-        const incRes = f.include_regexes
-            .filter(p => p)
-            .map(p => { try { return new RegExp(p, 'i'); } catch { return null; } })
-            .filter(Boolean);
-        if (incRes.length > 0) {
-            list = list.filter(p => incRes.some(re => re.test(p.remarks || '')));
-        }
-    }
-    if (f.exclude_regexes?.length) {
-        for (const pattern of f.exclude_regexes) {
-            if (!pattern) continue;
-            try {
-                const re = new RegExp(pattern, 'i');
-                list = list.filter(p => !re.test(p.remarks || ''));
-            } catch { /* invalid regex — skip */ }
-        }
-    }
-    if (f.max_proxies > 0 && list.length > f.max_proxies) {
-        list = list.slice(0, f.max_proxies);
-    }
+    let list = filterProxies(proxies.value, filters.value);
     const q = proxyQ.value.toLowerCase();
     if (q) {
         list = list.filter(p =>
