@@ -415,50 +415,49 @@ func parseHysteria2(rawURI string) (*ProxyEntry, error) {
 }
 
 func buildHysteria2Outbound(password, host string, port int, params url.Values, tag string) (json.RawMessage, error) {
-	server := map[string]interface{}{
-		"address":  host,
-		"port":     port,
-		"password": password,
-	}
-
-	// Obfs
-	if obfs := params.Get("obfs"); obfs != "" {
-		server["obfs"] = map[string]interface{}{
-			"type": obfs,
-			"password": params.Get("obfs-password"),
-		}
-	}
+	// Xray hysteria outbound format (confirmed from XTLS/Xray-core source):
+	//   protocol: "hysteria" (not hysteria2)
+	//   settings: flat {version:2, address, port}
+	//   streamSettings: {network:"hysteria", hysteriaSettings:{version:2, auth:password}}
+	//   obfs/salamander is NOT supported by Xray - silently ignored
 
 	outbound := map[string]interface{}{
-		"protocol": "hysteria2",
+		"protocol": "hysteria",
 		"settings": map[string]interface{}{
-			"servers": []interface{}{server},
+			"version": 2,
+			"address": host,
+			"port":    port,
 		},
 	}
 
-	// TLS is built-in for hysteria2, but we pass sni/port-hopping via sockopt
-	sockopt := map[string]interface{}{}
-	if sni := params.Get("sni"); sni != "" {
-		sockopt["dialer"] = map[string]interface{}{
-			"domainStrategy": "AsIs",
-		}
+	// hysteriaSettings in streamSettings
+	hySet := map[string]interface{}{
+		"version": 2,
+		"auth":    password,
 	}
 
 	streamSettings := map[string]interface{}{
-		"network":  "tcp",
-		"security": "tls",
-		"tlsSettings": map[string]interface{}{
-			"serverName": params.Get("sni"),
-		},
+		"network":          "hysteria",
+		"security":         "tls",
+		"hysteriaSettings": hySet,
+	}
+
+	// TLS settings (SNI, ALPN, insecure)
+	tlsSettings := map[string]interface{}{}
+	if sni := params.Get("sni"); sni != "" {
+		tlsSettings["serverName"] = sni
 	}
 	if alpn := params.Get("alpn"); alpn != "" {
-		streamSettings["tlsSettings"].(map[string]interface{})["alpn"] = strings.Split(alpn, ",")
+		tlsSettings["alpn"] = strings.Split(alpn, ",")
 	}
-	outbound["streamSettings"] = streamSettings
+	if insecure := params.Get("insecure"); insecure == "true" || insecure == "1" {
+		tlsSettings["allowInsecure"] = true
+	}
+	if len(tlsSettings) > 0 {
+		streamSettings["tlsSettings"] = tlsSettings
+	}
 
-	if len(sockopt) > 0 {
-		outbound["sockopt"] = sockopt
-	}
+	outbound["streamSettings"] = streamSettings
 
 	outbound["mux"] = DefaultMux
 	if tag != "" {

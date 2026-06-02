@@ -575,55 +575,160 @@ func TestParseTrojan_DefaultTLS(t *testing.T) {
 
 // --- HYSTERIA2 ---
 
-func TestParseHysteria2_Basic(t *testing.T) {
-	uri := "hysteria2://my-password@example.com:443?sni=example.com#Hysteria2%20Node"
+// getStr is a test helper to extract a string from nested map
+func getStr(m map[string]interface{}, path ...string) string {
+	for i, k := range path {
+		v, ok := m[k]
+		if !ok {
+			return ""
+		}
+		if i == len(path)-1 {
+			s, _ := v.(string)
+			return s
+		}
+		m, ok = v.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+	}
+	return ""
+}
+
+// getNum is a test helper to extract a float64 from nested map
+func getNum(m map[string]interface{}, path ...string) float64 {
+	for i, k := range path {
+		v, ok := m[k]
+		if !ok {
+			return 0
+		}
+		if i == len(path)-1 {
+			n, _ := v.(float64)
+			return n
+		}
+		m, ok = v.(map[string]interface{})
+		if !ok {
+			return 0
+		}
+	}
+	return 0
+}
+
+func unmarshalOutbound(t *testing.T, raw json.RawMessage) map[string]interface{} {
+	t.Helper()
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("failed to unmarshal outbound: %v", err)
+	}
+	return m
+}
+
+func TestHysteria2_BasicStructure(t *testing.T) {
+	uri := "hysteria2://my-password@example.com:443?sni=example.com#Test"
 	entry, err := ParseURI(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if entry.Protocol != "hysteria2" {
-		t.Errorf("expected protocol hysteria2, got %s", entry.Protocol)
-	}
-	if entry.Remarks != "Hysteria2 Node" {
-		t.Errorf("expected remarks 'Hysteria2 Node', got %q", entry.Remarks)
+		t.Fatalf("expected protocol hysteria2, got %s", entry.Protocol)
 	}
 
-	var outbound map[string]interface{}
-	if err := json.Unmarshal(entry.Outbound, &outbound); err != nil {
-		t.Fatalf("failed to unmarshal outbound: %v", err)
+	o := unmarshalOutbound(t, entry.Outbound)
+
+	// protocol must be "hysteria" in Xray outbound (not hysteria2)
+	if o["protocol"] != "hysteria" {
+		t.Errorf("protocol: got %v, want hysteria", o["protocol"])
 	}
-	if outbound["protocol"] != "hysteria2" {
-		t.Errorf("expected protocol hysteria2, got %v", outbound["protocol"])
+
+	// settings: flat structure {version, address, port}
+	settings := o["settings"].(map[string]interface{})
+	if v := getNum(settings, "version"); v != 2 {
+		t.Errorf("settings.version: got %v, want 2", v)
 	}
-	settings := outbound["settings"].(map[string]interface{})
-	servers := settings["servers"].([]interface{})
-	server := servers[0].(map[string]interface{})
-	if server["password"] != "my-password" {
-		t.Errorf("expected password my-password, got %v", server["password"])
+	if addr := getStr(settings, "address"); addr != "example.com" {
+		t.Errorf("settings.address: got %q, want example.com", addr)
 	}
-	if server["address"] != "example.com" {
-		t.Errorf("expected address example.com, got %v", server["address"])
+	if port := getNum(settings, "port"); port != 443 {
+		t.Errorf("settings.port: got %v, want 443", port)
+	}
+	// NO servers array
+	if _, has := settings["servers"]; has {
+		t.Error("settings should NOT contain 'servers' key")
+	}
+	// NO password in settings
+	if _, has := settings["password"]; has {
+		t.Error("settings should NOT contain 'password' key (belongs in hysteriaSettings.auth)")
+	}
+
+	// streamSettings.network must be "hysteria"
+	ss := o["streamSettings"].(map[string]interface{})
+	if ss["network"] != "hysteria" {
+		t.Errorf("streamSettings.network: got %v, want hysteria", ss["network"])
+	}
+	if ss["security"] != "tls" {
+		t.Errorf("streamSettings.security: got %v, want tls", ss["security"])
+	}
+
+	// hysteriaSettings.auth = password
+	hsRaw, hasHS := ss["hysteriaSettings"]
+	if !hasHS {
+		t.Fatal("streamSettings missing hysteriaSettings")
+	}
+	hs := hsRaw.(map[string]interface{})
+	if getNum(hs, "version") != 2 {
+		t.Errorf("hysteriaSettings.version: got %v, want 2", getNum(hs, "version"))
+	}
+	if hs["auth"] != "my-password" {
+		t.Errorf("hysteriaSettings.auth: got %v, want my-password", hs["auth"])
+	}
+
+	// tlsSettings.serverName = sni
+	tlsRaw, hasTLS := ss["tlsSettings"]
+	if !hasTLS {
+		t.Fatal("streamSettings missing tlsSettings")
+	}
+	tls := tlsRaw.(map[string]interface{})
+	if tls["serverName"] != "example.com" {
+		t.Errorf("tlsSettings.serverName: got %v, want example.com", tls["serverName"])
 	}
 }
 
-func TestParseHysteria2_WithObfs(t *testing.T) {
-	uri := "hysteria2://pass@host:443?sni=host&obfs=salamander&obfs-password=secret#Obfs%20Node"
+func TestHysteria2_ObfsIgnored(t *testing.T) {
+	// Xray does NOT support obfs/salamander — params should be silently ignored
+	uri := "hysteria2://pass@host:443?sni=host&obfs=salamander&obfs-password=secret#Obfs"
 	entry, err := ParseURI(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var outbound map[string]interface{}
-	json.Unmarshal(entry.Outbound, &outbound)
-	settings := outbound["settings"].(map[string]interface{})
-	servers := settings["servers"].([]interface{})
-	server := servers[0].(map[string]interface{})
-	obfs := server["obfs"].(map[string]interface{})
-	if obfs["type"] != "salamander" {
-		t.Errorf("expected obfs type salamander, got %v", obfs["type"])
+	o := unmarshalOutbound(t, entry.Outbound)
+
+	// settings must NOT contain obfs
+	settings := o["settings"].(map[string]interface{})
+	if _, has := settings["obfs"]; has {
+		t.Error("settings should NOT contain 'obfs' (Xray doesn't support it)")
 	}
-	if obfs["password"] != "secret" {
-		t.Errorf("expected obfs password secret, got %v", obfs["password"])
+
+	// hysteriaSettings should NOT contain obfs
+	ss := o["streamSettings"].(map[string]interface{})
+	hs := ss["hysteriaSettings"].(map[string]interface{})
+	if _, has := hs["obfs"]; has {
+		t.Error("hysteriaSettings should NOT contain 'obfs'")
+	}
+}
+
+func TestHysteria2_Insecure(t *testing.T) {
+	uri := "hysteria2://pass@host:443?sni=host&insecure=true#Insecure"
+	entry, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	o := unmarshalOutbound(t, entry.Outbound)
+	ss := o["streamSettings"].(map[string]interface{})
+	tls := ss["tlsSettings"].(map[string]interface{})
+	insecure, _ := tls["allowInsecure"].(bool)
+	if !insecure {
+		t.Error("expected tlsSettings.allowInsecure = true")
 	}
 }
 
@@ -648,6 +753,15 @@ naive://ignored
 	}
 	if entries[2].Protocol != "hysteria2" {
 		t.Errorf("entry[2] expected hysteria2, got %s", entries[2].Protocol)
+	}
+	// Verify hysteria2 outbound structure
+	o := unmarshalOutbound(t, entries[2].Outbound)
+	if o["protocol"] != "hysteria" {
+		t.Errorf("hysteria2 outbound protocol: got %v, want hysteria", o["protocol"])
+	}
+	settings := o["settings"].(map[string]interface{})
+	if getStr(settings, "address") != "host3" {
+		t.Errorf("address: got %q, want host3", getStr(settings, "address"))
 	}
 }
 
@@ -749,16 +863,15 @@ func TestParseHysteria2_Insecure(t *testing.T) {
 	_ = ss["tlsSettings"]
 }
 
-func TestParseHysteria2_WithALPN(t *testing.T) {
-	uri := "hysteria2://pass@host:443?sni=host&alpn=h3,h2#ALPN%20HY2"
+func TestHysteria2_WithALPN(t *testing.T) {
+	uri := "hysteria2://pass@host:443?sni=host&alpn=h3,h2#ALPN"
 	entry, err := ParseURI(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var outbound map[string]interface{}
-	json.Unmarshal(entry.Outbound, &outbound)
-	ss := outbound["streamSettings"].(map[string]interface{})
+	o := unmarshalOutbound(t, entry.Outbound)
+	ss := o["streamSettings"].(map[string]interface{})
 	tls := ss["tlsSettings"].(map[string]interface{})
 	alpn := tls["alpn"].([]interface{})
 	if len(alpn) != 2 || alpn[0] != "h3" || alpn[1] != "h2" {
@@ -766,7 +879,7 @@ func TestParseHysteria2_WithALPN(t *testing.T) {
 	}
 }
 
-func TestParseHysteria2_CountryExtraction(t *testing.T) {
+func TestHysteria2_CountryExtraction(t *testing.T) {
 	uri := "hysteria2://pass@host:443?sni=host#%F0%9F%87%BA%F0%9F%87%B8%20%F0%9F%8E%AE%20Gaming"
 	entry, err := ParseURI(uri)
 	if err != nil {
@@ -777,14 +890,28 @@ func TestParseHysteria2_CountryExtraction(t *testing.T) {
 	}
 }
 
-func TestParseHysteria2_NoSNI(t *testing.T) {
+func TestHysteria2_NoSNI(t *testing.T) {
 	uri := "hysteria2://pass@host:443#NoSNI"
 	entry, err := ParseURI(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if entry.Protocol != "hysteria2" {
-		t.Errorf("expected hysteria2, got %s", entry.Protocol)
+
+	o := unmarshalOutbound(t, entry.Outbound)
+	// settings must still have address and port
+	settings := o["settings"].(map[string]interface{})
+	if getStr(settings, "address") != "host" {
+		t.Errorf("address: got %q, want host", getStr(settings, "address"))
+	}
+	if getNum(settings, "port") != 443 {
+		t.Errorf("port: got %v, want 443", getNum(settings, "port"))
+	}
+
+	// hysteriaSettings must still exist with auth
+	ss := o["streamSettings"].(map[string]interface{})
+	hs := ss["hysteriaSettings"].(map[string]interface{})
+	if hs["auth"] != "pass" {
+		t.Errorf("auth: got %v, want pass", hs["auth"])
 	}
 }
 
