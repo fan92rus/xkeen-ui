@@ -1,6 +1,6 @@
 <script setup>
 import { defineAsyncComponent } from 'vue';
-import { onMounted, onUnmounted, ref, computed, provide } from 'vue';
+import { onMounted, onUnmounted, ref, computed, provide, watch } from 'vue';
 import { useAppStore } from './stores/app.js';
 const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
@@ -10,6 +10,12 @@ const CommandsTab = defineAsyncComponent(() => import('./components/CommandsTab.
 const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vue'));
 
 const app = useAppStore();
+
+// Persist active tab across page reloads
+watch(() => app.activeTab, (tab) => {
+    localStorage.setItem('xkeen_active_tab', tab);
+    location.hash = tab;
+});
 
 const tabs = computed(() => {
     const list = [

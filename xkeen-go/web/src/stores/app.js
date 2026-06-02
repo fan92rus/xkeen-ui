@@ -11,7 +11,7 @@ import * as modeService from '../services/mode.js';
 
 export const useAppStore = defineStore('app', () => {
     // ── UI state ──
-    const activeTab = ref('editor');
+    const activeTab = ref(location.hash.slice(1) || localStorage.getItem('xkeen_active_tab') || 'editor');
     const loading = ref(false);
 
     // ── Toast ──
