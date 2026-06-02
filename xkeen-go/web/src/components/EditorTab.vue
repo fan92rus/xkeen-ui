@@ -80,9 +80,10 @@ watch(() => app.editorLoadContent, (content) => {
 });
 
 onMounted(() => {
-    createEditor('// Select a file to edit', editorRef.value);
     ready = true;
-    if (pendingFile) { loadContent(pendingFile); pendingFile = null; }
+    const file = pendingFile || app.currentFile;
+    if (file) { loadContent(file); pendingFile = null; }
+    else createEditor('// Select a file to edit', editorRef.value);
 });
 
 onUnmounted(() => {
