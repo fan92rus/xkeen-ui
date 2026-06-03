@@ -1,6 +1,7 @@
 # XKEEN-UI
 
 Веб-интерфейс для управления конфигурациями сетевых сервисов на роутерах Keenetic с установленным Entware.
+<img width="1918" height="886" alt="image" src="https://github.com/user-attachments/assets/26d13089-0a58-4df8-853b-de1aa68168a9" />
 
 ## Быстрая установка
 
