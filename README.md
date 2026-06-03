@@ -161,6 +161,7 @@ MIT License
 
 [fan92rus](https://github.com/fan92rus)
 
+<img width="1918" height="886" alt="image" src="https://github.com/user-attachments/assets/e97ec103-7231-4b19-a41b-532ea0ee5093" />
 <img width="1909" height="882" alt="image" src="https://github.com/user-attachments/assets/4cad8dbc-957d-403e-834e-6cd86424bbc5" />
 <img width="1914" height="814" alt="image" src="https://github.com/user-attachments/assets/741b42f6-3b1d-4ff6-af40-e110c31bd14e" />
 <img width="1910" height="880" alt="image" src="https://github.com/user-attachments/assets/3c7e25ee-eda8-42bf-927c-bba9c07895d4" />
