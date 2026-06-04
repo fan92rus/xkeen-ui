@@ -47,13 +47,13 @@ type Subscription struct {
 
 // ProxyEntry represents a single parsed proxy from a subscription.
 type ProxyEntry struct {
-	Tag      string          `json:"tag"`      // generated tag like "proxy-de-1"
-	Protocol string          `json:"protocol"` // vless, vmess, trojan, ss
-	Outbound json.RawMessage `json:"outbound"` // complete xray outbound JSON
-	RawURI   string          `json:"raw_uri"`  // original share URI
-	Remarks  string          `json:"remarks"`  // decoded name from #fragment
-	Country  string          `json:"country"`  // country code like "DE", "US"
-
+	Tag            string          `json:"tag"`             // generated tag like "proxy-de-1"
+	Protocol       string          `json:"protocol"`        // vless, vmess, trojan, ss
+	Outbound       json.RawMessage `json:"outbound"`        // complete xray outbound JSON
+	RawURI         string          `json:"raw_uri"`         // original share URI
+	Remarks        string          `json:"remarks"`         // decoded name from #fragment
+	Country        string          `json:"country"`         // country code like "DE", "US"
+	SubscriptionID string          `json:"subscription_id"` // owning subscription ID
 }
 
 // Filter rules for proxy filtering.

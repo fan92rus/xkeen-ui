@@ -364,6 +364,11 @@ func (s *Scheduler) RefreshAll() error {
 		sub.ProxyCount = len(entries)
 		_ = s.store.UpdateSubscription(&sub)
 
+		// Tag entries with subscription ID
+		for _, e := range entries {
+			e.SubscriptionID = sub.ID
+		}
+
 		merged = append(merged, entries...)
 		anySuccess = true
 	}
@@ -405,19 +410,24 @@ func (s *Scheduler) RefreshOne(id string) error {
 		return err
 	}
 
-	// Merge: keep existing proxies from other subscriptions, add new ones (dedup by tag)
-	existing := s.store.GetProxies()
-	existingTags := make(map[string]bool, len(existing))
-	for _, p := range existing {
-		existingTags[p.Tag] = true
-	}
-	merged := make([]*ProxyEntry, 0, len(existing)+len(entries))
-	merged = append(merged, existing...)
+	// Tag entries with subscription ID
 	for _, e := range entries {
-		if !existingTags[e.Tag] {
-			merged = append(merged, e)
-		}
+		e.SubscriptionID = id
 	}
+
+	// Replace proxies for this subscription, keep others (skip orphaned entries without subscription_id)
+	existing := s.store.GetProxies()
+	merged := make([]*ProxyEntry, 0, len(existing)+len(entries))
+	for _, p := range existing {
+		if p.SubscriptionID == id {
+			continue // remove old proxies from this subscription
+		}
+		if p.SubscriptionID == "" {
+			continue // remove orphaned proxies from previous versions
+		}
+		merged = append(merged, p)
+	}
+	merged = append(merged, entries...)
 	s.store.SetProxies(merged)
 	return nil
 }

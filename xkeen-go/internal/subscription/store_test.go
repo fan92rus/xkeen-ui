@@ -202,6 +202,43 @@ func TestDeleteSubscription_NotFound(t *testing.T) {
 	}
 }
 
+func TestDeleteSubscription_RemovesProxies(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	// Add two subscriptions
+	sub1 := &Subscription{Name: "Sub1", URL: "https://a.com", Enabled: true}
+	sub2 := &Subscription{Name: "Sub2", URL: "https://b.com", Enabled: true}
+	store.AddSubscription(sub1)
+	store.AddSubscription(sub2)
+
+	// Set proxies belonging to both subscriptions
+	store.SetProxies([]*ProxyEntry{
+		{Tag: "proxy-a-1", Country: "US", SubscriptionID: sub1.ID},
+		{Tag: "proxy-a-2", Country: "DE", SubscriptionID: sub1.ID},
+		{Tag: "proxy-b-1", Country: "JP", SubscriptionID: sub2.ID},
+	})
+
+	// Verify we have 3 proxies
+	if len(store.GetProxies()) != 3 {
+		t.Fatalf("expected 3 proxies, got %d", len(store.GetProxies()))
+	}
+
+	// Delete sub1
+	if err := store.DeleteSubscription(sub1.ID); err != nil {
+		t.Fatalf("DeleteSubscription: %v", err)
+	}
+
+	// Only sub2's proxy should remain
+	remaining := store.GetProxies()
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 proxy after delete, got %d", len(remaining))
+	}
+	if remaining[0].SubscriptionID != sub2.ID {
+		t.Errorf("expected proxy from sub2, got subscription_id=%s", remaining[0].SubscriptionID)
+	}
+}
+
 func TestGetSubscription(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))

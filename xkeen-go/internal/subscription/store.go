@@ -137,7 +137,7 @@ func (s *Store) UpdateSubscription(sub *Subscription) error {
 	return fmt.Errorf("subscription %s not found", sub.ID)
 }
 
-// DeleteSubscription removes a subscription by ID.
+// DeleteSubscription removes a subscription by ID and cleans up its proxies from cache.
 func (s *Store) DeleteSubscription(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -148,6 +148,17 @@ func (s *Store) DeleteSubscription(id string) error {
 				s.config.Subscriptions[:i],
 				s.config.Subscriptions[i+1:]...,
 			)
+
+			// Remove proxies belonging to the deleted subscription
+			filtered := make([]*ProxyEntry, 0, len(s.proxies))
+			for _, p := range s.proxies {
+				if p.SubscriptionID != id {
+					filtered = append(filtered, p)
+				}
+			}
+			s.proxies = filtered
+			s.saveProxyCache(s.proxies)
+
 			return s.saveConfig(s.config)
 		}
 	}

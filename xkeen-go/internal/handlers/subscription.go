@@ -166,19 +166,24 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	sub.ProxyCount = len(entries)
 	_ = h.store.UpdateSubscription(sub)
 
-	// Merge proxies: keep existing from other subscriptions, add new ones (dedup by tag)
-	existing := h.store.GetProxies()
-	existingTags := make(map[string]bool, len(existing))
-	for _, p := range existing {
-		existingTags[p.Tag] = true
-	}
-	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(entries))
-	merged = append(merged, existing...)
+	// Tag entries with subscription ID
 	for _, e := range entries {
-		if !existingTags[e.Tag] {
-			merged = append(merged, e)
-		}
+		e.SubscriptionID = id
 	}
+
+	// Replace proxies for this subscription, keep others (skip orphaned entries without subscription_id)
+	existing := h.store.GetProxies()
+	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(entries))
+	for _, p := range existing {
+		if p.SubscriptionID == id {
+			continue // remove old proxies from this subscription
+		}
+		if p.SubscriptionID == "" {
+			continue // remove orphaned proxies from previous versions
+		}
+		merged = append(merged, p)
+	}
+	merged = append(merged, entries...)
 	h.store.SetProxies(merged)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
