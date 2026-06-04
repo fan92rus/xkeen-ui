@@ -374,6 +374,7 @@ func (s *Scheduler) RefreshAll() error {
 	}
 
 	if anySuccess {
+		GenerateTags(merged)
 		s.store.SetProxies(merged)
 		if s.OnUpdate != nil {
 			s.OnUpdate()
@@ -428,6 +429,7 @@ func (s *Scheduler) RefreshOne(id string) error {
 		merged = append(merged, p)
 	}
 	merged = append(merged, entries...)
+	GenerateTags(merged)
 	s.store.SetProxies(merged)
 	return nil
 }

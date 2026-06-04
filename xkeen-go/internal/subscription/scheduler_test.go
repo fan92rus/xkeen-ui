@@ -1284,3 +1284,71 @@ func TestRefreshAll_SetsSubscriptionID(t *testing.T) {
 	}
 }
 
+// ---------- Tag collision between subscriptions ----------
+
+func TestRefreshAll_TagCollisionBetweenSubscriptions(t *testing.T) {
+	// Two subscriptions, both with a DE proxy.
+	// They should NOT produce duplicate tags.
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// DE proxy pointing to server 1.2.3.4
+		lines := "vless://uuid1@1.2.3.4:443?type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20ServerA"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server1.Close()
+
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// DE proxy pointing to server 5.6.7.8
+		lines := "vless://uuid2@5.6.7.8:443?type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20ServerB"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server2.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	sub1 := &Subscription{Name: "SubA", URL: server1.URL, Enabled: true}
+	sub2 := &Subscription{Name: "SubB", URL: server2.URL, Enabled: true}
+	store.AddSubscription(sub1)
+	store.AddSubscription(sub2)
+
+	sched := NewScheduler(store, NewFetcher())
+	sched.RefreshAll()
+
+	proxies := store.GetProxies()
+	if len(proxies) != 2 {
+		t.Fatalf("expected 2 proxies, got %d", len(proxies))
+	}
+
+	// Check that tags are unique
+	tags := make(map[string]bool)
+	for _, p := range proxies {
+		if tags[p.Tag] {
+			t.Errorf("duplicate tag %q \u2014 tag collision between subscriptions", p.Tag)
+		}
+		tags[p.Tag] = true
+	}
+
+	// Check that both proxies have different outbounds (different servers)
+	addrs := make(map[string]bool)
+	for _, p := range proxies {
+		var outbound map[string]interface{}
+		if err := json.Unmarshal(p.Outbound, &outbound); err != nil {
+			t.Fatalf("unmarshal outbound: %v", err)
+		}
+		settings, _ := outbound["settings"].(map[string]interface{})
+		vnext, _ := settings["vnext"].([]interface{})
+		if len(vnext) == 0 {
+			t.Fatal("no vnext in outbound")
+		}
+		server, _ := vnext[0].(map[string]interface{})
+		addr := server["address"].(string)
+		if addrs[addr] {
+			t.Errorf("duplicate address %q \u2014 proxies from different servers mapped to same tag", addr)
+		}
+		addrs[addr] = true
+		t.Logf("tag=%s address=%s sub_id=%s", p.Tag, addr, p.SubscriptionID)
+	}
+}
+

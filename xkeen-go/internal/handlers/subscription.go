@@ -184,6 +184,10 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 		merged = append(merged, p)
 	}
 	merged = append(merged, entries...)
+
+	// Regenerate tags globally to avoid collisions between subscriptions
+	subscription.GenerateTags(merged)
+
 	h.store.SetProxies(merged)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
