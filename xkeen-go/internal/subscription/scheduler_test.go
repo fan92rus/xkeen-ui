@@ -1105,4 +1105,182 @@ func TestScheduler_Start_WithoutCron(t *testing.T) {
 	}
 }
 
+// ---------- SubscriptionID tracking ----------
+
+func TestRefreshOne_SetsSubscriptionID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lines := "vless://uuid@1.2.3.4:443?type=tcp&security=reality#%F0%9F%87%A9%F0%9F%87%AA%20Test"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	sub := &Subscription{Name: "Test", URL: server.URL, Enabled: true}
+	store.AddSubscription(sub)
+
+	sched := NewScheduler(store, NewFetcher())
+	if err := sched.RefreshOne(sub.ID); err != nil {
+		t.Fatalf("RefreshOne: %v", err)
+	}
+
+	proxies := store.GetProxies()
+	if len(proxies) == 0 {
+		t.Fatal("expected proxies after RefreshOne")
+	}
+	for _, p := range proxies {
+		if p.SubscriptionID != sub.ID {
+			t.Errorf("expected SubscriptionID=%s, got %s", sub.ID, p.SubscriptionID)
+		}
+	}
+}
+
+func TestRefreshOne_ReplacesOldProxies(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var lines string
+		if callCount == 1 {
+			lines = "vless://uuid@1.2.3.4:443?type=tcp#Old1"
+		} else {
+			lines = "vless://uuid@5.6.7.8:443?type=tcp#New1\nvless://uuid@9.10.11.12:443?type=tcp#New2"
+		}
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	sub := &Subscription{Name: "Test", URL: server.URL, Enabled: true}
+	store.AddSubscription(sub)
+
+	sched := NewScheduler(store, NewFetcher())
+
+	// First fetch: 1 proxy
+	sched.RefreshOne(sub.ID)
+	if len(store.GetProxies()) != 1 {
+		t.Fatalf("expected 1 proxy after first fetch, got %d", len(store.GetProxies()))
+	}
+
+	// Second fetch: 2 proxies — old one should be replaced
+	sched.RefreshOne(sub.ID)
+	proxies := store.GetProxies()
+	if len(proxies) != 2 {
+		t.Fatalf("expected 2 proxies after second fetch (old replaced), got %d", len(proxies))
+	}
+	for _, p := range proxies {
+		if p.SubscriptionID != sub.ID {
+			t.Errorf("expected SubscriptionID=%s, got %s", sub.ID, p.SubscriptionID)
+		}
+	}
+}
+
+func TestRefreshOne_KeepsOtherSubscriptionProxies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lines := "vless://uuid@1.2.3.4:443?type=tcp#Proxy"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	sub1 := &Subscription{Name: "Sub1", URL: server.URL, Enabled: true}
+	sub2 := &Subscription{Name: "Sub2", URL: server.URL, Enabled: true}
+	store.AddSubscription(sub1)
+	store.AddSubscription(sub2)
+
+	sched := NewScheduler(store, NewFetcher())
+
+	// Fetch sub1
+	sched.RefreshOne(sub1.ID)
+	proxies := store.GetProxies()
+	if len(proxies) != 1 {
+		t.Fatalf("expected 1 proxy, got %d", len(proxies))
+	}
+	if proxies[0].SubscriptionID != sub1.ID {
+		t.Errorf("expected sub1 ID, got %s", proxies[0].SubscriptionID)
+	}
+
+	// Fetch sub2 — sub1's proxy should remain
+	sched.RefreshOne(sub2.ID)
+	proxies = store.GetProxies()
+	if len(proxies) != 2 {
+		t.Fatalf("expected 2 proxies (1 from each sub), got %d", len(proxies))
+	}
+
+	ids := make(map[string]bool)
+	for _, p := range proxies {
+		ids[p.SubscriptionID] = true
+	}
+	if !ids[sub1.ID] || !ids[sub2.ID] {
+		t.Errorf("expected both subscription IDs, got %v", ids)
+	}
+}
+
+func TestRefreshOne_CleansOrphanedProxies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lines := "vless://uuid@1.2.3.4:443?type=tcp#Proxy"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	sub := &Subscription{Name: "Test", URL: server.URL, Enabled: true}
+	store.AddSubscription(sub)
+
+	// Manually inject orphaned proxies (no SubscriptionID)
+	store.SetProxies([]*ProxyEntry{
+		{Tag: "orphan-1", Country: "US", SubscriptionID: ""},
+		{Tag: "orphan-2", Country: "DE", SubscriptionID: ""},
+	})
+
+	sched := NewScheduler(store, NewFetcher())
+	sched.RefreshOne(sub.ID)
+
+	proxies := store.GetProxies()
+	for _, p := range proxies {
+		if p.SubscriptionID == "" {
+			t.Error("orphaned proxy should have been removed")
+		}
+	}
+	if len(proxies) != 1 {
+		t.Fatalf("expected 1 proxy (orphans removed), got %d", len(proxies))
+	}
+}
+
+func TestRefreshAll_SetsSubscriptionID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lines := "vless://uuid@1.2.3.4:443?type=tcp#Proxy"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	sub := &Subscription{Name: "Test", URL: server.URL, Enabled: true}
+	store.AddSubscription(sub)
+
+	sched := NewScheduler(store, NewFetcher())
+	if err := sched.RefreshAll(); err != nil {
+		t.Fatalf("RefreshAll: %v", err)
+	}
+
+	proxies := store.GetProxies()
+	if len(proxies) == 0 {
+		t.Fatal("expected proxies")
+	}
+	for _, p := range proxies {
+		if p.SubscriptionID != sub.ID {
+			t.Errorf("expected SubscriptionID=%s, got %s", sub.ID, p.SubscriptionID)
+		}
+	}
+}
 
