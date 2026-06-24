@@ -5,6 +5,7 @@ import * as api from '../services/subscription.js';
 import { fmtTime } from '../utils/format.js';
 import { filterProxies } from '../services/filter.js';
 import { formatJson } from '../utils/json-format.js';
+import { countByCountry as _countByCountry, countryState as _countryState, uniqueCountries, textFilterProxies } from '../utils/subscriptions-grouping.js';
 
 const app = useAppStore();
 
@@ -94,18 +95,13 @@ async function removeExcludeRegex(i) {
 }
 
 /* ---- computed ---- */
-const allCountries = computed(() => {
-    const set = new Set(proxies.value.map(p => p.country).filter(Boolean));
-    return [...set].sort();
-});
+const allCountries = computed(() => uniqueCountries(proxies.value));
 
 const filteredProxies = computed(() => {
     let list = filterProxies(proxies.value, filters.value);
     const q = proxyQ.value.toLowerCase();
     if (q) {
-        list = list.filter(p =>
-            [p.tag, p.remarks, p.country, p.protocol].some(v => (v || '').toLowerCase().includes(q))
-        );
+        list = textFilterProxies(list, q);
     }
     return list;
 });
@@ -116,7 +112,7 @@ function _err(e) { console.error('[sub]', e); _toast(e.message || 'Ошибка'
 async function _reload() {
     subs.value = (await api.listSubscriptions()).subscriptions || [];
 }
-function countByCountry(c) { return proxies.value.filter(p => p.country === c).length; }
+function countByCountry(c) { return _countByCountry(proxies.value, c); }
 
 /* ---- persist active profile ---- */
 async function _persistProfile() {
@@ -204,13 +200,7 @@ async function loadProxies() {
 }
 
 /* ---- countries ---- */
-function countryState(c) {
-    const f = filters.value;
-    if (!f) return 'off';
-    if (f.include_countries?.includes(c)) return 'in';
-    if (f.exclude_countries?.includes(c)) return 'ex';
-    return 'off';
-}
+function countryState(c) { return _countryState(filters.value, c); }
 async function toggleCountry(c) {
     const p = activeProfile.value;
     if (!p) return;

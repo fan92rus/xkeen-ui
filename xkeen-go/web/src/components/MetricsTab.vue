@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, shallowReactive, nextTick } from 'vue';
 import { MetricsWS, getProxyNames } from '../services/metrics.js';
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip } from 'chart.js';
+import { computeTagRates, computeChartData, totalOutboundRates } from '../utils/metrics-rates.js';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip);
 
@@ -100,55 +101,16 @@ function makeChartCfg() {
 }
 
 // ── Computed: chart data (outbound totals = real proxy traffic) ──
-const chartData = computed(() => {
-	if (history.length < 2) return null;
-	const labels = [];
-	const dl = [], ul = [];
-
-	for (let i = 1; i < history.length; i++) {
-		const prev = history[i - 1], cur = history[i];
-		const dt = cur.ts - prev.ts;
-		if (dt <= 0) continue;
-		labels.push(fmtTimeShort(cur.ts));
-
-		let tDL = 0, tUL = 0;
-		if (cur.outbound && prev.outbound) {
-			for (const tag of Object.keys(cur.outbound)) {
-				const cDL = cur.outbound[tag]?.downlink ?? 0, pDL = prev.outbound[tag]?.downlink ?? 0;
-				const cUL = cur.outbound[tag]?.uplink ?? 0, pUL = prev.outbound[tag]?.uplink ?? 0;
-				if (cDL >= pDL) { tDL += (cDL - pDL) / dt; tUL += (cUL - pUL) / dt; }
-			}
-		}
-		dl.push(tDL); ul.push(tUL);
-	}
-	return { labels, dl, ul };
-});
+const chartData = computed(() => computeChartData(history));
 
 // ── Computed: per-tag rates ──
 const tagRates = computed(() => {
 	if (!latestSnap.value || history.length < 2) return { inbound: [], outbound: [] };
-	const cur = latestSnap.value, prev = history[history.length - 2];
-	if (!prev) return { inbound: [], outbound: [] };
-	const dt = cur.ts - prev.ts;
-	if (dt <= 0) return { inbound: [], outbound: [] };
-	const result = { inbound: [], outbound: [] };
-	for (const dir of ['inbound', 'outbound']) {
-		if (cur[dir] && prev[dir]) {
-			for (const tag of Object.keys(cur[dir])) {
-				const dl = Math.max(0, ((cur[dir][tag]?.downlink ?? 0) - (prev[dir][tag]?.downlink ?? 0)) / dt);
-				const ul = Math.max(0, ((cur[dir][tag]?.uplink ?? 0) - (prev[dir][tag]?.uplink ?? 0)) / dt);
-				result[dir].push({ tag, dl, ul });
-			}
-		}
-	}
-	return result;
+	const prev = history[history.length - 2];
+	return computeTagRates(latestSnap.value, prev);
 });
 
-const totalRates = computed(() => {
-	let dl = 0, ul = 0;
-	for (const r of tagRates.value.outbound) { dl += r.dl; ul += r.ul; }
-	return { dl, ul };
-});
+const totalRates = computed(() => totalOutboundRates(tagRates.value));
 
 const observatory = computed(() => {
 	if (!latestSnap.value?.observatory) return [];
