@@ -166,3 +166,50 @@ Install creates:
 - Binary at `/opt/bin/xkeen-go-keenetic-arm64`
 - Config at `/opt/etc/xkeen-go/config.json`
 - Init script at `/opt/etc/init.d/xkeen-go`
+
+## Project Conventions (from reflection sessions)
+
+These are durable conventions discovered while working on this codebase.
+See also `docs/INSIGHTS.md` for the reasoning.
+
+### Frontend (web/)
+
+- **Run frontend tests via `npm test`** (declared `vitest` devDependency). Never
+  rely on `npx vitest` — it fetches vitest on demand, so tests pass locally but
+  are NOT reproducible in CI (`npm ci` won't install it).
+- **`bundle.js` is build-generated and gitignored** (`dist/` in .gitignore).
+  `static.go` embeds `web/static` (incl. `dist/`); CI runs `make build-frontend`
+  before `go build`. Commit source (`App.vue`, `src/utils/`, `tests/`), never
+  `bundle.js`.
+- **No code-splitting.** The bundle is a single IIFE (`format: 'iife'` +
+  `inlineDynamicImports`) because Go serves `index.html` directly and embeds one
+  `bundle.js`. Static-asset size is controlled via **server-side gzip**
+  (`GzipMiddleware` on `/static/`), not chunking.
+- **Pure logic → `src/utils/*.js` + unit tests BEFORE refactoring `.vue`**
+  components. The components have no component-level tests, so extract pure
+  functions, test them, then integrate with a 1-line import.
+
+### Backend (internal/)
+
+- **`executeInteractive` PTY loops are not cross-platform testable**
+  (`creack/pty` needs Unix PTY + CGo). The `isCommandAllowed` allowlist
+  (safety-critical) IS fully tested; the I/O loops run under `-race` in Linux CI.
+- **`go test -race` needs CGo (gcc)** — unavailable on Windows. CI `ci.yml`
+  runs it on `ubuntu-latest`.
+- **Make external API calls injectable for testing** (e.g.
+  `UpdateHandler.httpClient` + `apiBaseURL` with safe defaults) so error branches
+  are testable via `httptest`.
+
+### Dependencies & CI
+
+- Go toolchain pinned in `go.mod` (`toolchain` directive) and CI `GO_VERSION`;
+  **stdlib vulns are fixed by toolchain bump, not go.mod deps**. Run `govulncheck`
+  (now in `ci.yml`) after Go upgrades.
+- `npm audit --omit=dev --audit-level=high` gates CI on production deps only.
+
+### Git
+
+- Default branch is `master` (a leftover `master` TAG was deleted to unblock
+  `git push origin master`).
+- After parallel worktree workers: verify `git status`, commit any leftover
+  working-tree changes, confirm each worker's intended files actually landed.
