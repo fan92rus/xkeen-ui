@@ -10,6 +10,8 @@ xkeen-go/bin/
 
 # Test coverage
 xkeen-go/coverage.out
+xkeen-go/coverage.html
+xkeen-go/*_coverage.html
 
 # Binaries for programs and plugins
 *.exe

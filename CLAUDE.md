@@ -186,8 +186,19 @@ See also `docs/INSIGHTS.md` for the reasoning.
   `bundle.js`. Static-asset size is controlled via **server-side gzip**
   (`GzipMiddleware` on `/static/`), not chunking.
 - **Pure logic → `src/utils/*.js` + unit tests BEFORE refactoring `.vue`**
-  components. The components have no component-level tests, so extract pure
-  functions, test them, then integrate with a 1-line import.
+  components. Extract pure functions, test them, then integrate with a
+  1-line import.
+- **Component tests** (`tests/*.component.test.js`) mount `.vue` components
+  via `@vue/test-utils` + `happy-dom`. Opt into the DOM **per file** with a
+  `// @vitest-environment happy-dom` docblock (vitest 4 dropped
+  `environmentMatchGlobs`; docblock is the supported per-file override) so
+  pure-logic tests stay in the fast Node environment. Stub network/WebSocket
+  services with `vi.mock`.
+- **CSS is external, not runtime-injected.** Vite emits `static/dist/bundle.css`
+  as a real file (no `cssInlinePlugin`), linked from `index.html`. This is
+  REQUIRED for the strict Content-Security-Policy (`style-src 'self'`, no
+  `unsafe-inline`) — runtime `<style>` injection would force `unsafe-inline`.
+  Vue `:style` bindings go through the CSSOM and are unaffected.
 
 ### Backend (internal/)
 
