@@ -1,5 +1,7 @@
 // services/metrics.js - WebSocket client for Xray metrics with localStorage caching
 
+import { computeBackoffDelay } from '../utils/backoff.js';
+
 const STORAGE_KEY = 'xkeen_metrics_history';
 const STORAGE_TTL = 10 * 60 * 1000; // 10 minutes in ms
 
@@ -25,6 +27,7 @@ export class MetricsWS {
 		this.onStatus = onStatus || (() => {});
 		this.ws = null;
 		this.reconnectTimer = null;
+		this.reconnectAttempts = 0; // reset to 0 on every successful connect
 		this.stopped = false;
 		this._mergeBuffer = []; // buffer for merging incoming snapshots
 	}
@@ -42,6 +45,7 @@ export class MetricsWS {
 		this.ws = new WebSocket(url);
 
 		this.ws.onopen = () => {
+			this.reconnectAttempts = 0; // back on track — reset backoff
 			this.onStatus('connected');
 		};
 
@@ -71,7 +75,8 @@ export class MetricsWS {
 		this.ws.onclose = () => {
 			this.onStatus('disconnected');
 			if (!this.stopped) {
-				this.reconnectTimer = setTimeout(() => this._doConnect(), 3000);
+				const delay = computeBackoffDelay(this.reconnectAttempts++);
+				this.reconnectTimer = setTimeout(() => this._doConnect(), delay);
 			}
 		};
 
@@ -87,7 +92,10 @@ export class MetricsWS {
 			this.reconnectTimer = null;
 		}
 		if (this.ws) {
-			this.ws.close();
+			// Remove listeners so our own close() doesn't re-arm a reconnect,
+			// and guard close() — it can throw on an already-CLOSED socket.
+			this.ws.onclose = null;
+			try { this.ws.close(); } catch (_) { /* already closed */ }
 			this.ws = null;
 		}
 	}
