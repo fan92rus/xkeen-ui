@@ -382,6 +382,65 @@ make lint
 make fmt
 ```
 
+### Testing
+
+**Backend (Go):**
+
+```bash
+# All Go tests
+make test
+
+# Unit tests only (utils + services + handlers)
+make test-unit
+
+# With the race detector (recommended before merging; requires CGo / a C
+# compiler — run on Linux or via the CI)
+CGO_ENABLED=1 go test -race ./...
+
+# Coverage report (opens coverage.html)
+make coverage
+
+# Scan dependencies for known Go vulnerabilities
+make vet
+govulncheck ./...   # go install golang.org/x/vuln/cmd/govulncheck@latest
+```
+
+**Frontend (Vue + Vite):**
+
+```bash
+cd web
+npm test            # vitest run — all unit + component tests
+npm run test:watch  # vitest watch mode
+npm run build       # production bundle (also verifies it compiles)
+npm audit --omit=dev --audit-level=high   # production-dep vuln scan
+```
+
+The frontend has two kinds of tests:
+
+- **Pure-logic unit tests** (`tests/*.test.js`) — fast, run in the Node
+  environment. Cover utils like ANSI formatting, JSON escaping, filter
+  regexes, metrics rates, backoff, log filtering, and diffing.
+- **Component tests** (`tests/*.component.test.js`) — mount real `.vue`
+  components via `@vue/test-utils` in a `happy-dom` environment (opt-in per
+  file via a `// @vitest-environment happy-dom` docblock) so the pure-logic
+  tests stay in the fast Node lane.
+
+End-to-end (browser) tests live in `web/test/` and run via Puppeteer
+(`npm run test:e2e`, `npm run test:profiles`); they are excluded from
+`vitest`.
+
+### Continuous Integration
+
+The `ci` workflow (`.github/workflows/ci.yml`) runs on every push / PR to
+`master` as a non-blocking quality gate:
+
+- **go-checks** job: `go vet`, `go test -race`, `go build`, and
+  `govulncheck ./...`.
+- **frontend-checks** job: `npm ci`, `npm run build`, `npm test`, and
+  `npm audit --omit=dev --audit-level=high`.
+
+The `build.yml` / `build-dev.yml` workflows build release binaries for
+Keenetic targets (ARM64, MIPSLE) and are triggered separately.
 ### Available Make Targets
 
 | Target | Description |
@@ -418,22 +477,6 @@ make run
 
 # Or with custom config
 go run main.go -config /path/to/config.json
-```
-
-### Testing
-
-```bash
-# Run all tests
-make test
-
-# Run unit tests
-make test-unit
-
-# Run integration tests
-make test-integration
-
-# Generate coverage report
-make coverage
 ```
 
 ## Security
