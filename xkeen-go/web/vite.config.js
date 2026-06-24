@@ -54,5 +54,8 @@ export default defineConfig({
     },
     test: {
         exclude: ['test/**', 'node_modules/**'],
+        // Component tests opt into a DOM via a per-file
+        // `// @vitest-environment happy-dom` docblock, keeping pure-logic util
+        // tests in the fast node environment by default.
     },
 });
