@@ -73,3 +73,7 @@ logs/
 tmp/
 temp/
 *_output.md
+
+# Local dev/testing artifacts
+.pi/
+xkeen-go/web/test/screenshots/
