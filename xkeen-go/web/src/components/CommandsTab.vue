@@ -2,10 +2,8 @@
 import { ref, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { InteractiveSession } from '../services/interactive.js';
-import { AnsiUp } from 'ansi_up';
 
 const app = useAppStore();
-const ansiUp = new AnsiUp();
 const executingCommand = ref('');
 
 const categories = [
@@ -129,12 +127,10 @@ async function doExecute(command) {
 
 function handleStreamMessage(msg) {
     if (msg.type === 'output') {
-        let text = msg.text.replace(/\r/g, '');
-        app.modal.output += ansiUp.ansi_to_html(text, { use_classes: false });
+        app.modal.output += msg.text;
         scrollToBottom();
     } else if (msg.type === 'error') {
-        let text = msg.text.replace(/\r/g, '');
-        app.modal.error += (app.modal.error ? '\n' : '') + ansiUp.ansi_to_html(text, { use_classes: false });
+        app.modal.error += (app.modal.error ? '\n' : '') + msg.text;
         scrollToBottom();
     } else if (msg.type === 'complete') {
         app.commandComplete = true;

@@ -14,7 +14,6 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         const data = await response.json();
         if (data.ok) {
             csrfToken = data.csrf_token;
-            localStorage.setItem('csrfToken', data.csrf_token);
             if (data.require_password_change) {
                 document.getElementById('loginForm').classList.add('hidden');
                 document.getElementById('changePasswordForm').classList.add('active');
@@ -71,7 +70,7 @@ document.getElementById('changePasswordForm').addEventListener('submit', async (
                     body: JSON.stringify({ password: nw })
                 });
                 const ld = await lr.json();
-                if (ld.ok) { localStorage.setItem('csrfToken', ld.csrf_token); window.location.href = '/'; }
+                if (ld.ok) { window.location.href = '/'; }
                 else { document.getElementById('changePasswordForm').classList.remove('active'); document.getElementById('loginForm').classList.remove('hidden'); }
             }, 800);
         } else { showToast(d.error || 'Ошибка', 'error'); btn.disabled = false; btn.textContent = 'Изменить пароль'; }

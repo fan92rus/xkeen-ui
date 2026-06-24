@@ -2,6 +2,7 @@
 import { defineAsyncComponent } from 'vue';
 import { onMounted, onUnmounted, ref, computed, provide, watch } from 'vue';
 import { useAppStore } from './stores/app.js';
+import { renderAnsi } from './utils/ansi-format.js';
 const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
@@ -66,6 +67,10 @@ function onKeydown(e) {
 
 function doSave() { editorRef.value?.save(); }
 function doDiff() { editorRef.value?.diff(); }
+
+/* -- safe ANSI rendering for modal output -- */
+const safeModalOutput = computed(() => app.modal.output ? renderAnsi(app.modal.output) : '');
+const safeModalError = computed(() => app.modal.error ? renderAnsi(app.modal.error) : '');
 
 onMounted(() => {
     document.documentElement.classList.toggle('light', theme.value === 'light');
@@ -165,8 +170,8 @@ onUnmounted(() => {
           <button class="modal-close" @click="app.closeModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <pre v-show="app.modal.error" class="modal-error" v-html="app.modal.error"></pre>
-          <pre id="modal-output" class="modal-output" v-html="app.modal.output"></pre>
+          <pre v-show="app.modal.error" class="modal-error" v-html="safeModalError"></pre>
+          <pre id="modal-output" class="modal-output" v-html="safeModalOutput"></pre>
         </div>
         <div class="modal-input" v-show="app.canSendInput()">
           <input type="text" v-model="app.inputValue" @keydown.enter="app.sendInput()"

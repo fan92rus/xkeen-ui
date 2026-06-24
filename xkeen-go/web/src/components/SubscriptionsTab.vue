@@ -4,6 +4,7 @@ import { useAppStore } from '../stores/app.js';
 import * as api from '../services/subscription.js';
 import { fmtTime } from '../utils/format.js';
 import { filterProxies } from '../services/filter.js';
+import { formatJson } from '../utils/json-format.js';
 
 const app = useAppStore();
 
@@ -110,15 +111,6 @@ const filteredProxies = computed(() => {
 });
 
 /* ---- helpers ---- */
-function _esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function _fmtJson(obj) {
-    const raw = _esc(JSON.stringify(obj, null, 2));
-    return raw.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)\s*:/g, '<span class="pk">$1</span>:')
-              .replace(/:\s*(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g, ': <span class="ps">$1</span>')
-              .replace(/:\s*(\d+\.?\d*)/g, ': <span class="pn">$1</span>')
-              .replace(/:\s*(true|false)/g, ': <span class="pb">$1</span>')
-              .replace(/:\s*(null)/g, ': <span class="pu">$1</span>');
-}
 function _toast(msg, type) { app.showToast(msg, type); }
 function _err(e) { console.error('[sub]', e); _toast(e.message || 'Ошибка', 'error'); }
 async function _reload() {
@@ -546,15 +538,15 @@ onMounted(async () => {
         </div>
         <details>
           <summary>outbounds.json</summary>
-          <pre class="preview-json" v-html="_fmtJson(previewData.outbounds)"></pre>
+          <pre class="preview-json" v-html="formatJson(previewData.outbounds)"></pre>
         </details>
         <details>
           <summary>routing.json</summary>
-          <pre class="preview-json" v-html="_fmtJson(previewData.routing)"></pre>
+          <pre class="preview-json" v-html="formatJson(previewData.routing)"></pre>
         </details>
         <details v-if="previewData.observatory">
           <summary>observatory.json</summary>
-          <pre class="preview-json" v-html="_fmtJson(previewData.observatory)"></pre>
+          <pre class="preview-json" v-html="formatJson(previewData.observatory)"></pre>
         </details>
       </div>
       <div class="modal-footer">
