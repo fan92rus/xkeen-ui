@@ -129,7 +129,7 @@ func (w *gzipResponseWriter) flush() {
 	if len(body) >= minGzipSize && compressibleType(contentType) {
 		w.Header().Del("Content-Length")
 		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Add("Vary", "Accept-Encoding")
+		w.Header().Set("Vary", "Accept-Encoding")
 		w.ResponseWriter.WriteHeader(status)
 		gz := gzipWriterPool.Get().(*gzip.Writer)
 		gz.Reset(w.ResponseWriter)
