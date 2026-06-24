@@ -15,40 +15,15 @@ function devEntryPlugin() {
 	};
 }
 
-// In production, Vite extracts CSS to a separate file but the Go binary
-// serves index.html directly (not processed by Vite). The CSS <link> tag
-// never gets added, so scoped styles are lost. This plugin inlines all
-// generated CSS into the JS bundle at build time.
-function cssInlinePlugin() {
-	return {
-		name: 'css-inline',
-		enforce: 'post',
-		generateBundle(_, bundles) {
-			let cssSource = '';
-			// Collect and remove CSS assets
-			for (const [fileName, chunk] of Object.entries(bundles)) {
-				if (fileName.endsWith('.css') && chunk.type === 'asset') {
-					cssSource += chunk.source;
-					delete bundles[fileName];
-				}
-			}
-			// Prepend CSS injection to the entry JS chunk
-			if (cssSource) {
-				for (const [fileName, chunk] of Object.entries(bundles)) {
-					if (fileName.endsWith('.js') && chunk.type === 'chunk' && chunk.isEntry) {
-						const injected =
-							`(function(){var s=document.createElement("style");s.textContent=${JSON.stringify(cssSource)};document.head.appendChild(s)})();\n`;
-						chunk.code = injected + chunk.code;
-						break;
-					}
-				}
-			}
-		},
-	};
-}
+// Production CSS handling: Vite extracts CSS to a separate file
+// (static/dist/bundle.css). Because the Go binary serves index.html directly
+// (not processed by Vite), the <link> tag must be added to index.html by hand.
+// An external CSS file is REQUIRED for a strict Content-Security-Policy
+// (style-src 'self') — the previous approach inlined CSS into the JS bundle
+// and injected a <style> element at runtime, which forced 'unsafe-inline'.
 
 export default defineConfig({
-    plugins: [vue(), ...(isDev ? [devEntryPlugin()] : [cssInlinePlugin()])],
+    plugins: [vue(), ...(isDev ? [devEntryPlugin()] : [])],
     server: isDev ? {
         port: 5173,
         proxy: {
@@ -72,6 +47,7 @@ export default defineConfig({
             output: {
                 format: 'iife',
                 entryFileNames: 'bundle.js',
+                assetFileNames: 'bundle.css',
                 inlineDynamicImports: true,
             },
         },
