@@ -397,6 +397,11 @@ func (s *Server) Stop() error {
 		s.metricsHandler.Close()
 	}
 
+	// Stop service handler (background SSE/trigger goroutines)
+	if s.serviceHandler != nil {
+		s.serviceHandler.Close()
+	}
+
 	// Stop session store cleanup goroutine
 	if s.sessions != nil {
 		s.sessions.Stop()

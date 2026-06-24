@@ -24,12 +24,12 @@ describe('escapeHtml', () => {
 
   it('escapes U+2028 (line separator)', () => {
     const input = 'line\u2028break';
-    expect(escapeHtml(input)).toBe('line\\u2028break');
+    expect(escapeHtml(input)).toBe('line&#8232;break');
   });
 
   it('escapes U+2029 (paragraph separator)', () => {
     const input = 'para\u2029end';
-    expect(escapeHtml(input)).toBe('para\\u2029end');
+    expect(escapeHtml(input)).toBe('para&#8233;end');
   });
 
   it('neutralizes standard XSS vectors', () => {

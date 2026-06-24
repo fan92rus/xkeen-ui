@@ -13,8 +13,8 @@ export function escapeHtml(s) {
       case '>':  return '&gt;';
       case '"':  return '&quot;';
       case "'":  return '&#39;';
-      case '\u2028': return '\\u2028';
-      case '\u2029': return '\\u2029';
+      case '\u2028': return '&#8232;';
+      case '\u2029': return '&#8233;';
       default:   return ch;
     }
   });
