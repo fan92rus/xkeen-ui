@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSnapRates, computeTagRates, computeChartData, totalOutboundRates } from '../src/utils/metrics-rates.js';
+import { computeTagRates, computeChartData, totalOutboundRates } from '../src/utils/metrics-rates.js';
 
 // ── Helpers ──
 
@@ -14,75 +14,6 @@ function snap(ts, outbound, inbound) {
 function tag(dl, ul) {
   return { downlink: dl, uplink: ul };
 }
-
-// ── computeSnapRates ──
-
-describe('computeSnapRates', () => {
-  it('returns {dl:0,ul:0} for null/undefined curDir', () => {
-    const prev = { p1: tag(100, 50) };
-    expect(computeSnapRates(null, prev, 10)).toEqual({ dl: 0, ul: 0 });
-    expect(computeSnapRates(undefined, prev, 10)).toEqual({ dl: 0, ul: 0 });
-  });
-
-  it('returns {dl:0,ul:0} for null/undefined prevDir', () => {
-    const cur = { p1: tag(100, 50) };
-    expect(computeSnapRates(cur, null, 10)).toEqual({ dl: 0, ul: 0 });
-    expect(computeSnapRates(cur, undefined, 10)).toEqual({ dl: 0, ul: 0 });
-  });
-
-  it('returns {dl:0,ul:0} when dt <= 0', () => {
-    const cur = { p1: tag(100, 50) };
-    const prev = { p1: tag(80, 30) };
-    expect(computeSnapRates(cur, prev, 0)).toEqual({ dl: 0, ul: 0 });
-    expect(computeSnapRates(cur, prev, -5)).toEqual({ dl: 0, ul: 0 });
-  });
-
-  it('computes a simple rate from two counters', () => {
-    const cur = { p1: tag(200, 100) };
-    const prev = { p1: tag(100, 50) };
-    const r = computeSnapRates(cur, prev, 10);
-    expect(r.dl).toBeCloseTo(10);   // (200-100)/10
-    expect(r.ul).toBeCloseTo(5);    // (100-50)/10
-  });
-
-  it('clamps negative per-tag rate to 0', () => {
-    const cur = { p1: tag(50, 25) };
-    const prev = { p1: tag(100, 50) };
-    const r = computeSnapRates(cur, prev, 10);
-    expect(r.dl).toBeCloseTo(0);
-    expect(r.ul).toBeCloseTo(0);
-  });
-
-  it('aggregates multiple tags', () => {
-    const cur  = { p1: tag(200, 100), p2: tag(300, 150) };
-    const prev = { p1: tag(100, 50),  p2: tag(150, 75) };
-    const r = computeSnapRates(cur, prev, 10);
-    expect(r.dl).toBeCloseTo(25);  // (200-100)/10 + (300-150)/10
-    expect(r.ul).toBeCloseTo(12.5);
-  });
-
-  it('uses ?? 0 for missing downlink/uplink fields in tag data', () => {
-    const cur  = { p1: { downlink: 200 } };  // missing uplink
-    const prev = { p1: tag(100, 50) };
-    const r = computeSnapRates(cur, prev, 10);
-    expect(r.dl).toBeCloseTo(10);
-    expect(r.ul).toBeCloseTo(0);
-  });
-
-  it('uses ?? 0 when prev lacks a key that cur has', () => {
-    const cur  = { p1: tag(200, 100), p2: tag(50, 25) };
-    const prev = { p1: tag(100, 50) };               // no p2 in prev
-    const r = computeSnapRates(cur, prev, 10);
-    // p1: dl=(200-100)/10=10, ul=(100-50)/10=5
-    // p2: dl=(50-0)/10=5, ul=(25-0)/10=2.5
-    expect(r.dl).toBeCloseTo(15);
-    expect(r.ul).toBeCloseTo(7.5);
-  });
-
-  it('handles empty curDir', () => {
-    expect(computeSnapRates({}, { p1: tag(100, 50) }, 10)).toEqual({ dl: 0, ul: 0 });
-  });
-});
 
 // ── computeTagRates ──
 

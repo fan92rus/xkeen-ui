@@ -8,30 +8,6 @@
  */
 
 /**
- * Compute aggregate { dl, ul } for one direction object pair.
- * Clamps per-tag rate to ≥ 0 (matching tagRates behaviour).
- * Guards dt ≤ 0 and missing prev → returns { dl: 0, ul: 0 }.
- *
- * @param {Object|null|undefined} curDir  current snapshot's direction map
- * @param {Object|null|undefined} prevDir previous snapshot's direction map
- * @param {number} dt elapsed seconds between snapshots
- * @returns {{ dl: number, ul: number }}
- */
-export function computeSnapRates(curDir, prevDir, dt) {
-  let dl = 0, ul = 0;
-  if (!curDir || !prevDir || dt <= 0) return { dl, ul };
-  for (const tag of Object.keys(curDir)) {
-    const cDL = curDir[tag]?.downlink ?? 0;
-    const pDL = prevDir[tag]?.downlink ?? 0;
-    const cUL = curDir[tag]?.uplink ?? 0;
-    const pUL = prevDir[tag]?.uplink ?? 0;
-    dl += Math.max(0, (cDL - pDL) / dt);
-    ul += Math.max(0, (cUL - pUL) / dt);
-  }
-  return { dl, ul };
-}
-
-/**
  * Compute per-tag rates for both directions between two snapshots.
  * Mirrors the tagRates computed property EXACTLY:
  * - iterates 'inbound' and 'outbound' directions
