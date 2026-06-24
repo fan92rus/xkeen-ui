@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,16 +16,44 @@ import (
 
 // === NewInteractiveHandler ===
 
+// testHelpRegistry returns a registry backed by the real `xkeen -help` fixture,
+// so tests see the actual xkeen command set (including -start, -tp, -xb, etc.).
+func testHelpRegistry() *CommandRegistry {
+	data, err := os.ReadFile(filepath.Join("testdata", "xkeen-help.txt"))
+	if err != nil {
+		panic("missing testdata/xkeen-help.txt: " + err.Error())
+	}
+	cmds := parseHelp(string(data))
+	return newCommandRegistryWithLoader(func() (map[string]CommandConfig, error) {
+		return cmds, nil
+	})
+}
+
+// newTestInteractiveHandler creates a handler backed by the real help fixture
+// (so the whitelist is populated with actual xkeen commands) and a permissive
+// origin check. Pass an InteractiveConfig to test origin behaviour.
+func newTestInteractiveHandler(cfg *InteractiveConfig) *InteractiveHandler {
+	h := NewInteractiveHandler(cfg, testHelpRegistry())
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     func(r *http.Request) bool { return true },
+	}
+	return h
+}
+
 func TestNewInteractiveHandler(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 	if handler == nil {
 		t.Fatal("Expected non-nil handler")
 	}
-	if handler.allowedCommands == nil {
-		t.Error("Expected allowedCommands to be initialized")
+	// The whitelist comes from the registry (backed by the real help fixture);
+	// it must be populated with real xkeen commands.
+	if handler.registry == nil {
+		t.Fatal("Expected registry to be set")
 	}
-	if len(handler.allowedCommands) == 0 {
-		t.Error("Expected non-empty allowedCommands")
+	if _, ok := handler.isCommandAllowed("-start"); !ok {
+		t.Error("Expected -start to be allowed (whitelist populated from registry)")
 	}
 	if handler.upgrader.ReadBufferSize != 1024 {
 		t.Errorf("Expected ReadBufferSize 1024, got %d", handler.upgrader.ReadBufferSize)
@@ -37,7 +67,7 @@ func TestNewInteractiveHandler_WithConfig(t *testing.T) {
 	cfg := &InteractiveConfig{
 		AllowedOrigins: []string{"http://trusted.example.com", "http://other.example.com"},
 	}
-	handler := NewInteractiveHandler(cfg)
+	handler := newTestInteractiveHandler(cfg)
 	if handler == nil {
 		t.Fatal("Expected non-nil handler")
 	}
@@ -53,14 +83,14 @@ func TestNewInteractiveHandler_WithConfig(t *testing.T) {
 }
 
 func TestNewInteractiveHandler_NilConfig(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 	if len(handler.allowedOrigins) != 0 {
 		t.Errorf("Expected 0 allowed origins with nil config, got %d", len(handler.allowedOrigins))
 	}
 }
 
 func TestNewInteractiveHandler_EmptyAllowedOrigins(t *testing.T) {
-	handler := NewInteractiveHandler(&InteractiveConfig{AllowedOrigins: []string{}})
+	handler := newTestInteractiveHandler(&InteractiveConfig{AllowedOrigins: []string{}})
 	if len(handler.allowedOrigins) != 0 {
 		t.Errorf("Expected 0 allowed origins with empty config, got %d", len(handler.allowedOrigins))
 	}
@@ -154,7 +184,7 @@ func TestClientMessage_AllFields(t *testing.T) {
 // === checkOrigin tests for InteractiveHandler ===
 
 func TestInteractiveCheckOrigin_EmptyOrigin(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
 	req.Header.Del("Origin")
@@ -165,7 +195,7 @@ func TestInteractiveCheckOrigin_EmptyOrigin(t *testing.T) {
 }
 
 func TestInteractiveCheckOrigin_SameOrigin(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
 	req.Header.Set("Origin", "http://localhost:8089")
@@ -177,7 +207,7 @@ func TestInteractiveCheckOrigin_SameOrigin(t *testing.T) {
 }
 
 func TestInteractiveCheckOrigin_SameOriginHTTPS(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
 	req.Header.Set("Origin", "https://router.lan:8089")
@@ -189,7 +219,7 @@ func TestInteractiveCheckOrigin_SameOriginHTTPS(t *testing.T) {
 }
 
 func TestInteractiveCheckOrigin_RejectedOrigin(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
 	req.Header.Set("Origin", "http://evil.example.com")
@@ -201,7 +231,7 @@ func TestInteractiveCheckOrigin_RejectedOrigin(t *testing.T) {
 }
 
 func TestInteractiveCheckOrigin_AllowedOrigin(t *testing.T) {
-	h := NewInteractiveHandler(&InteractiveConfig{
+	h := newTestInteractiveHandler(&InteractiveConfig{
 		AllowedOrigins: []string{"http://trusted.example.com"},
 	})
 
@@ -215,7 +245,7 @@ func TestInteractiveCheckOrigin_AllowedOrigin(t *testing.T) {
 }
 
 func TestInteractiveCheckOrigin_MalformedOrigin(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
 	req.Header.Set("Origin", "://::bad")
@@ -229,7 +259,7 @@ func TestInteractiveCheckOrigin_MalformedOrigin(t *testing.T) {
 // === isCommandAllowed ===
 
 func TestIsCommandAllowed_AllowedCommand(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	// Test a known default command
 	config, ok := h.isCommandAllowed("-k")
@@ -242,7 +272,7 @@ func TestIsCommandAllowed_AllowedCommand(t *testing.T) {
 }
 
 func TestIsCommandAllowed_MultipleAllowedCommands(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	allowedCmds := []string{"-k", "-g", "-i", "-start", "-stop", "-restart", "-status"}
 	for _, cmd := range allowedCmds {
@@ -254,7 +284,7 @@ func TestIsCommandAllowed_MultipleAllowedCommands(t *testing.T) {
 }
 
 func TestIsCommandAllowed_DisallowedCommand(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	_, ok := h.isCommandAllowed("rm -rf /")
 	if ok {
@@ -263,7 +293,7 @@ func TestIsCommandAllowed_DisallowedCommand(t *testing.T) {
 }
 
 func TestIsCommandAllowed_EmptyCommand(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	_, ok := h.isCommandAllowed("")
 	if ok {
@@ -272,7 +302,7 @@ func TestIsCommandAllowed_EmptyCommand(t *testing.T) {
 }
 
 func TestIsCommandAllowed_CaseSensitive(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	// Commands are case-sensitive: "-K" should not match "-k"
 	_, ok := h.isCommandAllowed("-K")
@@ -282,7 +312,7 @@ func TestIsCommandAllowed_CaseSensitive(t *testing.T) {
 }
 
 func TestIsCommandAllowed_UnknownCommand(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	_, ok := h.isCommandAllowed("unknown-cmd")
 	if ok {
@@ -291,7 +321,7 @@ func TestIsCommandAllowed_UnknownCommand(t *testing.T) {
 }
 
 func TestIsCommandAllowed_ReturnsConfig(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	config, ok := h.isCommandAllowed("-k")
 	if !ok {
@@ -306,7 +336,7 @@ func TestIsCommandAllowed_ReturnsConfig(t *testing.T) {
 }
 
 func TestIsCommandAllowed_DangerousFlag(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	config, ok := h.isCommandAllowed("-remove")
 	if !ok {
@@ -318,7 +348,7 @@ func TestIsCommandAllowed_DangerousFlag(t *testing.T) {
 }
 
 func TestIsCommandAllowed_NonDangerousFlag(t *testing.T) {
-	h := NewInteractiveHandler(nil)
+	h := newTestInteractiveHandler(nil)
 
 	config, ok := h.isCommandAllowed("-status")
 	if !ok {
@@ -331,20 +361,9 @@ func TestIsCommandAllowed_NonDangerousFlag(t *testing.T) {
 
 // === sendError ===
 
-// newTestInteractiveHandler creates a handler with permissive origin check for testing.
-func newTestInteractiveHandler() *InteractiveHandler {
-	h := NewInteractiveHandler(nil)
-	h.upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
-	}
-	return h
-}
-
 func TestSendError_WritesCorrectJSON(t *testing.T) {
 	// Create a test server that upgrades to WebSocket
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := handler.upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -393,7 +412,7 @@ func TestSendError_WritesCorrectJSON(t *testing.T) {
 }
 
 func TestSendError_EmptyMessage(t *testing.T) {
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := handler.upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -426,7 +445,7 @@ func TestSendError_EmptyMessage(t *testing.T) {
 // === RegisterInteractiveWSRoute ===
 
 func TestRegisterInteractiveWSRoute(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	router := mux.NewRouter()
 	RegisterInteractiveWSRoute(router, handler, func(next http.Handler) http.Handler {
@@ -446,7 +465,7 @@ func TestRegisterInteractiveWSRoute(t *testing.T) {
 }
 
 func TestRegisterInteractiveWSRoute_MethodNotAllowed(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	router := mux.NewRouter()
 	RegisterInteractiveWSRoute(router, handler, func(next http.Handler) http.Handler {
@@ -464,7 +483,7 @@ func TestRegisterInteractiveWSRoute_MethodNotAllowed(t *testing.T) {
 }
 
 func TestRegisterInteractiveWSRoute_AuthMiddlewareApplied(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 	authCalled := false
 
 	router := mux.NewRouter()
@@ -487,7 +506,7 @@ func TestRegisterInteractiveWSRoute_AuthMiddlewareApplied(t *testing.T) {
 // === ServeHTTP ===
 
 func TestServeHTTP_RejectsNonWebSocket(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
 	rec := httptest.NewRecorder()
@@ -500,7 +519,7 @@ func TestServeHTTP_RejectsNonWebSocket(t *testing.T) {
 }
 
 func TestServeHTTP_ReceivesStartMessage_WrongType(t *testing.T) {
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -531,7 +550,7 @@ func TestServeHTTP_ReceivesStartMessage_WrongType(t *testing.T) {
 }
 
 func TestServeHTTP_DisallowedCommand(t *testing.T) {
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -562,7 +581,7 @@ func TestServeHTTP_DisallowedCommand(t *testing.T) {
 }
 
 func TestServeHTTP_DisconnectBeforeStart(t *testing.T) {
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -582,7 +601,7 @@ func TestServeHTTP_DisconnectBeforeStart(t *testing.T) {
 // === AllowedCommands contents ===
 
 func TestAllowedCommands_ContainsKeyCommands(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	// Verify that key management commands are present
 	keyCommands := []string{"-k", "-g", "-start", "-stop", "-restart", "-status"}
@@ -595,7 +614,7 @@ func TestAllowedCommands_ContainsKeyCommands(t *testing.T) {
 }
 
 func TestAllowedCommands_ContainsInstallCommands(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	installCmds := []string{"-i", "-io", "-uk", "-ug", "-ux", "-um", "-ugc"}
 	for _, cmd := range installCmds {
@@ -607,9 +626,11 @@ func TestAllowedCommands_ContainsInstallCommands(t *testing.T) {
 }
 
 func TestAllowedCommands_ContainsRemoveCommands(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
-	removeCmds := []string{"-rrk", "-rrx", "-rrm", "-ri", "-remove"}
+	// Removal commands that REAL xkeen advertises in -help (under "Удаление").
+	// Note: -rrk/-rrx/-rrm are NOT in xkeen -help and are intentionally omitted.
+	removeCmds := []string{"-ri", "-remove"}
 	for _, cmd := range removeCmds {
 		_, ok := handler.isCommandAllowed(cmd)
 		if !ok {
@@ -619,7 +640,7 @@ func TestAllowedCommands_ContainsRemoveCommands(t *testing.T) {
 }
 
 func TestAllowedCommands_ContainsPortCommands(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	portCmds := []string{"-ap", "-dp", "-cp", "-ape", "-dpe", "-cpe"}
 	for _, cmd := range portCmds {
@@ -631,9 +652,11 @@ func TestAllowedCommands_ContainsPortCommands(t *testing.T) {
 }
 
 func TestAllowedCommands_ContainsExcludePortCommands(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
-	excludeCmds := []string{"-dgs", "-dgi", "-dx", "-dm", "-dk", "-dgc", "-drk", "-drx", "-drm"}
+	// Removal/exclude commands REAL xkeen advertises. -drk/-drx/-drm are NOT in
+	// xkeen -help (phantom flags from the old hardcoded list) and are omitted.
+	excludeCmds := []string{"-dgs", "-dgi", "-dx", "-dm", "-dk", "-dgc"}
 	for _, cmd := range excludeCmds {
 		_, ok := handler.isCommandAllowed(cmd)
 		if !ok {
@@ -643,7 +666,7 @@ func TestAllowedCommands_ContainsExcludePortCommands(t *testing.T) {
 }
 
 func TestAllowedCommands_DoesNotContainRandomCommands(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	randomCmds := []string{"ls", "cat", "rm", "bash", "sh", "python", "curl", "wget", "chmod"}
 	for _, cmd := range randomCmds {
@@ -658,7 +681,7 @@ func TestAllowedCommands_DoesNotContainRandomCommands(t *testing.T) {
 
 func TestInteractiveConfig_NilDoesNotPanic(t *testing.T) {
 	// Should not panic with nil config
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 	if handler == nil {
 		t.Error("Expected handler to be created with nil config")
 	}
@@ -672,7 +695,7 @@ func TestInteractiveConfig_MultipleAllowedOrigins(t *testing.T) {
 			"http://localhost:8089",
 		},
 	}
-	handler := NewInteractiveHandler(cfg)
+	handler := newTestInteractiveHandler(cfg)
 
 	for _, origin := range cfg.AllowedOrigins {
 		req := httptest.NewRequest("GET", "/", nil)
@@ -688,7 +711,7 @@ func TestInteractiveConfig_MultipleAllowedOrigins(t *testing.T) {
 // === Upgrader configuration ===
 
 func TestInteractiveHandler_UpgraderConfig(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	if handler.upgrader.ReadBufferSize != 1024 {
 		t.Errorf("Expected ReadBufferSize 1024, got %d", handler.upgrader.ReadBufferSize)
@@ -701,7 +724,7 @@ func TestInteractiveHandler_UpgraderConfig(t *testing.T) {
 // === Concurrent isCommandAllowed ===
 
 func TestIsCommandAllowed_Concurrent(t *testing.T) {
-	handler := NewInteractiveHandler(nil)
+	handler := newTestInteractiveHandler(nil)
 
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
@@ -727,7 +750,7 @@ func TestExecuteInteractive_HandlerReturnsWithinTimeout(t *testing.T) {
 	// Regression test for goroutine leak: after command completion (possibly with error),
 	// the handler should return within a reasonable timeout. The goroutines are tracked
 	// via WaitGroup and cancelled via context after cmd.Wait().
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -773,7 +796,7 @@ func TestExecuteInteractive_SignalMidCommand(t *testing.T) {
 	// Test signal handling doesn't cause hang.
 	// On non-Linux (no PTY), the handler returns immediately with error+complete.
 	// We just verify the handler terminates cleanly either way.
-	handler := newTestInteractiveHandler()
+	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -822,11 +845,21 @@ func TestExecuteInteractive_EmptyCommandParts(t *testing.T) {
 	// NOT fire; execution proceeds to the PTY path (which may fail on non-Linux).
 	// The guard exists purely as defensive/audit protection.
 
-	handler := newTestInteractiveHandler()
-	handler.allowedCommands["empty-cmd"] = CommandConfig{
-		Cmd:         "",
-		Description: "test command with empty Cmd",
-		Timeout:     time.Second,
+	// Build a handler whose registry contains an "empty-cmd" entry with Cmd="".
+	reg := newCommandRegistryWithLoader(func() (map[string]CommandConfig, error) {
+		return map[string]CommandConfig{
+			"empty-cmd": {
+				Cmd:         "",
+				Description: "test command with empty Cmd",
+				Timeout:     time.Second,
+			},
+		}, nil
+	})
+	handler := NewInteractiveHandler(nil, reg)
+	handler.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     func(r *http.Request) bool { return true },
 	}
 
 	server := httptest.NewServer(handler)

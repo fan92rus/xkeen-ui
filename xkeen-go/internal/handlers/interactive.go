@@ -37,8 +37,7 @@ type ServerMessage struct {
 
 // InteractiveHandler handles interactive command execution via WebSocket.
 type InteractiveHandler struct {
-	mu              sync.RWMutex
-	allowedCommands map[string]CommandConfig // imported from commands.go
+	registry        *CommandRegistry // shared with CommandsHandler
 	allowedOrigins  map[string]bool
 	upgrader        websocket.Upgrader
 }
@@ -49,7 +48,10 @@ type InteractiveConfig struct {
 }
 
 // NewInteractiveHandler creates a new InteractiveHandler.
-func NewInteractiveHandler(cfg *InteractiveConfig) *InteractiveHandler {
+// The command whitelist is sourced from the shared *CommandRegistry (runtime
+// `xkeen -help`), so the same registry instance should be shared with
+// CommandsHandler.
+func NewInteractiveHandler(cfg *InteractiveConfig, registry *CommandRegistry) *InteractiveHandler {
 	// Build allowed origins map
 	allowedOrigins := make(map[string]bool)
 	if cfg != nil {
@@ -59,8 +61,8 @@ func NewInteractiveHandler(cfg *InteractiveConfig) *InteractiveHandler {
 	}
 
 	h := &InteractiveHandler{
-		allowedCommands: defaultCommands,
-		allowedOrigins:  allowedOrigins,
+		registry:       registry,
+		allowedOrigins: allowedOrigins,
 	}
 
 	// Create upgrader with origin check
@@ -93,10 +95,7 @@ func (h *InteractiveHandler) checkOrigin(r *http.Request) bool {
 
 // isCommandAllowed checks if a command is in the whitelist.
 func (h *InteractiveHandler) isCommandAllowed(cmd string) (CommandConfig, bool) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	config, exists := h.allowedCommands[cmd]
-	return config, exists
+	return h.registry.Get(cmd)
 }
 
 // ServeHTTP handles WebSocket connections for interactive command execution.

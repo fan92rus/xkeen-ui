@@ -46,6 +46,7 @@ type Server struct {
 	interactiveHandler  *handlers.InteractiveHandler
 	subscriptionHandler *handlers.SubscriptionHandler
 	metricsHandler      *handlers.MetricsHandler
+	commandRegistry     *handlers.CommandRegistry
 
 	// Shutdown state
 	shutdown    bool
@@ -141,11 +142,12 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 			"/opt/var/log/xray/error.log",
 		},
 	})
-	s.commandsHandler = handlers.NewCommandsHandler()
+	s.commandRegistry = handlers.NewCommandRegistry(handlers.DefaultXKeenPath)
+	s.commandsHandler = handlers.NewCommandsHandler(s.commandRegistry)
 	s.updateHandler = handlers.NewUpdateHandler()
 	s.interactiveHandler = handlers.NewInteractiveHandler(&handlers.InteractiveConfig{
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
-	})
+	}, s.commandRegistry)
 
 	// Subscription handler
 	subStorePath := filepath.Join(filepath.Dir(configPath), "subscriptions.json")
