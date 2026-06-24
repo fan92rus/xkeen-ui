@@ -2,6 +2,8 @@ module github.com/fan92rus/xkeen-ui
 
 go 1.25.0
 
+toolchain go1.26.4
+
 require (
 	github.com/creack/pty v1.1.21
 	github.com/gorilla/mux v1.8.1
