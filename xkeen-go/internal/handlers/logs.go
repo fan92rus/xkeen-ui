@@ -116,8 +116,9 @@ func NewLogsHandler(cfg LogsConfig) *LogsHandler {
 // Close gracefully stops all goroutines.
 func (h *LogsHandler) Close() {
 	h.cancel()
-	close(h.broadcast) // close channel first so runBroadcast can exit
 	h.wg.Wait()
+	// Note: h.broadcast is NOT closed — goroutines exit via ctx cancellation.
+	// The GC reclaims the channel once unreferenced.
 }
 
 // checkOrigin validates the origin of WebSocket connections.
@@ -144,27 +145,51 @@ func (h *LogsHandler) checkOrigin(r *http.Request) bool {
 func (h *LogsHandler) runBroadcast() {
 	defer h.wg.Done()
 
-	for msg := range h.broadcast {
-		h.clientsMu.RLock()
-		// Collect dead clients to remove
-		var deadClients []*websocket.Conn
-		for client := range h.clients {
-			err := client.WriteJSON(msg)
-			if err != nil {
-				deadClients = append(deadClients, client)
+	for {
+		select {
+		case <-h.ctx.Done():
+			// Server shutting down — drain remaining messages best-effort
+			for {
+				select {
+				case msg, ok := <-h.broadcast:
+					if !ok {
+						return
+					}
+					h.sendToClients(msg)
+				default:
+					return
+				}
 			}
+		case msg, ok := <-h.broadcast:
+			if !ok {
+				return
+			}
+			h.sendToClients(msg)
 		}
-		h.clientsMu.RUnlock()
+	}
+}
 
-		// Remove dead clients
-		if len(deadClients) > 0 {
-			h.clientsMu.Lock()
-			for _, client := range deadClients {
-				client.Close()
-				delete(h.clients, client)
-			}
-			h.clientsMu.Unlock()
+// sendToClients sends a message to all connected WebSocket clients.
+// Sets a write deadline to prevent head-of-line blocking on slow clients.
+func (h *LogsHandler) sendToClients(msg LogMessage) {
+	h.clientsMu.RLock()
+	var deadClients []*websocket.Conn
+	for client := range h.clients {
+		client.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		err := client.WriteJSON(msg)
+		if err != nil {
+			deadClients = append(deadClients, client)
 		}
+	}
+	h.clientsMu.RUnlock()
+
+	if len(deadClients) > 0 {
+		h.clientsMu.Lock()
+		for _, client := range deadClients {
+			client.Close()
+			delete(h.clients, client)
+		}
+		h.clientsMu.Unlock()
 	}
 }
 

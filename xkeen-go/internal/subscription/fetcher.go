@@ -21,39 +21,18 @@ type Fetcher struct {
 // may be intercepted by xray).
 func NewFetcher() *Fetcher {
 	dialer := &net.Dialer{
-		Timeout:   10 * time.Second,
+		Timeout: 10 * time.Second,
 		Resolver: &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				// Try system DNS first, then fallback to public DNS servers.
-				dnsServers := []string{
-					address,          // system default (usually 127.0.0.1:53 on Keenetic)
-					"8.8.8.8:53",    // Google DNS
-					"1.1.1.1:53",    // Cloudflare DNS
-					"8.8.4.4:53",    // Google DNS secondary
-				}
-
-				var lastErr error
-				for _, server := range dnsServers {
-					d := net.Dialer{Timeout: 5 * time.Second}
-					conn, err := d.DialContext(ctx, "udp", server)
-					if err != nil {
-						lastErr = err
-						continue
-					}
-					return conn, nil
-				}
-				if lastErr != nil {
-					return nil, fmt.Errorf("all DNS servers failed: %w", lastErr)
-				}
-				return nil, fmt.Errorf("no DNS servers available")
+				return dialDNSServers(ctx, address)
 			},
 		},
 	}
 
 	transport := &http.Transport{
 		DialContext:           dialer.DialContext,
-		TLSHandshakeTimeout:  10 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}
@@ -107,4 +86,35 @@ func (f *Fetcher) Fetch(ctx context.Context, url string) ([]*ProxyEntry, error) 
 	}
 
 	return entries, nil
+}
+
+// dialDNSServers tries multiple DNS servers with per-server timeouts.
+// Each attempt gets a fresh context to prevent one timeout from exhausting
+// the parent context and short-circuiting remaining servers.
+func dialDNSServers(ctx context.Context, defaultAddr string) (net.Conn, error) {
+	dnsServers := []string{
+		defaultAddr,  // system default (usually 127.0.0.1:53 on Keenetic)
+		"8.8.8.8:53", // Google DNS
+		"1.1.1.1:53", // Cloudflare DNS
+		"8.8.4.4:53", // Google DNS secondary
+	}
+
+	var lastErr error
+	for _, server := range dnsServers {
+		// Fresh child context per attempt: if one server times out, the
+		// parent context remains valid for the next server.
+		dialCtx, dialCancel := context.WithTimeout(ctx, 5*time.Second)
+		d := net.Dialer{}
+		conn, err := d.DialContext(dialCtx, "udp", server)
+		dialCancel()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return conn, nil
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("all DNS servers failed: %w", lastErr)
+	}
+	return nil, fmt.Errorf("no DNS servers available")
 }

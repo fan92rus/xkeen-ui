@@ -230,6 +230,54 @@ func TestLogin_CorrectPassword(t *testing.T) {
 	}
 }
 
+func TestLogin_CookieSecureFlag(t *testing.T) {
+	// Test that SetSessionCookie respects the CookieSecure config option
+	s, _ := testServer(t)
+
+	// With CookieSecure=false (default) — no Secure flag
+	s.cfg.CookieSecure = false
+	rec := httptest.NewRecorder()
+	s.SetSessionCookie(rec, "test-token")
+	cookies := rec.Result().Cookies()
+	if len(cookies) < 1 {
+		t.Fatal("expected at least one cookie")
+	}
+	for _, c := range cookies {
+		if c.Secure {
+			t.Errorf("cookie %q should not have Secure flag when CookieSecure=false", c.Name)
+		}
+	}
+
+	// With CookieSecure=true — Secure flag should be set
+	rec2 := httptest.NewRecorder()
+	s.cfg.CookieSecure = true
+	s.SetSessionCookie(rec2, "test-token")
+	cookies2 := rec2.Result().Cookies()
+	hasSecure := false
+	for _, c := range cookies2 {
+		if c.Secure {
+			hasSecure = true
+		}
+	}
+	if !hasSecure {
+		t.Error("expected cookie with Secure flag when CookieSecure=true")
+	}
+
+	// CSRF cookie should also respect the flag
+	rec3 := httptest.NewRecorder()
+	s.SetCSRFTokenCookie(rec3, "csrf-test")
+	cookies3 := rec3.Result().Cookies()
+	hasSecure = false
+	for _, c := range cookies3 {
+		if c.Secure {
+			hasSecure = true
+		}
+	}
+	if !hasSecure {
+		t.Error("expected CSRF cookie with Secure flag when CookieSecure=true")
+	}
+}
+
 func TestLogin_WrongPassword(t *testing.T) {
 	s, _ := testServer(t)
 	rec := doReq(t, s.router, "POST", "/api/auth/login", loginJSON("wrongpassword"))

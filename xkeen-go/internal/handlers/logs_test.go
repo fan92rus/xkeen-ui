@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -30,13 +32,13 @@ func newTestLogsHandler(t *testing.T) (*LogsHandler, string) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	h := &LogsHandler{
-		validator:  validator,
-		logFiles:   []string{},
-		clients:    make(map[*websocket.Conn]bool),
-		broadcast:  make(chan LogMessage, 100),
-		ctx:        ctx,
-		cancel:     cancel,
-		upgrader:   websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		validator: validator,
+		logFiles:  []string{},
+		clients:   make(map[*websocket.Conn]bool),
+		broadcast: make(chan LogMessage, 100),
+		ctx:       ctx,
+		cancel:    cancel,
+		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 
 	// Start only the broadcast goroutine (no tailFile goroutines)
@@ -699,5 +701,114 @@ func TestLogMessage_JSONSerialization(t *testing.T) {
 	}
 	if decoded.File != msg.File {
 		t.Errorf("file mismatch: got %q", decoded.File)
+	}
+}
+
+// TestLogsHandler_CloseWithActiveSenders stresses that Close() does not panic
+// when tailFile goroutines are actively sending to the broadcast channel.
+func TestLogsHandler_CloseWithActiveSenders(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		tmpDir := t.TempDir()
+		logFile := filepath.Join(tmpDir, "access.log")
+		if err := os.WriteFile(logFile, []byte("line 1\nline 2\nline 3\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		h := &LogsHandler{
+			logFiles:  []string{logFile},
+			clients:   make(map[*websocket.Conn]bool),
+			broadcast: make(chan LogMessage, 100),
+			ctx:       ctx,
+			cancel:    cancel,
+			upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		}
+		h.wg.Add(1)
+		go h.runBroadcast()
+		h.wg.Add(1)
+		go h.tailFile(logFile)
+
+		// Aggressively append to the file to trigger broadcast sends during Close
+		writeDone := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					close(writeDone)
+					return
+				case <-ticker.C:
+					go func() {
+						f, err := os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0644)
+						if err == nil {
+							f.WriteString("x\n")
+							f.Close()
+						}
+					}()
+				}
+			}
+		}()
+
+		time.Sleep(10 * time.Millisecond)
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("iteration %d panicked: %v", i, r)
+				}
+			}()
+			h.Close()
+		}()
+		<-writeDone
+	}
+}
+
+// TestLogsHandler_SendToClients_DeadClientRemoved verifies that sendToClients
+// detects a write error (e.g. disconnected client) and removes the client
+// from the map, preventing accumulation of dead connections.
+func TestLogsHandler_SendToClients_DeadClientRemoved(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	h := &LogsHandler{
+		clients:   make(map[*websocket.Conn]bool),
+		broadcast: make(chan LogMessage, 100),
+		ctx:       ctx,
+		cancel:    cancel,
+		upgrader: websocket.Upgrader{
+			CheckOrigin:     func(r *http.Request) bool { return true },
+			WriteBufferSize: 1, // minimize buffer — every write flushes to TCP
+		},
+	}
+	defer h.Close()
+
+	router := mux.NewRouter()
+	router.HandleFunc("/ws/logs", h.WebSocket).Methods("GET")
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	u := url.URL{Scheme: "ws", Host: server.Listener.Addr().String(), Path: "/ws/logs"}
+	clientConn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Skipf("WS dial failed: %v", err)
+	}
+	defer clientConn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Close the client connection to simulate a dead/disconnected client
+	clientConn.Close()
+	time.Sleep(10 * time.Millisecond)
+
+	// sendToClients should detect write failure and remove the dead client
+	h.sendToClients(LogMessage{Message: "test", Level: "info"})
+
+	h.clientsMu.RLock()
+	count := len(h.clients)
+	h.clientsMu.RUnlock()
+
+	if count != 0 {
+		t.Errorf("expected dead client to be removed, got %d remaining", count)
 	}
 }

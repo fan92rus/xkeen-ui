@@ -43,14 +43,14 @@ type SecurityService interface {
 
 // RateLimiter tracks failed login attempts.
 type RateLimiter struct {
-	mu           sync.RWMutex
-	attempts     map[string]*attemptInfo
-	maxAttempts  int
-	lockoutTime  time.Duration
-	cleanupTime  time.Duration
-	stopCh       chan struct{} // Channel for graceful shutdown
-	stopped      bool          // Flag to prevent double stop
-	wg           sync.WaitGroup // WaitGroup for goroutine completion
+	mu          sync.RWMutex
+	attempts    map[string]*attemptInfo
+	maxAttempts int
+	lockoutTime time.Duration
+	cleanupTime time.Duration
+	stopCh      chan struct{}  // Channel for graceful shutdown
+	stopped     bool           // Flag to prevent double stop
+	wg          sync.WaitGroup // WaitGroup for goroutine completion
 }
 
 type attemptInfo struct {
@@ -192,9 +192,10 @@ func (rl *RateLimiter) cleanup() {
 
 // Middleware holds dependencies for middleware functions.
 type Middleware struct {
-	sessions  SessionManager
-	security  SecurityService
-	rateLimit *RateLimiter
+	sessions          SessionManager
+	security          SecurityService
+	rateLimit         *RateLimiter
+	trustProxyHeaders bool
 }
 
 // NewMiddleware creates a new Middleware instance.
@@ -204,6 +205,12 @@ func NewMiddleware(sessions SessionManager, security SecurityService) *Middlewar
 		security:  security,
 		rateLimit: NewRateLimiter(5, 5*time.Minute), // 5 attempts, 5 min lockout
 	}
+}
+
+// SetTrustProxyHeaders configures whether to trust X-Forwarded-For/X-Real-IP headers.
+// When false (default), only RemoteAddr is used for client IP detection.
+func (m *Middleware) SetTrustProxyHeaders(trust bool) {
+	m.trustProxyHeaders = trust
 }
 
 // Stop gracefully stops all background goroutines in the middleware.
@@ -295,7 +302,7 @@ func (m *Middleware) CSRFMiddleware(next http.Handler) http.Handler {
 // RateLimitMiddleware applies rate limiting to endpoints.
 func (m *Middleware) RateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := getRealIP(r)
+		ip := m.getRealIP(r)
 
 		// Check if locked
 		if m.rateLimit.IsLocked(ip) {
@@ -345,7 +352,7 @@ func (m *Middleware) LoggingMiddleware(next http.Handler) http.Handler {
 			r.URL.Path,
 			wrapped.statusCode,
 			duration,
-			getRealIP(r),
+			m.getRealIP(r),
 		)
 
 		// Use standard log for now (can be replaced with structured logging)
@@ -454,19 +461,23 @@ func (rw *responseWriter) Flush() {
 }
 
 // getRealIP extracts the real client IP from request.
-func getRealIP(r *http.Request) string {
-	// Check X-Forwarded-For header (reverse proxy)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the chain
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+// When trustProxyHeaders is true, it checks X-Forwarded-For and X-Real-IP headers.
+// Otherwise, it only uses RemoteAddr to prevent IP spoofing.
+func (m *Middleware) getRealIP(r *http.Request) string {
+	if m.trustProxyHeaders {
+		// Check X-Forwarded-For header (reverse proxy)
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// Take the first IP in the chain
+			if idx := strings.Index(xff, ","); idx != -1 {
+				return strings.TrimSpace(xff[:idx])
+			}
+			return strings.TrimSpace(xff)
 		}
-		return strings.TrimSpace(xff)
-	}
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
+		// Check X-Real-IP header
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
 
 	// Fall back to RemoteAddr
@@ -531,8 +542,8 @@ func (m *Middleware) respondTooManyRequests(w http.ResponseWriter, retryAfter ti
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusTooManyRequests)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":      false,
-		"error":   "Too many failed attempts. Please try again later.",
+		"ok":          false,
+		"error":       "Too many failed attempts. Please try again later.",
 		"retry_after": int(retryAfter.Seconds()),
 	})
 }

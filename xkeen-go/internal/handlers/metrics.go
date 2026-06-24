@@ -28,17 +28,17 @@ const (
 
 // MetricsSnapshot represents a single point-in-time metrics reading.
 type MetricsSnapshot struct {
-	Timestamp  int64                  `json:"ts"`       // Unix seconds
-	Inbound    interface{}            `json:"inbound"`  // map[string]map[string]interface{} or {}
-	Outbound   interface{}            `json:"outbound"` // map[string]map[string]interface{} or {}
-	Observable interface{}            `json:"observatory,omitempty"`
-	Available  bool                   `json:"available"`
-	Debug      string                 `json:"debug,omitempty"`
+	Timestamp  int64       `json:"ts"`       // Unix seconds
+	Inbound    interface{} `json:"inbound"`  // map[string]map[string]interface{} or {}
+	Outbound   interface{} `json:"outbound"` // map[string]map[string]interface{} or {}
+	Observable interface{} `json:"observatory,omitempty"`
+	Available  bool        `json:"available"`
+	Debug      string      `json:"debug,omitempty"`
 }
 
 // WSMessage is a message sent over the metrics WebSocket.
 type WSMessage struct {
-	Type    string          `json:"type"`    // "history", "snapshot", "error", "ping"
+	Type    string            `json:"type"` // "history", "snapshot", "error", "ping"
 	History []MetricsSnapshot `json:"history,omitempty"`
 	Snap    *MetricsSnapshot  `json:"snap,omitempty"`
 	Error   string            `json:"error,omitempty"`
@@ -59,9 +59,9 @@ type MetricsHandler struct {
 	cacheTTL time.Duration
 
 	// History ring buffer (sparse, every 20s, ~20 min)
-	histMu   sync.RWMutex
-	history  []MetricsSnapshot
-	histIdx  int // next write position (ring buffer)
+	histMu  sync.RWMutex
+	history []MetricsSnapshot
+	histIdx int // next write position (ring buffer)
 
 	// WebSocket clients
 	clients   map[*websocket.Conn]bool
@@ -151,8 +151,9 @@ func (h *MetricsHandler) Close() {
 	if h.cancel != nil {
 		h.cancel()
 	}
-	close(h.broadcast)
 	h.wg.Wait()
+	// Note: h.broadcast is NOT closed — goroutines exit via doneCh.
+	// The GC reclaims the channel once unreferenced.
 }
 
 // startWorkers launches the background polling goroutines.
@@ -362,24 +363,50 @@ func (h *MetricsHandler) checkOrigin(r *http.Request) bool {
 func (h *MetricsHandler) runBroadcast() {
 	defer h.wg.Done()
 
-	for msg := range h.broadcast {
-		h.clientsMu.RLock()
-		var dead []*websocket.Conn
-		for client := range h.clients {
-			if err := client.WriteJSON(msg); err != nil {
-				dead = append(dead, client)
+	for {
+		select {
+		case <-h.doneCh:
+			// Server shutting down — drain remaining messages best-effort
+			for {
+				select {
+				case msg, ok := <-h.broadcast:
+					if !ok {
+						return
+					}
+					h.sendToClients(msg)
+				default:
+					return
+				}
 			}
+		case msg, ok := <-h.broadcast:
+			if !ok {
+				return
+			}
+			h.sendToClients(msg)
 		}
-		h.clientsMu.RUnlock()
+	}
+}
 
-		if len(dead) > 0 {
-			h.clientsMu.Lock()
-			for _, c := range dead {
-				c.Close()
-				delete(h.clients, c)
-			}
-			h.clientsMu.Unlock()
+// sendToClients sends a message to all connected WebSocket clients.
+// Sets a write deadline to prevent head-of-line blocking on slow clients.
+func (h *MetricsHandler) sendToClients(msg WSMessage) {
+	h.clientsMu.RLock()
+	var dead []*websocket.Conn
+	for client := range h.clients {
+		client.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		if err := client.WriteJSON(msg); err != nil {
+			dead = append(dead, client)
 		}
+	}
+	h.clientsMu.RUnlock()
+
+	if len(dead) > 0 {
+		h.clientsMu.Lock()
+		for _, c := range dead {
+			c.Close()
+			delete(h.clients, c)
+		}
+		h.clientsMu.Unlock()
 	}
 }
 

@@ -107,6 +107,23 @@ func TestFetcher_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestDialDNSServers_PerAttemptTimeout(t *testing.T) {
+	// Verify dialDNSServers handles an expired parent context without panicking
+	// and returns an error. Each attempt creates a fresh child context with
+	// WithTimeout, inheriting the parent's deadline if already past.
+	ctx, cancel := context.WithTimeout(context.Background(), -time.Second)
+	defer cancel()
+
+	conn, err := dialDNSServers(ctx, "127.0.0.1:53")
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Fatal("expected error with expired parent context")
+	}
+	t.Logf("dialDNSServers returned: %v", err)
+}
+
 func TestFetcher_InvalidSubscriptionContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("this is not a valid subscription"))

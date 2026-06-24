@@ -12,7 +12,7 @@ import (
 
 // mockSessionManager implements SessionManager for testing.
 type mockSessionManager struct {
-	sessions  map[string]string // sessionToken -> csrfToken
+	sessions   map[string]string // sessionToken -> csrfToken
 	validCalls int
 }
 
@@ -608,43 +608,87 @@ func TestCORSMiddleware_BlocksDisallowedOrigin(t *testing.T) {
 // --- getRealIP Tests ---
 
 func TestGetRealIP_XForwardedFor(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	mw.SetTrustProxyHeaders(true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 
-	ip := getRealIP(req)
+	ip := mw.getRealIP(req)
 	if ip != "1.2.3.4" {
 		t.Errorf("Expected first IP from X-Forwarded-For, got %q", ip)
 	}
 }
 
 func TestGetRealIP_XRealIP(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	mw.SetTrustProxyHeaders(true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Real-IP", "9.8.7.6")
 
-	ip := getRealIP(req)
+	ip := mw.getRealIP(req)
 	if ip != "9.8.7.6" {
 		t.Errorf("Expected X-Real-IP, got %q", ip)
 	}
 }
 
 func TestGetRealIP_RemoteAddr(t *testing.T) {
+	mw, _ := newTestMiddleware()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "10.0.0.1:54321"
 
-	ip := getRealIP(req)
+	ip := mw.getRealIP(req)
 	if ip != "10.0.0.1" {
 		t.Errorf("Expected IP from RemoteAddr, got %q", ip)
 	}
 }
 
 func TestGetRealIP_PrefersForwardedOverRemote(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	mw.SetTrustProxyHeaders(true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.1.1.1")
 	req.RemoteAddr = "10.0.0.1:54321"
 
-	ip := getRealIP(req)
+	ip := mw.getRealIP(req)
 	if ip != "1.1.1.1" {
-		t.Errorf("Should prefer X-Forwarded-For over RemoteAddr, got %q", ip)
+		t.Errorf("Should prefer X-Forwarded-For over RemoteAddr when trusted, got %q", ip)
+	}
+}
+
+func TestGetRealIP_IgnoresXFFWhenNotTrusted(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	// trustProxyHeaders defaults to false
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Forwarded-For", "1.1.1.1")
+	req.RemoteAddr = "192.168.1.1:1234"
+
+	ip := mw.getRealIP(req)
+	if ip != "192.168.1.1" {
+		t.Errorf("Should use RemoteAddr when trustProxyHeaders=false, got %q", ip)
+	}
+}
+
+func TestGetRealIP_IgnoresXRealIPWhenNotTrusted(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	// trustProxyHeaders defaults to false
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Real-IP", "10.0.0.1")
+	req.RemoteAddr = "192.168.1.100:8080"
+
+	ip := mw.getRealIP(req)
+	if ip != "192.168.1.100" {
+		t.Errorf("Should use RemoteAddr when trustProxyHeaders=false, got %q", ip)
+	}
+}
+
+func TestGetRealIP_IPv6RemoteAddr(t *testing.T) {
+	mw, _ := newTestMiddleware()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "[::1]:54321"
+
+	ip := mw.getRealIP(req)
+	if ip != "::1" {
+		t.Errorf("Expected IPv6 from RemoteAddr, got %q", ip)
 	}
 }
 
@@ -896,4 +940,3 @@ func TestRateLimiter_Cleanup_KeepsActive(t *testing.T) {
 
 	rl.Stop()
 }
-

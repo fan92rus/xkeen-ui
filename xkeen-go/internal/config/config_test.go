@@ -4,20 +4,21 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 // validConfig returns a Config that passes Validate().
 func validConfig() *Config {
 	return &Config{
-		Port:           8089,
-		Mode:           "xray",
-		XrayConfigDir:  "/opt/etc/xray/configs",
-		XkeenBinary:    "xkeen",
+		Port:            8089,
+		Mode:            "xray",
+		XrayConfigDir:   "/opt/etc/xray/configs",
+		XkeenBinary:     "xkeen",
 		MihomoConfigDir: "/opt/etc/mihomo",
 		MihomoBinary:    "mihomo",
-		AllowedRoots:   []string{"/opt/etc/xray", "/opt/etc/xkeen"},
-		LogLevel:       "info",
+		AllowedRoots:    []string{"/opt/etc/xray", "/opt/etc/xkeen"},
+		LogLevel:        "info",
 		Auth: AuthConfig{
 			SessionTimeout:   24,
 			MaxLoginAttempts: 5,
@@ -414,6 +415,17 @@ func TestSaveConfig_WritesValidConfig(t *testing.T) {
 	}
 	if loaded.Mode != cfg.Mode {
 		t.Errorf("loaded Mode = %q, want %q", loaded.Mode, cfg.Mode)
+	}
+
+	// Verify file permissions are 0600 (owner read/write only) on Unix systems.
+	// On Windows, the permission bits may not be enforced the same way.
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("failed to stat saved file: %v", err)
+	}
+	perms := fi.Mode().Perm()
+	if runtime.GOOS != "windows" && perms != 0600 {
+		t.Errorf("saved config has permissions %o, want 0600", perms)
 	}
 }
 

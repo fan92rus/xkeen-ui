@@ -37,19 +37,19 @@ type Server struct {
 	webFS      fs.FS
 
 	// Real handlers
-	configHandler      *handlers.ConfigHandler
-	serviceHandler     *handlers.ServiceHandler
-	logsHandler        *handlers.LogsHandler
-	settingsHandler    *handlers.SettingsHandler
-	commandsHandler    *handlers.CommandsHandler
-	updateHandler        *handlers.UpdateHandler
-	interactiveHandler   *handlers.InteractiveHandler
-	subscriptionHandler  *handlers.SubscriptionHandler
-	metricsHandler       *handlers.MetricsHandler
+	configHandler       *handlers.ConfigHandler
+	serviceHandler      *handlers.ServiceHandler
+	logsHandler         *handlers.LogsHandler
+	settingsHandler     *handlers.SettingsHandler
+	commandsHandler     *handlers.CommandsHandler
+	updateHandler       *handlers.UpdateHandler
+	interactiveHandler  *handlers.InteractiveHandler
+	subscriptionHandler *handlers.SubscriptionHandler
+	metricsHandler      *handlers.MetricsHandler
 
 	// Shutdown state
-	shutdown   bool
-	mu         sync.RWMutex
+	shutdown    bool
+	mu          sync.RWMutex
 	defaultHash string // cached bcrypt hash for default password
 }
 
@@ -59,8 +59,8 @@ type sessionStore struct {
 	sessions       map[string]*session
 	sessionTimeout time.Duration
 	cleanupTime    time.Duration
-	stopCh         chan struct{} // Channel for graceful shutdown
-	stopped        bool          // Flag to prevent double stop
+	stopCh         chan struct{}  // Channel for graceful shutdown
+	stopped        bool           // Flag to prevent double stop
 	wg             sync.WaitGroup // WaitGroup for goroutine completion
 }
 
@@ -85,6 +85,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 
 	// Initialize middleware
 	middleware := NewMiddleware(sessions, security)
+	middleware.SetTrustProxyHeaders(cfg.TrustProxyHeaders)
 
 	// Create router
 	router := mux.NewRouter()
@@ -578,8 +579,7 @@ func generateSecureToken(length int) (string, error) {
 }
 
 // SetSessionCookie sets the session cookie with secure attributes.
-// TODO: Make Secure flag configurable via config (e.g., cookie_secure bool).
-// Currently false because Keenetic routers serve over HTTP on LAN.
+// The Secure flag is controlled by cfg.CookieSecure (enabled when served over HTTPS).
 func (s *Server) SetSessionCookie(w http.ResponseWriter, token string) {
 	maxAge := s.cfg.Auth.SessionTimeout * 3600 // Convert hours to seconds
 	http.SetCookie(w, &http.Cookie{
@@ -587,7 +587,7 @@ func (s *Server) SetSessionCookie(w http.ResponseWriter, token string) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Set to true if using HTTPS
+		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 	})
@@ -601,7 +601,7 @@ func (s *Server) SetCSRFTokenCookie(w http.ResponseWriter, token string) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: false, // Allow JavaScript to read this cookie
-		Secure:   false, // Set to true if using HTTPS
+		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 	})

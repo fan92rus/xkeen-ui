@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 )
 
 // mockXrayMetricsServer creates a test server that mimics Xray's /debug/vars endpoint.
@@ -532,5 +537,76 @@ func TestNewMetricsHandlerWithOrigins(t *testing.T) {
 
 	if !handler.allowedOrigins["http://localhost:3000"] {
 		t.Error("expected allowed origin to be set")
+	}
+}
+
+// TestMetricsHandler_CloseWithActiveSenders stresses that Close() does not panic
+// when background workers are actively sending to the broadcast channel.
+func TestMetricsHandler_CloseWithActiveSenders(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		server := mockXrayMetricsServer(xrayFullResponse)
+
+		handler := NewMetricsHandlerWithOrigins(server.URL, 1*time.Second, nil)
+
+		// Let workers start producing messages
+		time.Sleep(10 * time.Millisecond)
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("iteration %d panicked: %v", i, r)
+				}
+			}()
+			handler.Close()
+		}()
+		server.Close()
+	}
+}
+
+// TestMetricsHandler_SendToClients_SlowClientRemoved verifies that a slow WebSocket
+// client (not reading) gets disconnected after the write deadline.
+func TestMetricsHandler_SendToClients_DeadClientRemoved(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	h := &MetricsHandler{
+		clients:   make(map[*websocket.Conn]bool),
+		broadcast: make(chan WSMessage, 64),
+		cancel:    cancel,
+		upgrader: websocket.Upgrader{
+			CheckOrigin:     func(r *http.Request) bool { return true },
+			WriteBufferSize: 1,
+		},
+	}
+	defer func() {
+		h.cancel()
+		h.wg.Wait()
+	}()
+
+	router := mux.NewRouter()
+	router.HandleFunc("/ws/metrics", h.WebSocket).Methods("GET")
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	u := url.URL{Scheme: "ws", Host: server.Listener.Addr().String(), Path: "/ws/metrics"}
+	clientConn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Skipf("WS dial failed: %v", err)
+	}
+	defer clientConn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	clientConn.Close()
+	time.Sleep(10 * time.Millisecond)
+
+	h.sendToClients(WSMessage{Type: "snapshot"})
+
+	h.clientsMu.RLock()
+	count := len(h.clients)
+	h.clientsMu.RUnlock()
+
+	if count != 0 {
+		t.Errorf("expected dead client to be removed, got %d remaining", count)
 	}
 }

@@ -41,6 +41,13 @@ type Config struct {
 	// LogLevel defines the logging level (debug, info, warn, error).
 	LogLevel string `json:"log_level"`
 
+	// CookieSecure sets Secure flag on cookies (use when served over HTTPS).
+	CookieSecure bool `json:"cookie_secure"`
+
+	// TrustProxyHeaders enables trusting X-Forwarded-For and X-Real-IP headers.
+	// Enable only when behind a reverse proxy that sets these headers.
+	TrustProxyHeaders bool `json:"trust_proxy_headers"`
+
 	// CORS configuration (disabled by default).
 	CORS CORSConfig `json:"cors"`
 
@@ -76,10 +83,10 @@ type AuthConfig struct {
 // DefaultConfig returns a configuration with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		Port:           8089,
-		Mode:           "xray",
-		XrayConfigDir:  "/opt/etc/xray/configs",
-		XkeenBinary:    "xkeen",
+		Port:            8089,
+		Mode:            "xray",
+		XrayConfigDir:   "/opt/etc/xray/configs",
+		XkeenBinary:     "xkeen",
 		MihomoConfigDir: "/opt/etc/mihomo",
 		MihomoBinary:    "mihomo",
 		AllowedRoots: []string{
@@ -88,8 +95,10 @@ func DefaultConfig() *Config {
 			"/opt/etc/mihomo",
 			"/opt/var/log",
 		},
-		SessionSecret: "",
-		LogLevel:      "info",
+		SessionSecret:     "",
+		LogLevel:          "info",
+		CookieSecure:      false,
+		TrustProxyHeaders: false,
 		CORS: CORSConfig{
 			Enabled:        false,
 			AllowedOrigins: []string{},
@@ -143,7 +152,7 @@ func (c *Config) SaveConfig(path string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
