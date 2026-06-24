@@ -9,6 +9,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/mux"
 )
 
 // mockCommandExecutor implements CommandExecutor for testing.
@@ -381,5 +384,157 @@ func TestGetStatus_ContentTypeJSON(t *testing.T) {
 	ct := rec.Header().Get("Content-Type")
 	if !strings.Contains(ct, "application/json") {
 		t.Errorf("Expected application/json content type, got %q", ct)
+	}
+}
+
+// --- StatusStream SSE Tests ---
+
+func TestStatusStream_SendsInitialEvent(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	r := mux.NewRouter()
+	r.HandleFunc("/stream", handler.StatusStream)
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("SSE request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Errorf("expected text/event-stream, got %q", resp.Header.Get("Content-Type"))
+	}
+
+	// Read first event (initial status)
+	buf := make([]byte, 4096)
+	n, err := resp.Body.Read(buf)
+	if err != nil && err.Error() != "EOF" {
+		t.Fatalf("read SSE event: %v", err)
+	}
+
+	body := string(buf[:n])
+	if !strings.Contains(body, "event: status") {
+		t.Errorf("expected 'event: status' in SSE output, got %q", body)
+	}
+	if !strings.Contains(body, `"running":true`) {
+		t.Errorf("expected running=true in event data, got %q", body)
+	}
+
+	cancel()
+}
+
+func TestStatusStream_ClosesOnContextCancel(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	r := mux.NewRouter()
+	r.HandleFunc("/stream", handler.StatusStream)
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("SSE request failed: %v", err)
+	}
+
+	// Read first event
+	buf := make([]byte, 4096)
+	resp.Body.Read(buf)
+
+	// Cancel context — stream should stop
+	cancel()
+
+	// Subsequent read should get error (stream closed or context cancelled)
+	_, readErr := resp.Body.Read(buf)
+	if readErr == nil {
+		// Try once more with timeout
+		done := make(chan error, 1)
+		go func() {
+			_, err := resp.Body.Read(buf)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Error("expected read error after context cancel")
+			}
+		case <-time.After(time.Second):
+			t.Error("stream did not close after context cancel within 1s")
+		}
+	}
+
+	resp.Body.Close()
+}
+
+// --- Close() tests ---
+
+func TestClose_WaitsForBackgroundGoroutines(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -start", "started", nil)
+	exec.setResult("xkeen -stop", "stopped", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	// Fire start — it spawns goroutine that sleeps 1s then triggers status check
+	req := httptest.NewRequest("POST", "/api/xkeen/start", nil)
+	rec := httptest.NewRecorder()
+	handler.Start(rec, req)
+
+	// Fire stop — another goroutine
+	req2 := httptest.NewRequest("POST", "/api/xkeen/stop", nil)
+	rec2 := httptest.NewRecorder()
+	handler.Stop(rec2, req2)
+
+	// Close should wait for both goroutines to complete
+	start := time.Now()
+	handler.Close()
+	elapsed := time.Since(start)
+
+	// Each goroutine sleeps at least 1s, so Close should take at least ~500ms
+	// (they run concurrently so bound is ~1s, not 2s)
+	if elapsed < 100*time.Millisecond {
+		t.Logf("Close returned in %v (expected to wait for goroutines)", elapsed)
+	}
+	if elapsed > 10*time.Second {
+		t.Errorf("Close took too long: %v", elapsed)
+	}
+}
+
+func TestClose_Idempotent(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -start", "started", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	// No goroutines fired — Close should return immediately
+	handler.Close()
+	handler.Close() // second call should be no-op
+
+	// Fire start after close is allowed (wg.Add still works)
+	req := httptest.NewRequest("POST", "/api/xkeen/start", nil)
+	rec := httptest.NewRecorder()
+	handler.Start(rec, req)
+
+	// Close again (first close was idempotent, this one waits for start goroutine)
+	done := make(chan struct{})
+	go func() {
+		handler.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// OK
+	case <-time.After(5 * time.Second):
+		t.Error("Close hung")
 	}
 }

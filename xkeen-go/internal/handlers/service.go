@@ -59,6 +59,8 @@ type ServiceHandler struct {
 	allowedCommands map[string]string
 	executor        CommandExecutor
 	statusTrigger   chan struct{}
+	wg              sync.WaitGroup
+	closeOnce       sync.Once
 }
 
 // NewServiceHandler creates a new ServiceHandler.
@@ -96,6 +98,24 @@ func (h *ServiceHandler) TriggerStatusCheck() {
 	default:
 		// Channel full, status check already pending
 	}
+}
+
+// Close waits for all background goroutines (start/stop/restart) to complete.
+// Uses a timeout to prevent hanging forever on stuck operations.
+func (h *ServiceHandler) Close() {
+	h.closeOnce.Do(func() {
+		done := make(chan struct{})
+		go func() {
+			h.wg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			// All goroutines completed
+		case <-time.After(5 * time.Minute):
+			log.Printf("[service] Close timed out waiting for background goroutines")
+		}
+	})
 }
 
 // ServiceStatus represents the current status of xkeen service.
@@ -250,7 +270,10 @@ func (h *ServiceHandler) sendStatusEvent(w http.ResponseWriter, flusher http.Flu
 // POST /api/xkeen/start
 // Runs asynchronously to avoid blocking the request.
 func (h *ServiceHandler) Start(w http.ResponseWriter, r *http.Request) {
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
+
 		ctx, cancel := context.WithTimeout(context.Background(), StartStopTimeout)
 		defer cancel()
 
@@ -276,7 +299,10 @@ func (h *ServiceHandler) Start(w http.ResponseWriter, r *http.Request) {
 // POST /api/xkeen/stop
 // Runs asynchronously to avoid blocking the request.
 func (h *ServiceHandler) Stop(w http.ResponseWriter, r *http.Request) {
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
+
 		ctx, cancel := context.WithTimeout(context.Background(), StartStopTimeout)
 		defer cancel()
 
@@ -302,8 +328,11 @@ func (h *ServiceHandler) Stop(w http.ResponseWriter, r *http.Request) {
 // POST /api/xkeen/restart
 // Runs restart asynchronously to avoid blocking the request.
 func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	h.wg.Add(1)
 	// Run restart in background goroutine
 	go func() {
+		defer h.wg.Done()
+
 		ctx, cancel := context.WithTimeout(context.Background(), RestartTimeout)
 		defer cancel()
 

@@ -310,26 +310,39 @@ func (s *Scheduler) startIntervalChecker() {
 }
 
 // checkAndRefresh iterates enabled subscriptions and refreshes those
-// whose interval has elapsed.
+// whose interval has elapsed. Each subscription is refreshed in its own
+// goroutine so slow fetches don't block the ticker for all subscriptions.
 func (s *Scheduler) checkAndRefresh() {
 	cfg := s.store.GetConfig()
 	now := time.Now()
 
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	needsUpdate := false
+
 	for _, sub := range cfg.Subscriptions {
 		if !sub.Enabled || sub.Interval <= 0 {
 			continue
 		}
 		nextRefresh := sub.LastFetch.Add(time.Duration(sub.Interval) * time.Minute)
 		if now.After(nextRefresh) || sub.LastFetch.IsZero() {
-			log.Printf("[subscription] auto-refreshing %q (%s)", sub.Name, sub.ID)
-			if err := s.RefreshOne(sub.ID); err != nil {
-				log.Printf("[subscription] auto-refresh failed for %q: %v", sub.Name, err)
-			} else {
-				needsUpdate = true
-			}
+			sub := sub // capture loop variable
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				log.Printf("[subscription] auto-refreshing %q (%s)", sub.Name, sub.ID)
+				if err := s.RefreshOne(sub.ID); err != nil {
+					log.Printf("[subscription] auto-refresh failed for %q: %v", sub.Name, err)
+				} else {
+					mu.Lock()
+					needsUpdate = true
+					mu.Unlock()
+				}
+			}()
 		}
 	}
+
+	wg.Wait()
 
 	if needsUpdate && s.OnUpdate != nil {
 		s.OnUpdate()
@@ -337,41 +350,58 @@ func (s *Scheduler) checkAndRefresh() {
 }
 
 // RefreshAll fetches all enabled subscriptions and updates the store's proxy cache.
+// Subscriptions are fetched in parallel goroutines, each with its own 30s timeout.
+// The method waits for all fetches to complete before updating the proxy cache.
 func (s *Scheduler) RefreshAll() error {
 	cfg := s.store.GetConfig()
 
-	var merged []*ProxyEntry
-	anySuccess := false
+	var (
+		mu         sync.Mutex
+		merged     []*ProxyEntry
+		anySuccess bool
+		wg         sync.WaitGroup
+	)
 
 	for _, sub := range cfg.Subscriptions {
 		if !sub.Enabled {
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		entries, err := s.fetcher.Fetch(ctx, sub.URL)
-		cancel()
-		if err != nil {
-			log.Printf("[subscription] refresh failed for %q (%s): %v", sub.Name, sub.ID, err)
-			sub.LastError = err.Error()
+		sub := sub // capture loop variable
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			entries, err := s.fetcher.Fetch(ctx, sub.URL)
+			cancel()
+
+			if err != nil {
+				log.Printf("[subscription] refresh failed for %q (%s): %v", sub.Name, sub.ID, err)
+				sub.LastError = err.Error()
+				sub.LastFetch = time.Now()
+				_ = s.store.UpdateSubscription(&sub)
+				return
+			}
+
 			sub.LastFetch = time.Now()
+			sub.LastError = ""
+			sub.ProxyCount = len(entries)
 			_ = s.store.UpdateSubscription(&sub)
-			continue
-		}
 
-		sub.LastFetch = time.Now()
-		sub.LastError = ""
-		sub.ProxyCount = len(entries)
-		_ = s.store.UpdateSubscription(&sub)
+			// Tag entries with subscription ID
+			for _, e := range entries {
+				e.SubscriptionID = sub.ID
+			}
 
-		// Tag entries with subscription ID
-		for _, e := range entries {
-			e.SubscriptionID = sub.ID
-		}
-
-		merged = append(merged, entries...)
-		anySuccess = true
+			mu.Lock()
+			merged = append(merged, entries...)
+			anySuccess = true
+			mu.Unlock()
+		}()
 	}
+
+	wg.Wait()
 
 	if anySuccess {
 		GenerateTags(merged)

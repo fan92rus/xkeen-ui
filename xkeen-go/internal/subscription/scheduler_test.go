@@ -1351,3 +1351,66 @@ func TestRefreshAll_TagCollisionBetweenSubscriptions(t *testing.T) {
 		t.Logf("tag=%s address=%s sub_id=%s", p.Tag, addr, p.SubscriptionID)
 	}
 }
+
+
+// --- Parallel execution ---
+
+func TestRefreshAll_ParallelExecution(t *testing.T) {
+	// Simulate slow fetches to verify parallel execution.
+	// With 4 subscriptions each taking 200ms:
+	//   sequential: ~800ms
+	//   parallel:   ~200-400ms (max sleep + overhead)
+	sleepTime := 200 * time.Millisecond
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(sleepTime)
+		lines := "vless://uuid@1.2.3.4:443?type=tcp#Test"
+		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
+		w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+
+	for i := 0; i < 4; i++ {
+		store.AddSubscription(&Subscription{
+			Name:    fmt.Sprintf("Sub%d", i),
+			URL:     server.URL,
+			Enabled: true,
+		})
+	}
+
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+
+	start := time.Now()
+	err := sched.RefreshAll()
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("RefreshAll: %v", err)
+	}
+
+	// Sequential would be 4 * 200ms = 800ms; parallel should be ~200-400ms.
+	// Set generous threshold at 600ms (between parallel and sequential).
+	maxExpected := time.Duration(3) * sleepTime
+	if elapsed >= maxExpected {
+		t.Errorf("RefreshAll took %v (expected < %v for parallel execution)", elapsed, maxExpected)
+	}
+
+	// Verify all 4 subscriptions were fetched
+	cfg := store.GetConfig()
+	enabledCount := 0
+	for _, sub := range cfg.Subscriptions {
+		if sub.Enabled {
+			enabledCount++
+			if sub.LastFetch.IsZero() {
+				t.Errorf("subscription %q should have LastFetch", sub.Name)
+			}
+		}
+	}
+	if enabledCount != 4 {
+		t.Errorf("expected 4 enabled subscriptions, got %d", enabledCount)
+	}
+}
