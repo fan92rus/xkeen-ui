@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/fan92rus/xkeen-ui/internal/config"
+	"github.com/fan92rus/xkeen-ui/internal/handlers"
 	"github.com/fan92rus/xkeen-ui/internal/server"
 	"github.com/fan92rus/xkeen-ui/internal/utils"
 	"github.com/fan92rus/xkeen-ui/internal/version"
@@ -316,9 +317,14 @@ func runServer() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	// Handle shutdown in separate goroutine
+	// Also listen on update shutdown channel so update handler can trigger graceful restart
 	go func() {
-		sig := <-quit
-		log.Printf("Received signal: %v", sig)
+		select {
+		case sig := <-quit:
+			log.Printf("Received signal: %v", sig)
+		case <-handlers.UpdateShutdownCh:
+			log.Println("Shutdown requested by update handler")
+		}
 		log.Println("Shutting down...")
 
 		// Graceful shutdown with timeout

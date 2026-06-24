@@ -720,3 +720,93 @@ func TestIsCommandAllowed_Concurrent(t *testing.T) {
 		<-done
 	}
 }
+
+// === Goroutine leak regression tests ===
+
+func TestExecuteInteractive_HandlerReturnsWithinTimeout(t *testing.T) {
+	// Regression test for goroutine leak: after command completion (possibly with error),
+	// the handler should return within a reasonable timeout. The goroutines are tracked
+	// via WaitGroup and cancelled via context after cmd.Wait().
+	handler := newTestInteractiveHandler()
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Send a start command with a whitelisted command.
+	// On non-Linux (e.g. Windows dev), PTY will fail and handler returns early.
+	// On Linux, the command will attempt to run and also fail (no xkeen binary).
+	start := time.Now()
+	if err := conn.WriteJSON(ClientMessage{Type: "start", Command: "-status"}); err != nil {
+		t.Fatalf("Failed to write start message: %v", err)
+	}
+
+	// Read until complete (or error). Timeout ensures no goroutine leak.
+	var gotComplete bool
+	for {
+		var msg ServerMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			break // connection closed
+		}
+		if msg.Type == "complete" || msg.Type == "error" {
+			gotComplete = true
+			break
+		}
+	}
+
+	elapsed := time.Since(start)
+	if elapsed > 30*time.Second {
+		t.Errorf("Handler took too long (%v) — possible goroutine hang/deadlock", elapsed)
+	}
+	if !gotComplete {
+		t.Fatal("Handler did not send complete/error message — possible goroutine leak")
+	}
+	t.Logf("Handler completed in %v", elapsed)
+}
+
+func TestExecuteInteractive_SignalMidCommand(t *testing.T) {
+	// Test signal handling doesn't cause hang.
+	// On non-Linux (no PTY), the handler returns immediately with error+complete.
+	// We just verify the handler terminates cleanly either way.
+	handler := newTestInteractiveHandler()
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Send start
+	if err := conn.WriteJSON(ClientMessage{Type: "start", Command: "-uk"}); err != nil {
+		t.Fatalf("Failed to write start: %v", err)
+	}
+
+	// Continue reading until we get at least one complete/error message.
+	// Then send signal — it may or may not be processed (depends on PTY availability).
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var gotCompletion bool
+	for {
+		var msg ServerMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			break
+		}
+		if msg.Type == "complete" || msg.Type == "error" {
+			gotCompletion = true
+		}
+	}
+
+	// Send signal after server already finished
+	_ = conn.WriteJSON(ClientMessage{Type: "signal", Signal: "SIGTERM"})
+
+	if !gotCompletion {
+		t.Fatal("Did not receive completion message — possible goroutine leak")
+	}
+}

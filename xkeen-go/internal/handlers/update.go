@@ -25,6 +25,11 @@ import (
 	"github.com/fan92rus/xkeen-ui/internal/version"
 )
 
+// UpdateShutdownCh is used to signal main goroutine that the update
+// has completed and the server should perform a graceful shutdown
+// before the binary is replaced.
+var UpdateShutdownCh = make(chan struct{}, 1)
+
 // UpdateHandler handles application update operations.
 type UpdateHandler struct {
 	githubRepo    string
@@ -153,7 +158,7 @@ func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRele
 // getLatestPrerelease fetches the latest dev prerelease from GitHub.
 func (h *UpdateHandler) getLatestPrerelease(ctx context.Context) (*GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("https://api.github.com/repos/%s/releases", h.githubRepo), nil)
+		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100", h.githubRepo), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -383,12 +388,15 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 		Message: "Update downloaded. Service is restarting...",
 	})
 
-	// Give SSE response time to be sent, then exit
+	// Give SSE response time to be sent, then trigger graceful shutdown
 	// The update script will replace the binary and restart the service
 	go func() {
 		time.Sleep(1 * time.Second)
-		log.Printf("Shutting down for update...")
-		os.Exit(0)
+		log.Printf("Update: graceful shutdown requested")
+		select {
+		case UpdateShutdownCh <- struct{}{}:
+		default:
+		}
 	}()
 }
 
