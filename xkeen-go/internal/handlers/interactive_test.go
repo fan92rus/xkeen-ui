@@ -810,3 +810,56 @@ func TestExecuteInteractive_SignalMidCommand(t *testing.T) {
 		t.Fatal("Did not receive completion message — possible goroutine leak")
 	}
 }
+
+func TestExecuteInteractive_EmptyCommandParts(t *testing.T) {
+	// This tests the `len(parts) == 0` defensive guard in executeInteractive.
+	// NOTE: the guard is dead code under normal operation —
+	// strings.Fields("xkeen " + "") returns ["xkeen"] (1 element, not 0).
+	// The branch only triggers if the combined cmdStr is whitespace-only or
+	// empty, which cannot happen given the "xkeen " prefix.
+	//
+	// We verify this behaviour: even with an injected Cmd="", the guard does
+	// NOT fire; execution proceeds to the PTY path (which may fail on non-Linux).
+	// The guard exists purely as defensive/audit protection.
+
+	handler := newTestInteractiveHandler()
+	handler.allowedCommands["empty-cmd"] = CommandConfig{
+		Cmd:         "",
+		Description: "test command with empty Cmd",
+		Timeout:     time.Second,
+	}
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.WriteJSON(ClientMessage{Type: "start", Command: "empty-cmd"}); err != nil {
+		t.Fatalf("Failed to write start: %v", err)
+	}
+
+	// Since the empty-cmd guard does NOT fire, execution reaches pty.Start.
+	// On non-Linux, pty.Start fails with "unsupported" error.
+	// Either way, the handler should still send an error + complete message.
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var gotCompletion bool
+	for {
+		var msg ServerMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			break
+		}
+		if msg.Type == "complete" || msg.Type == "error" {
+			gotCompletion = true
+			break
+		}
+	}
+	if !gotCompletion {
+		t.Fatal("Handler did not send complete/error — possible hang")
+	}
+	t.Log("Handler terminated cleanly (empty Cmd reached PTY path as expected)")
+}

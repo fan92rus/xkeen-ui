@@ -994,3 +994,222 @@ func TestChecksumFileFormats(t *testing.T) {
 		})
 	}
 }
+
+// ---------- getLatestStableRelease / getLatestPrerelease tests ----------
+
+// mockAPIHandler creates an UpdateHandler whose apiBaseURL points to a mock HTTP
+// server. The mock handler fn receives the path (e.g. "/repos/...") and writes
+// the desired response.
+func mockAPIHandler(t *testing.T, fn func(w http.ResponseWriter, r *http.Request)) *UpdateHandler {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(fn))
+	t.Cleanup(server.Close)
+
+	h := NewUpdateHandler()
+	h.apiBaseURL = server.URL
+	return h
+}
+
+func TestGetLatestStableRelease_Success(t *testing.T) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if !strings.Contains(r.URL.Path, "/releases/latest") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Accept") != "application/vnd.github.v3+json" {
+			t.Errorf("unexpected Accept: %s", r.Header.Get("Accept"))
+		}
+		if !strings.HasPrefix(r.Header.Get("User-Agent"), "XKEEN-UI/") {
+			t.Errorf("unexpected User-Agent: %s", r.Header.Get("User-Agent"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(GitHubRelease{
+			TagName:     "v99.0.0",
+			Name:        "v99.0.0",
+			Body:        "Test release",
+			HTMLURL:     "https://example.com/v99.0.0",
+			PublishedAt: "2026-06-01T00:00:00Z",
+		})
+	})
+
+	release, err := h.getLatestStableRelease(context.Background())
+	if err != nil {
+		t.Fatalf("getLatestStableRelease failed: %v", err)
+	}
+	if release == nil {
+		t.Fatal("expected non-nil release")
+	}
+	if release.TagName != "v99.0.0" {
+		t.Errorf("TagName = %q, want v99.0.0", release.TagName)
+	}
+	if release.Name != "v99.0.0" {
+		t.Errorf("Name = %q, want v99.0.0", release.Name)
+	}
+	if release.Body != "Test release" {
+		t.Errorf("Body = %q, want 'Test release'", release.Body)
+	}
+}
+
+func TestGetLatestStableRelease_HTTPError(t *testing.T) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"message":"server error"}`))
+	})
+
+	_, err := h.getLatestStableRelease(context.Background())
+	if err == nil {
+		t.Fatal("expected error for HTTP 500")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should mention HTTP status, got: %v", err)
+	}
+}
+
+func TestGetLatestStableRelease_MalformedJSON(t *testing.T) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`not json at all`))
+	})
+
+	_, err := h.getLatestStableRelease(context.Background())
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+	if !strings.Contains(err.Error(), "failed to parse release info") {
+		t.Errorf("error should mention parse failure, got: %v", err)
+	}
+}
+
+func TestGetLatestPrerelease_SuccessFound(t *testing.T) {
+	// Server returns a list that includes a dev prerelease.
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]GitHubRelease{
+			{TagName: "v1.0.0-dev.1700000000", Prerelease: true},
+			{TagName: "v0.9.0", Prerelease: false},
+		})
+	})
+
+	release, err := h.getLatestPrerelease(context.Background())
+	if err != nil {
+		t.Fatalf("getLatestPrerelease failed: %v", err)
+	}
+	if release == nil {
+		t.Fatal("expected a prerelease")
+	}
+	if release.TagName != "v1.0.0-dev.1700000000" {
+		t.Errorf("TagName = %q, want v1.0.0-dev.1700000000", release.TagName)
+	}
+	if !release.Prerelease {
+		t.Error("expected prerelease to be true")
+	}
+}
+
+func TestGetLatestPrerelease_FallbackToStable_Mocked(t *testing.T) {
+	// When no dev build exists, should fall back to the stable release endpoint.
+	var listCalled, stableCalled bool
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/releases") && !strings.Contains(r.URL.Path, "/latest") {
+			listCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			// All releases are stable (no dev prerelease)
+			json.NewEncoder(w).Encode([]GitHubRelease{
+				{TagName: "v2.0.0", Prerelease: false},
+				{TagName: "v1.0.0", Prerelease: false},
+			})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/releases/latest") {
+			stableCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(GitHubRelease{
+				TagName:    "v2.0.0",
+				Prerelease: false,
+			})
+			return
+		}
+		t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+	})
+
+	release, err := h.getLatestPrerelease(context.Background())
+	if err != nil {
+		t.Fatalf("getLatestPrerelease fallback failed: %v", err)
+	}
+	if !listCalled {
+		t.Error("expected list endpoint to be called")
+	}
+	if !stableCalled {
+		t.Error("expected stable endpoint to be called as fallback")
+	}
+	if release == nil || release.TagName != "v2.0.0" {
+		t.Errorf("TagName = %v, want v2.0.0", release)
+	}
+}
+
+func TestGetLatestPrerelease_HTTPError(t *testing.T) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/releases") && !strings.Contains(r.URL.Path, "/latest") {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"message":"rate limited"}`))
+			return
+		}
+		t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+	})
+
+	_, err := h.getLatestPrerelease(context.Background())
+	if err == nil {
+		t.Fatal("expected error for HTTP 403")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error should mention HTTP status, got: %v", err)
+	}
+}
+
+func TestGetLatestPrerelease_MalformedJSON(t *testing.T) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/releases") && !strings.Contains(r.URL.Path, "/latest") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{]`))
+			return
+		}
+		t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+	})
+
+	_, err := h.getLatestPrerelease(context.Background())
+	if err == nil {
+		t.Fatal("expected error for malformed JSON in list")
+	}
+}
+
+func TestNewUpdateHandler_HasHTTPClientAndBaseURL(t *testing.T) {
+	h := NewUpdateHandler()
+	if h.httpClient == nil {
+		t.Error("expected httpClient to be set")
+	}
+	if h.httpClient != http.DefaultClient {
+		t.Error("expected httpClient to be http.DefaultClient by default")
+	}
+	if h.apiBaseURL != "https://api.github.com" {
+		t.Errorf("apiBaseURL = %q, want https://api.github.com", h.apiBaseURL)
+	}
+}
+
+func TestNewUpdateHandler_OverridableFields(t *testing.T) {
+	// Verify that NewUpdateHandler is a function (not a singleton/enforceable)
+	// and that the new fields can be overridden for testing.
+	h1 := NewUpdateHandler()
+	h2 := NewUpdateHandler()
+
+	// Different instances should be independent
+	h2.apiBaseURL = "http://localhost:9999"
+	h2.httpClient = &http.Client{}
+
+	if h1.apiBaseURL != "https://api.github.com" {
+		t.Errorf("h1 should still have default apiBaseURL, got %q", h1.apiBaseURL)
+	}
+	if h1.httpClient != http.DefaultClient {
+		t.Error("h1 should still have default httpClient")
+	}
+}

@@ -39,6 +39,14 @@ type UpdateHandler struct {
 	updateScript  string
 	downloadURL   string
 
+	// httpClient is the HTTP client for GitHub API calls.
+	// Defaults to http.DefaultClient; overridable in tests.
+	httpClient *http.Client
+
+	// apiBaseURL is the GitHub API base URL.
+	// Defaults to "https://api.github.com"; overridable in tests.
+	apiBaseURL string
+
 	mu             sync.Mutex
 	devReleaseTag string // Latest dev release tag for download
 }
@@ -54,6 +62,8 @@ func NewUpdateHandler() *UpdateHandler {
 		initScript:   "/opt/etc/init.d/xkeen-ui",
 		updateScript: "/opt/etc/xkeen-ui/update.sh",
 		downloadURL:  fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
+		httpClient:   http.DefaultClient,
+		apiBaseURL:   "https://api.github.com",
 	}
 }
 
@@ -128,7 +138,7 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 // getLatestStableRelease fetches the latest stable release from GitHub.
 func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", h.githubRepo), nil)
+		fmt.Sprintf("%s/repos/%s/releases/latest", h.apiBaseURL, h.githubRepo), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -136,7 +146,7 @@ func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRele
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "XKEEN-UI/"+version.GetVersion())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch release info: %v", err)
 	}
@@ -158,7 +168,7 @@ func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRele
 // getLatestPrerelease fetches the latest dev prerelease from GitHub.
 func (h *UpdateHandler) getLatestPrerelease(ctx context.Context) (*GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100", h.githubRepo), nil)
+		fmt.Sprintf("%s/repos/%s/releases?per_page=100", h.apiBaseURL, h.githubRepo), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -166,7 +176,7 @@ func (h *UpdateHandler) getLatestPrerelease(ctx context.Context) (*GitHubRelease
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "XKEEN-UI/"+version.GetVersion())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch releases: %v", err)
 	}
