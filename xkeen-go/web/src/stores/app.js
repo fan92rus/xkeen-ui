@@ -8,6 +8,8 @@ import * as logsService from '../services/logs.js';
 import * as updateService from '../services/update.js';
 import * as statusService from '../services/status.js';
 import * as modeService from '../services/mode.js';
+import { filterLogs } from '../utils/log-filter.js';
+import { computeDiff as computeDiffHtml } from '../utils/diff.js';
 
 export const useAppStore = defineStore('app', () => {
     // ── UI state ──
@@ -40,15 +42,7 @@ export const useAppStore = defineStore('app', () => {
     const logFilter = ref('all');
     const logSearch = ref('');
     const logFile = ref('/opt/var/log/xray/access.log');
-    const filteredLogs = computed(() => {
-        let result = logs.value;
-        if (logFilter.value !== 'all') result = result.filter(l => l.level === logFilter.value);
-        if (logSearch.value) {
-            const t = logSearch.value.toLowerCase();
-            result = result.filter(l => l.message.toLowerCase().includes(t));
-        }
-        return result;
-    });
+    const filteredLogs = computed(() => filterLogs(logs.value, logFilter.value, logSearch.value));
 
     // ── Service ──
     const serviceStatus = ref('unknown');
@@ -277,7 +271,7 @@ export const useAppStore = defineStore('app', () => {
         backupsModal.selectedBackup = backup;
         try {
             const backupContent = await configService.getBackupContent(backup.path);
-            backupsModal.diffContent = computeDiff(currentFile.value?.content || '', backupContent);
+            backupsModal.diffContent = computeDiffHtml(currentFile.value?.content || '', backupContent);
         } catch { showToast('Не удалось загрузить содержимое', 'error'); }
     }
 
@@ -305,29 +299,11 @@ export const useAppStore = defineStore('app', () => {
     // ── Actions: Diff ──
     function openDiffModal(currentContent, savedContent) {
         if (currentContent === savedContent) { showToast('Нет изменений с последнего сохранения'); return; }
-        diffModal.diffContent = computeDiff(currentContent, savedContent);
+        diffModal.diffContent = computeDiffHtml(currentContent, savedContent);
         diffModal.show = true;
     }
 
     function closeDiffModal() { diffModal.show = false; diffModal.diffContent = ''; }
-
-    function computeDiff(a, b) {
-        const MAX = 500;
-        const linesA = a.split('\n').slice(0, MAX);
-        const linesB = b.split('\n').slice(0, MAX);
-        const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const setB = new Set(linesB);
-        const setA = new Set(linesA);
-        const all = [];
-        for (const l of linesA) all.push({ line: l, type: setB.has(l) ? 'equal' : 'removed' });
-        for (const l of linesB) if (!setA.has(l)) all.push({ line: l, type: 'added' });
-        return all.map(op => {
-            const e = escapeHtml(op.line);
-            return op.type === 'equal' ? '  ' + e
-                : op.type === 'removed' ? `<span class="diff-removed">- ${e}</span>`
-                : `<span class="diff-added">+ ${e}</span>`;
-        }).join('\n');
-    }
 
     // ── Actions: Update ──
     async function checkUpdate() {
@@ -434,7 +410,7 @@ export const useAppStore = defineStore('app', () => {
         closeModal, canSendInput, sendInput, copyModalOutput,
         cancelConfirm, executeConfirm,
         showBackups, closeBackupsModal, selectBackup, copyBackupContent, loadBackupToEditor, formatBackupTime,
-        openDiffModal, closeDiffModal, computeDiff,
+        openDiffModal, closeDiffModal,
         checkUpdate, startUpdate,
         changePassword, clearPasswordForm,
         init
