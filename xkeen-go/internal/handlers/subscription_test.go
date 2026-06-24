@@ -344,8 +344,7 @@ func TestUpdateStrategy_Valid(t *testing.T) {
 
 	for _, strategyType := range subscription.StrategyTypes {
 		resp := doRequest(t, router, "PUT", "/subscriptions/strategy", map[string]interface{}{
-			"type":         strategyType,
-			"fallback_tag": "direct",
+			"type": strategyType,
 		})
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
@@ -520,8 +519,7 @@ func TestApply_WithObservatory(t *testing.T) {
 
 	// Set strategy to leastping (requires observatory)
 	_ = h.store.SetStrategy(&subscription.RoutingStrategy{
-		Type:        "leastping",
-		FallbackTag: "direct",
+		Type: "leastping",
 	})
 
 	resp := doRequest(t, router, "POST", "/subscriptions/apply", nil)
@@ -956,8 +954,7 @@ func TestCreateProfile_Success(t *testing.T) {
 		"name":    "Custom Profile",
 		"enabled": true,
 		"strategy": map[string]interface{}{
-			"type":         "random",
-			"fallback_tag": "direct",
+			"type": "random",
 		},
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -1077,8 +1074,7 @@ func TestUpdateProfile_Success(t *testing.T) {
 			"max_proxies":       20,
 		},
 		"strategy": map[string]interface{}{
-			"type":         "roundrobin",
-			"fallback_tag": "direct",
+			"type": "roundrobin",
 		},
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -1126,8 +1122,8 @@ func TestUpdateProfile_PreservesIsDefault(t *testing.T) {
 
 	// Try to update default profile (changing is_default to false should be ignored)
 	resp := doRequest(t, router, "PUT", "/subscriptions/profiles/"+defaultID, map[string]interface{}{
-		"name":      "Updated Default",
-		"enabled":   true,
+		"name":       "Updated Default",
+		"enabled":    true,
 		"is_default": false, // should be ignored
 	})
 	if resp.StatusCode != http.StatusOK {
@@ -1550,5 +1546,3 @@ func containsStr(s, substr string) bool {
 	}
 	return false
 }
-
-

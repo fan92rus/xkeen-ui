@@ -32,9 +32,7 @@ func TestNewStore_CreatesDefaultConfig(t *testing.T) {
 	if dp.Strategy.Type != "all" {
 		t.Errorf("expected default strategy 'all', got %q", dp.Strategy.Type)
 	}
-	if dp.Strategy.FallbackTag != "direct" {
-		t.Errorf("expected fallback 'direct', got %q", dp.Strategy.FallbackTag)
-	}
+
 }
 
 func TestNewStore_LoadsExistingFile(t *testing.T) {
@@ -46,7 +44,7 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 			{ID: "abc", Name: "Test", URL: "https://example.com/sub", Enabled: true, Interval: 5},
 		},
 		Filters:  &Filter{ExcludeCountries: []string{"RU"}},
-		Strategy: &RoutingStrategy{Type: "random", FallbackTag: "direct"},
+		Strategy: &RoutingStrategy{Type: "random"},
 	}
 	data, _ := json.MarshalIndent(existing, "", "    ")
 	os.WriteFile(path, data, 0644)
@@ -304,7 +302,7 @@ func TestSetGetStrategy(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 
-	s := &RoutingStrategy{Type: "random", FallbackTag: "direct"}
+	s := &RoutingStrategy{Type: "random"}
 	if err := store.SetStrategy(s); err != nil {
 		t.Fatalf("SetStrategy: %v", err)
 	}
@@ -548,9 +546,7 @@ func TestGetProfile_Existing(t *testing.T) {
 	if dp.Strategy.Type != "all" {
 		t.Errorf("expected strategy 'all', got %q", dp.Strategy.Type)
 	}
-	if dp.Strategy.FallbackTag != "direct" {
-		t.Errorf("expected fallback 'direct', got %q", dp.Strategy.FallbackTag)
-	}
+
 }
 
 func TestGetProfile_NonExistent(t *testing.T) {
@@ -943,7 +939,7 @@ func TestDefaultProfile_FilterNeverNilSlices(t *testing.T) {
 		t.Fatalf("GetProfile: %v", err)
 	}
 	for name, slice := range map[string][]string{
-		"ExcludeCountries":   dp.Filter.ExcludeCountries,
+		"ExcludeCountries": dp.Filter.ExcludeCountries,
 		"IncludeCountries": dp.Filter.IncludeCountries,
 		"IncludeRegexes":   dp.Filter.IncludeRegexes,
 		"ExcludeRegexes":   dp.Filter.ExcludeRegexes,
@@ -1164,7 +1160,7 @@ func TestStore_PersistenceWithFilters(t *testing.T) {
 	store1.SetFilters(&Filter{
 		ExcludeCountries: []string{"RU"},
 		MaxProxies:       50,
-		IncludeRegexes:  []string{"speed"},
+		IncludeRegexes:   []string{"speed"},
 	})
 	store1.SetStrategy(&RoutingStrategy{Type: "random"})
 
@@ -1352,4 +1348,3 @@ func TestProxyCache_ProxyNamesFromCache(t *testing.T) {
 		t.Error("'direct' with empty remarks should not be in map")
 	}
 }
-

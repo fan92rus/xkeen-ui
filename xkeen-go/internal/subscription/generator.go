@@ -234,14 +234,6 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 			"selector": selector,
 			"strategy": map[string]interface{}{"type": sType},
 		}
-		// Only default profile gets fallbackTag.
-		if profile.IsDefault {
-			fallback := "direct"
-			if profile.Strategy.FallbackTag != "" {
-				fallback = profile.Strategy.FallbackTag
-			}
-			balancer["fallbackTag"] = fallback
-		}
 
 		balancers = append(balancers, balancer)
 	}

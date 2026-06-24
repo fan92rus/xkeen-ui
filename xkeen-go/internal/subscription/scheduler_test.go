@@ -398,7 +398,7 @@ func TestScheduler_RunAutoApply_WithObservatory(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 	store.AddSubscription(&Subscription{Name: "Test", URL: server.URL, Enabled: true})
-	store.SetStrategy(&RoutingStrategy{Type: "leastping", FallbackTag: "direct"})
+	store.SetStrategy(&RoutingStrategy{Type: "leastping"})
 
 	fetcher := NewFetcher()
 	sched := NewScheduler(store, fetcher)
@@ -475,7 +475,7 @@ func TestScheduler_RunAutoApply_RemovesObservatory(t *testing.T) {
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 	store.AddSubscription(&Subscription{Name: "Test", URL: server.URL, Enabled: true})
 	// Start with leastping (creates observatory)
-	store.SetStrategy(&RoutingStrategy{Type: "leastping", FallbackTag: "direct"})
+	store.SetStrategy(&RoutingStrategy{Type: "leastping"})
 
 	fetcher := NewFetcher()
 	sched := NewScheduler(store, fetcher)
@@ -490,7 +490,7 @@ func TestScheduler_RunAutoApply_RemovesObservatory(t *testing.T) {
 	}
 
 	// Switch to "all" — observatory should be removed
-	store.SetStrategy(&RoutingStrategy{Type: "all", FallbackTag: "direct"})
+	store.SetStrategy(&RoutingStrategy{Type: "all"})
 	sched.runAutoApply()
 
 	if _, err := os.Stat(filepath.Join(dir, "07_observatory.json")); !os.IsNotExist(err) {
@@ -652,7 +652,7 @@ func TestScheduler_WriteConfigFiles_BalancerMode(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	sched.SetXrayDir(dir)
 
-	err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "random", FallbackTag: "direct"}}})
+	err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "random"}}})
 	if err != nil {
 		t.Fatalf("writeConfigFiles: %v", err)
 	}
@@ -1351,4 +1351,3 @@ func TestRefreshAll_TagCollisionBetweenSubscriptions(t *testing.T) {
 		t.Logf("tag=%s address=%s sub_id=%s", p.Tag, addr, p.SubscriptionID)
 	}
 }
-
