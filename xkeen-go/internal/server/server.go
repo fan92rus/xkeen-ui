@@ -285,9 +285,12 @@ func (s *Server) setupRoutes() {
 	s.router.Use(s.middleware.LoggingMiddleware)
 	s.router.Use(SecurityHeadersMiddleware)
 
-	// Static files from embedded FS (no auth required)
+	// Static files from embedded FS (no auth required). Wrapped in gzip
+	// middleware so the ~750KB frontend bundle (and other large text
+	// assets) is transferred ~3x smaller over the router LAN.
 	staticFS, _ := fs.Sub(s.webFS, "static")
-	s.router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+	s.router.PathPrefix("/static/").Handler(GzipMiddleware(staticHandler))
 
 	// Login page (no auth)
 	s.router.HandleFunc("/login", s.loginPage).Methods("GET")
