@@ -1,0 +1,85 @@
+name: CI
+
+# Quality gate: runs tests, lint, and vulnerability scans on every push and PR.
+# Separated from build.yml/build-dev.yml (release workflows) so failures here
+# surface clearly without blocking artifact production.
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  GO_VERSION: '1.26'
+  NODE_VERSION: '20'
+
+jobs:
+  go-checks:
+    name: Go (vet, test -race, govulncheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        # Race detector requires CGo; gcc is available on ubuntu-latest.
+        run: go test -race -count=1 ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck
+        run: $(go env GOPATH)/bin/govulncheck ./...
+
+  frontend-checks:
+    name: Frontend (build, test, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go/web
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: xkeen-go/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Audit (production deps, fail on high+)
+        # Frontend ships as a compiled bundle; production deps are the ones
+        # embedded. Dev-tooling vulns (vite, puppeteer) are surfaced but do
+        # not gate CI — they never reach the router.
+        run: npm audit --omit=dev --audit-level=high
