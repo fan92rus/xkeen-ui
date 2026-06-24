@@ -35,14 +35,14 @@ func (fi *FlexibleInt) UnmarshalJSON(data []byte) error {
 
 // Subscription represents a single subscription source (e.g., Hiddify panel URL).
 type Subscription struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	URL        string    `json:"url"`
-	Enabled    bool      `json:"enabled"`
-	Interval   FlexibleInt `json:"interval"`     // minutes, 0 = manual only
-	LastFetch  time.Time `json:"last_fetch"`
-	LastError  string    `json:"last_error"`
-	ProxyCount int       `json:"proxy_count"`
+	ID         string      `json:"id"`
+	Name       string      `json:"name"`
+	URL        string      `json:"url"`
+	Enabled    bool        `json:"enabled"`
+	Interval   FlexibleInt `json:"interval"` // minutes, 0 = manual only
+	LastFetch  time.Time   `json:"last_fetch"`
+	LastError  string      `json:"last_error"`
+	ProxyCount int         `json:"proxy_count"`
 }
 
 // ProxyEntry represents a single parsed proxy from a subscription.
@@ -58,7 +58,6 @@ type ProxyEntry struct {
 
 // Filter rules for proxy filtering.
 type Filter struct {
-
 	IncludeCountries []string `json:"include_countries"`
 	ExcludeCountries []string `json:"exclude_countries"`
 	IncludeRegexes   []string `json:"include_regexes"`
@@ -72,8 +71,7 @@ type Filter struct {
 
 // RoutingStrategy defines how traffic is distributed across proxies.
 type RoutingStrategy struct {
-	Type               string `json:"type"`                // "all", "random", "roundrobin", "leastping", "leastload"
-	FallbackTag        string `json:"fallback_tag"`        // fallback outbound tag
+	Type               string `json:"type"`                 // "all", "random", "roundrobin", "leastping", "leastload"
 	ReplaceBalancerTag bool   `json:"replace_balancer_tag"` // if true, replace existing balancerTag rules with new ones
 }
 
@@ -93,11 +91,11 @@ const MaxProfiles = 10
 
 // SubscriptionConfig is the persisted subscription configuration.
 type SubscriptionConfig struct {
-	Subscriptions []Subscription  `json:"subscriptions"`
-	Profiles      []Profile       `json:"profiles"`
-	GeneratedAt   time.Time       `json:"generated_at"`
-	OutboundsFile string          `json:"outbounds_file"` // path to 04_outbounds.json
-	RoutingFile   string          `json:"routing_file"`   // path to 05_routing.json
+	Subscriptions []Subscription `json:"subscriptions"`
+	Profiles      []Profile      `json:"profiles"`
+	GeneratedAt   time.Time      `json:"generated_at"`
+	OutboundsFile string         `json:"outbounds_file"` // path to 04_outbounds.json
+	RoutingFile   string         `json:"routing_file"`   // path to 05_routing.json
 
 	// AutoApply configures automatic proxy refresh + apply on a cron schedule.
 	AutoApplyEnabled bool   `json:"auto_apply_enabled"` // enable/disable
@@ -108,12 +106,11 @@ type SubscriptionConfig struct {
 	Strategy *RoutingStrategy `json:"strategy,omitempty"`
 }
 
-
 // DefaultMux is the default mux configuration copied to all generated outbounds.
 var DefaultMux = map[string]interface{}{
-	"enabled":          true,
-	"concurrency":      -1,
-	"xudpConcurrency":  16,
+	"enabled":         true,
+	"concurrency":     -1,
+	"xudpConcurrency": 16,
 	"xudpProxyUDP443": "reject",
 }
 

@@ -344,7 +344,7 @@ func (s *Store) defaultProfile() *Profile {
 			IncludeRegexes:   []string{},
 			ExcludeRegexes:   []string{},
 		},
-		Strategy: RoutingStrategy{Type: "all", FallbackTag: "direct"},
+		Strategy: RoutingStrategy{Type: "all"},
 	})
 	return &s.config.Profiles[len(s.config.Profiles)-1]
 }
@@ -381,7 +381,7 @@ func (s *Store) migrateProfiles() {
 	if st != nil {
 		dp.Strategy = *st
 	} else {
-		dp.Strategy = RoutingStrategy{Type: "all", FallbackTag: "direct"}
+		dp.Strategy = RoutingStrategy{Type: "all"}
 	}
 
 	s.config.Profiles = []Profile{dp}

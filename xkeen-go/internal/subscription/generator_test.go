@@ -206,10 +206,9 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 
 	var routing struct {
 		Balancers []struct {
-			Tag         string                 `json:"tag"`
-			Selector    []string               `json:"selector"`
-			Strategy    map[string]interface{} `json:"strategy"`
-			FallbackTag string                 `json:"fallbackTag"`
+			Tag      string                 `json:"tag"`
+			Selector []string               `json:"selector"`
+			Strategy map[string]interface{} `json:"strategy"`
 		} `json:"balancers"`
 		Rules []map[string]interface{} `json:"rules"`
 	}
@@ -233,9 +232,6 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 	}
 	if balancer.Strategy["type"] != "random" {
 		t.Errorf("expected strategy type 'random', got %v", balancer.Strategy["type"])
-	}
-	if balancer.FallbackTag != "direct" {
-		t.Errorf("expected fallback 'direct', got %q", balancer.FallbackTag)
 	}
 
 	// Rules: ad-block + fallback balancer rule
@@ -318,30 +314,6 @@ func TestGenerateRoutingJSON_StrategyLeastLoad(t *testing.T) {
 
 	if routing.Balancers[0].Strategy["type"] != "leastload" {
 		t.Errorf("expected strategy 'leastload', got %v", routing.Balancers[0].Strategy["type"])
-	}
-}
-
-func TestGenerateRoutingJSON_CustomFallbackTag(t *testing.T) {
-	proxies := makeProxies()
-	profiles := defaultProfiles(RoutingStrategy{Type: "random", FallbackTag: "block"})
-
-	data, err := GenerateRoutingJSON(proxies, profiles, nil)
-	if err != nil {
-		t.Fatalf("GenerateRoutingJSON failed: %v", err)
-	}
-
-	var result map[string]json.RawMessage
-	json.Unmarshal(data, &result)
-
-	var routing struct {
-		Balancers []struct {
-			FallbackTag string `json:"fallbackTag"`
-		} `json:"balancers"`
-	}
-	json.Unmarshal(result["routing"], &routing)
-
-	if routing.Balancers[0].FallbackTag != "block" {
-		t.Errorf("expected fallback 'block', got %q", routing.Balancers[0].FallbackTag)
 	}
 }
 
@@ -580,7 +552,7 @@ func TestGenerateRoutingJSON_PreservesRulesRaw(t *testing.T) {
 		}
 	}`)
 
-	strat := RoutingStrategy{Type: "random", FallbackTag: "direct"}
+	strat := RoutingStrategy{Type: "random"}
 	profiles := defaultProfiles(strat)
 	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
@@ -694,7 +666,7 @@ func TestGenerateRoutingJSON_NoExistingRules(t *testing.T) {
 		{Tag: "proxy-us", Outbound: json.RawMessage(`{"tag":"proxy-us","protocol":"vless"}`)},
 	}
 
-	profiles := defaultProfiles(RoutingStrategy{Type: "random", FallbackTag: "direct"})
+	profiles := defaultProfiles(RoutingStrategy{Type: "random"})
 	data, err := GenerateRoutingJSON(proxies, profiles, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -788,7 +760,7 @@ func TestGenerateRoutingJSON_WithReplaceBalancerTag(t *testing.T) {
 		}
 	}`)
 
-	strat := RoutingStrategy{Type: "random", FallbackTag: "direct", ReplaceBalancerTag: true}
+	strat := RoutingStrategy{Type: "random", ReplaceBalancerTag: true}
 	profiles := defaultProfiles(strat)
 	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
@@ -837,7 +809,7 @@ func TestCollectFilteredProxies_DefaultFilterExcludesAll(t *testing.T) {
 	proxies := makeProxies()
 	profiles := []Profile{
 		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
-			Filter: Filter{ExcludeRegexes: []string{"⚡"}},
+			Filter:   Filter{ExcludeRegexes: []string{"⚡"}},
 			Strategy: RoutingStrategy{Type: "all"}},
 	}
 
@@ -851,10 +823,10 @@ func TestCollectFilteredProxies_UnionOfMultipleProfiles(t *testing.T) {
 	proxies := makeProxies() // DE, NL, EE countries
 	profiles := []Profile{
 		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
-			Filter: Filter{IncludeCountries: []string{"DE"}},
+			Filter:   Filter{IncludeCountries: []string{"DE"}},
 			Strategy: RoutingStrategy{Type: "all"}},
 		{ID: "eu", Name: "EU", Enabled: true,
-			Filter: Filter{IncludeCountries: []string{"NL"}},
+			Filter:   Filter{IncludeCountries: []string{"NL"}},
 			Strategy: RoutingStrategy{Type: "random"}},
 	}
 
@@ -869,10 +841,10 @@ func TestCollectFilteredProxies_DisabledProfileSkipped(t *testing.T) {
 	proxies := makeProxies()
 	profiles := []Profile{
 		{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
-			Filter: Filter{IncludeCountries: []string{"DE"}},
+			Filter:   Filter{IncludeCountries: []string{"DE"}},
 			Strategy: RoutingStrategy{Type: "all"}},
 		{ID: "disabled", Name: "Disabled", Enabled: false,
-			Filter: Filter{IncludeCountries: []string{"NL", "EE"}},
+			Filter:   Filter{IncludeCountries: []string{"NL", "EE"}},
 			Strategy: RoutingStrategy{Type: "random"}},
 	}
 
@@ -899,7 +871,7 @@ func TestCollectFilteredProxies_EmptyProxies(t *testing.T) {
 func TestGenerateRoutingJSON_MultipleProfiles(t *testing.T) {
 	proxies := makeProxies()
 	profiles := []Profile{
-		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: RoutingStrategy{Type: "random", FallbackTag: "direct"}},
+		{ID: "default", Name: "Default", Enabled: true, IsDefault: true, Strategy: RoutingStrategy{Type: "random"}},
 		{ID: "eu", Name: "EU", Enabled: true, Strategy: RoutingStrategy{Type: "roundrobin"},
 			Filter: Filter{IncludeCountries: []string{"DE", "NL"}}},
 	}
@@ -923,9 +895,6 @@ func TestGenerateRoutingJSON_MultipleProfiles(t *testing.T) {
 	b0 := balancers[0].(map[string]interface{})
 	if b0["tag"] != "default-balancer" {
 		t.Errorf("first balancer tag should be 'default-balancer', got %v", b0["tag"])
-	}
-	if b0["fallbackTag"] != "direct" {
-		t.Errorf("default balancer should have fallbackTag 'direct', got %v", b0["fallbackTag"])
 	}
 
 	// Second balancer = eu with concrete selector
