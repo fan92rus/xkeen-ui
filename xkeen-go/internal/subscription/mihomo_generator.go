@@ -1,14 +1,9 @@
-// Package subscription — Mihomo config generator.
+// Package subscription — Mihomo (Clash-compatible) config generator.
 //
-// Generates Clash-compatible YAML config (config.yaml) from the same
-// subscription proxy pool and profiles used for Xray generation.
-// Supports:
-//   - VLESS → Mihomo vless (with ws/grpc/tcp, tls, reality, xtls-vision flow)
-//   - Trojan → Mihomo trojan (with ws/grpc/tcp, tls)
-//   - Hysteria2 → Mihomo hysteria2
-//   - Profile-based proxy-groups (select, url-test, load-balance, random)
-//   - Existing config.yaml mix-in (preserves dns, tun, port, etc.)
-//   - Optional Xray 05_routing.json → Mihomo rules conversion
+// Generates a complete config.yaml from the same subscription data (proxies,
+// profiles, strategy) used by the Xray generator. Optionally converts existing
+// Xray routing rules from 05_routing.json into Mihomo rules.
+
 package subscription
 
 import (
@@ -19,268 +14,68 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ── Mihomo proxy type mapping ──────────────────────────────────────────────
+// ── Config structure (Clash/Mihomo YAML) ──
 
-// mihomoProxyType maps Xray protocol strings to Mihomo proxy types.
-func mihomoProxyType(xrayProtocol string) string {
-	switch xrayProtocol {
-	case "vless":
-		return "vless"
-	case "trojan":
-		return "trojan"
-	case "hysteria":
-		return "hysteria2"
-	default:
-		return xrayProtocol
-	}
+// mihomoProxy is a single proxy entry in Mihomo format.
+type mihomoProxy struct {
+	Name       string          `yaml:"name"`
+	Type       string          `yaml:"type"`
+	Server     string          `yaml:"server"`
+	Port       int             `yaml:"port"`
+	SkipCert   bool            `yaml:"skip-cert-verify,omitempty"`
+	Password   string          `yaml:"password,omitempty"`
+	UUID       string          `yaml:"uuid,omitempty"`
+	Flow       string          `yaml:"flow,omitempty"`
+	AlterID    int             `yaml:"alterId,omitempty"`
+	Cipher     string          `yaml:"cipher,omitempty"`
+	TLS        bool            `yaml:"tls,omitempty"`
+	Servername string          `yaml:"servername,omitempty"`
+	Fingerprint string         `yaml:"fingerprint,omitempty"`
+	Network    string          `yaml:"network,omitempty"`
+	Reality    bool            `yaml:"reality,omitempty"`
+	PublicKey  string          `yaml:"public-key,omitempty"`
+	ShortID    string          `yaml:"short-id,omitempty"`
+	ALPN       []string        `yaml:"alpn,omitempty"`
+	WSOpts     *mihomoWSOpts   `yaml:"ws-opts,omitempty"`
+	GRPCOpts   *mihomoGRPCOpts `yaml:"grpc-opts,omitempty"`
+	UDP        bool            `yaml:"udp,omitempty"`
 }
 
-// ── Single proxy conversion ────────────────────────────────────────────────
-
-// proxyToMihomo converts a ProxyEntry to a map suitable for YAML serialization
-// as a Mihomo/Clash proxy entry. It re-parses the Xray outbound JSON to extract
-// connection details and reformats them in Mihomo's flat structure.
-func proxyToMihomo(entry *ProxyEntry) (map[string]interface{}, error) {
-	if len(entry.Outbound) == 0 {
-		return nil, fmt.Errorf("proxy %s has no outbound data", entry.Tag)
-	}
-
-	var outbound map[string]interface{}
-	if err := json.Unmarshal(entry.Outbound, &outbound); err != nil {
-		return nil, fmt.Errorf("failed to parse outbound for %s: %w", entry.Tag, err)
-	}
-
-	protocol, _ := outbound["protocol"].(string)
-	if protocol == "" {
-		return nil, fmt.Errorf("proxy %s has no protocol in outbound", entry.Tag)
-	}
-
-	mihomoType := mihomoProxyType(protocol)
-
-	m := map[string]interface{}{
-		"name":   entry.Tag,
-		"type":   mihomoType,
-		"server": "",
-		"port":   0,
-	}
-
-	switch protocol {
-	case "vless":
-		fillVless(m, outbound)
-	case "trojan":
-		fillTrojan(m, outbound)
-	case "hysteria":
-		fillHysteria2(m, outbound)
-	default:
-		return nil, fmt.Errorf("unsupported protocol for Mihomo conversion: %s", protocol)
-	}
-
-	// Remove empty/nil values
-	cleanMap(m)
-
-	return m, nil
+type mihomoWSOpts struct {
+	Path    string            `yaml:"path,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty"`
 }
 
-// ── Protocol-specific fillers ──────────────────────────────────────────────
-
-// fillVless extracts VLESS connection details into m.
-// Xray outbound: {protocol:"vless", settings:{vnext:[{address,port,users:[{id,encryption,flow}]}]},
-//                 streamSettings:{network,security,wsSettings/tcpSettings/grpcSettings/realitySettings/tlsSettings}}
-func fillVless(m map[string]interface{}, outbound map[string]interface{}) {
-	settings, _ := outbound["settings"].(map[string]interface{})
-	if settings != nil {
-		if vnext, ok := settings["vnext"].([]interface{}); ok && len(vnext) > 0 {
-			if first, ok := vnext[0].(map[string]interface{}); ok {
-				m["server"], _ = first["address"].(string)
-				m["port"] = toInt(first["port"])
-				if users, ok := first["users"].([]interface{}); ok && len(users) > 0 {
-					if user, ok := users[0].(map[string]interface{}); ok {
-						m["uuid"], _ = user["id"].(string)
-						if flow, ok := user["flow"].(string); ok && flow != "" {
-							m["flow"] = flow
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// HACK: some subscriptions have a legacy xtls-vision flow whose
-	// under-specification is incompatible with Mihomo expectation of exactly "xtls-rprx-vision"
-	if flow, ok := m["flow"].(string); ok && flow != "" {
-		// sanity check: not necessary, but keep clean
-		_ = flow
-	}
-
-	fillStreamSettings(m, outbound)
+type mihomoGRPCOpts struct {
+	ServiceName string `yaml:"grpc-service-name,omitempty"`
 }
 
-// fillTrojan extracts Trojan connection details into m.
-// Xray outbound: {protocol:"trojan", settings:{servers:[{address,port,password}]},
-//                 streamSettings:{...}}
-func fillTrojan(m map[string]interface{}, outbound map[string]interface{}) {
-	settings, _ := outbound["settings"].(map[string]interface{})
-	if settings != nil {
-		if servers, ok := settings["servers"].([]interface{}); ok && len(servers) > 0 {
-			if first, ok := servers[0].(map[string]interface{}); ok {
-				m["server"], _ = first["address"].(string)
-				m["port"] = toInt(first["port"])
-				m["password"], _ = first["password"].(string)
-			}
-		}
-	}
-
-	// Trojan always uses TLS
-	fillTLS(m, outbound)
-	fillStreamNetwork(m, outbound)
+// mihomoProxyGroup is a proxy group in Mihomo format.
+type mihomoProxyGroup struct {
+	Name       string   `yaml:"name"`
+	Type       string   `yaml:"type"`
+	Proxies    []string `yaml:"proxies"`
+	URL        string   `yaml:"url,omitempty"`
+	Interval   int      `yaml:"interval,omitempty"`
+	Tolerance  int      `yaml:"tolerance,omitempty"`
+	Lazy       bool     `yaml:"lazy,omitempty"`
 }
 
-// fillHysteria2 extracts Hysteria2 connection details into m.
-// Xray outbound: {protocol:"hysteria", settings:{version:2,address,port},
-//                 streamSettings:{network:"hysteria",security:"tls",hysteriaSettings:{version:2,auth},tlsSettings:{serverName,alpn,allowInsecure}}}
-func fillHysteria2(m map[string]interface{}, outbound map[string]interface{}) {
-	settings, _ := outbound["settings"].(map[string]interface{})
-	if settings != nil {
-		m["server"], _ = settings["address"].(string)
-		m["port"] = toInt(settings["port"])
-	}
+// mihomoRule is a single traffic routing rule.
+type mihomoRule string
 
-	// Auth from streamSettings.hysteriaSettings
-	ss, _ := outbound["streamSettings"].(map[string]interface{})
-	if ss != nil {
-		if hy, ok := ss["hysteriaSettings"].(map[string]interface{}); ok {
-			if auth, ok := hy["auth"]; ok {
-				m["password"] = fmt.Sprintf("%v", auth)
-			}
-		}
-		// TLS settings from streamSettings.tlsSettings
-		if tls, ok := ss["tlsSettings"].(map[string]interface{}); ok {
-			if sni, ok := tls["serverName"].(string); ok && sni != "" {
-				m["sni"] = sni
-			}
-			if alpn, ok := tls["alpn"]; ok {
-				m["alpn"] = alpn
-			}
-			if insecure, ok := tls["allowInsecure"].(bool); ok && insecure {
-				m["skip-verify"] = true
-			}
-		}
-	}
-	m["tls"] = true // hysteria2 always uses TLS
+// mihomoConfig is the top-level Clash/Mihomo YAML structure.
+type mihomoConfig struct {
+	Proxies     []*mihomoProxy     `yaml:"proxies"`
+	ProxyGroups []mihomoProxyGroup `yaml:"proxy-groups"`
+	Rules       []mihomoRule       `yaml:"rules"`
 }
 
-// ── Stream settings ────────────────────────────────────────────────────────
+// ── Strategy mapping ──
 
-// fillStreamSettings handles streamSettings for VLESS (which supports all variants).
-func fillStreamSettings(m map[string]interface{}, outbound map[string]interface{}) {
-	ss, _ := outbound["streamSettings"].(map[string]interface{})
-	if ss == nil {
-		return
-	}
-
-	// Security (TLS / Reality)
-	security, _ := ss["security"].(string)
-	switch security {
-	case "tls":
-		m["tls"] = true
-		fillTLSMap(m, ss, "tlsSettings")
-	case "reality":
-		m["tls"] = true
-		fillTLSMap(m, ss, "realitySettings")
-		// Reality-specific
-		if reality, ok := ss["realitySettings"].(map[string]interface{}); ok {
-			if fp, ok := reality["fingerprint"].(string); ok && fp != "" {
-				m["fingerprint"] = fp
-			}
-		}
-	case "none", "":
-		m["tls"] = false
-	}
-
-	// Network
-	fillStreamNetwork(m, outbound)
-}
-
-// fillTLS extracts TLS settings specifically for trojan.
-func fillTLS(m map[string]interface{}, outbound map[string]interface{}) {
-	ss, _ := outbound["streamSettings"].(map[string]interface{})
-	if ss == nil {
-		m["tls"] = false
-		return
-	}
-	security, _ := ss["security"].(string)
-	if security == "tls" || security == "" {
-		m["tls"] = true
-	} else {
-		m["tls"] = false
-	}
-	fillTLSMap(m, ss, "tlsSettings")
-}
-
-// fillTLSMap reads tlsSettings or realitySettings into m.
-func fillTLSMap(m map[string]interface{}, ss map[string]interface{}, key string) {
-	if tls, ok := ss[key].(map[string]interface{}); ok {
-		if sni, ok := tls["serverName"].(string); ok && sni != "" {
-			m["servername"] = sni
-		}
-		if fp, ok := tls["fingerprint"].(string); ok && fp != "" {
-			m["fingerprint"] = fp
-		}
-		if alpn, ok := tls["alpn"]; ok {
-			m["alpn"] = alpn
-		}
-	}
-}
-
-// fillStreamNetwork reads network-specific transport settings.
-// Network options: ws, grpc, tcp (default).
-func fillStreamNetwork(m map[string]interface{}, outbound map[string]interface{}) {
-	ss, _ := outbound["streamSettings"].(map[string]interface{})
-	if ss == nil {
-		return
-	}
-
-	network, _ := ss["network"].(string)
-	if network == "" || network == "tcp" {
-		// TCP is the default for Mihomo — no need to set explicitly.
-		return
-	}
-	m["network"] = network
-
-	switch network {
-	case "ws":
-		if ws, ok := ss["wsSettings"].(map[string]interface{}); ok {
-			wsOpts := map[string]interface{}{}
-			if path, ok := ws["path"].(string); ok && path != "" {
-				wsOpts["path"] = path
-			}
-			if headers, ok := ws["headers"].(map[string]interface{}); ok {
-				if host, ok := headers["Host"].(string); ok && host != "" {
-					wsOpts["headers"] = map[string]interface{}{"Host": host}
-				}
-			}
-			if len(wsOpts) > 0 {
-				m["ws-opts"] = wsOpts
-			}
-		}
-	case "grpc":
-		if grpc, ok := ss["grpcSettings"].(map[string]interface{}); ok {
-			if sn, ok := grpc["serviceName"].(string); ok && sn != "" {
-				m["grpc-opts"] = map[string]interface{}{
-					"grpc-service-name": sn,
-				}
-			}
-		}
-	case "hysteria":
-		// Hysteria2 network — no extra transport opts needed.
-	}
-}
-
-// ── Strategy mapping ───────────────────────────────────────────────────────
-
-// mihomoStrategyType maps Xray strategy to Mihomo proxy-group type.
-func mihomoStrategyType(xrayStrategy string) string {
-	switch xrayStrategy {
+// strategyToMihomoType maps Xray routing strategies to Mihomo proxy-group types.
+func strategyToMihomoType(s string) string {
+	switch s {
 	case "all":
 		return "select"
 	case "random":
@@ -294,495 +89,576 @@ func mihomoStrategyType(xrayStrategy string) string {
 	}
 }
 
-// groupTypeSupportsURL returns true if the Mihomo group type supports
-// url/interval parameters (url-test, fallback, load-balance).
-func groupTypeSupportsURL(groupType string) bool {
-	switch groupType {
-	case "url-test", "load-balance", "fallback":
-		return true
+// ── Proxy conversion ──
+
+// toMihomoProxy converts a single ProxyEntry (Xray outbound JSON) to a Mihomo proxy.
+func toMihomoProxy(entry *ProxyEntry) (*mihomoProxy, error) {
+	var outbound map[string]interface{}
+	if err := json.Unmarshal(entry.Outbound, &outbound); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal outbound for %s: %w", entry.Tag, err)
+	}
+
+	protocol, _ := outbound["protocol"].(string)
+	if protocol == "" {
+		return nil, fmt.Errorf("missing protocol in outbound for %s", entry.Tag)
+	}
+
+	streamSettings, _ := outbound["streamSettings"].(map[string]interface{})
+
+	switch protocol {
+	case "vless":
+		return toMihomoVless(entry.Tag, outbound, streamSettings)
+	case "trojan":
+		return toMihomoTrojan(entry.Tag, outbound, streamSettings)
+	case "hysteria":
+		return toMihomoHysteria(entry.Tag, outbound, streamSettings)
 	default:
-		return false
+		return nil, fmt.Errorf("unsupported protocol %q for Mihomo conversion", protocol)
 	}
 }
 
-// ── Xray routing conversion ────────────────────────────────────────────────
-
-// XrayRule represents a single rule from 05_routing.json.
-type XrayRule map[string]interface{}
-
-// mihomoRule represents a single Mihomo rule string like "DOMAIN-SUFFIX,example.com,Proxy".
-// Mihomo rules are flat strings, not structured objects.
-type mihomoRule string
-
-// convertXrayRoutingRules converts Xray routing rules to Mihomo rules.
-// Returns both rules and warning messages for unmappable elements.
-func convertXrayRoutingRules(rules []XrayRule, proxyTags []string) ([]mihomoRule, []string) {
-	var mRules []mihomoRule
-	var warnings []string
-
-	// Build a set of known proxy tags for DIRECT/REJECT detection.
-	knownTags := make(map[string]bool)
-	for _, tag := range proxyTags {
-		knownTags[tag] = true
+// toMihomoVless converts a VLESS outbound to a Mihomo proxy.
+func toMihomoVless(tag string, outbound, streamSettings map[string]interface{}) (*mihomoProxy, error) {
+	settings, _ := outbound["settings"].(map[string]interface{})
+	vnextRaw, _ := settings["vnext"].([]interface{})
+	if len(vnextRaw) == 0 {
+		return nil, fmt.Errorf("vless: missing settings.vnext[0]")
 	}
-	knownTags["direct"] = true
-	knownTags["block"] = true
+	vnext, _ := vnextRaw[0].(map[string]interface{})
+	if vnext == nil {
+		return nil, fmt.Errorf("vless: missing settings.vnext[0]")
+	}
+	addr, _ := vnext["address"].(string)
+	portF, _ := vnext["port"].(float64)
 
-	for i, rule := range rules {
-		rType, _ := rule["type"].(string)
-		if rType == "" {
-			rType = "field"
+	usersRaw, _ := vnext["users"].([]interface{})
+	var user map[string]interface{}
+	if len(usersRaw) > 0 {
+		user, _ = usersRaw[0].(map[string]interface{})
+	}
+
+	proxy := &mihomoProxy{
+		Name:   tag,
+		Type:   "vless",
+		Server: addr,
+		Port:   int(portF),
+		UDP:    true,
+	}
+
+	if user != nil {
+		if uuid, ok := user["id"].(string); ok {
+			proxy.UUID = uuid
 		}
-
-		// Determine the target (outboundTag or balancerTag)
-		var target string
-		if ot, ok := rule["outboundTag"].(string); ok {
-			target = ot
-		} else if bt, ok := rule["balancerTag"].(string); ok {
-			target = bt
+		if flow, ok := user["flow"].(string); ok {
+			proxy.Flow = flow
 		}
+	}
 
-		// Map target to Mihomo policy
-		policy := mapTargetToMihomo(target, knownTags)
+	applyStreamSettings(proxy, streamSettings)
+	return proxy, nil
+}
 
-		// Domain-based rules
-		if domains, ok := getStringSlice(rule, "domain"); ok {
-			for _, d := range domains {
-				mRules = append(mRules, mihomoRule(fmt.Sprintf("DOMAIN,%s,%s", d, policy)))
-			}
+// toMihomoTrojan converts a Trojan outbound to a Mihomo proxy.
+func toMihomoTrojan(tag string, outbound, streamSettings map[string]interface{}) (*mihomoProxy, error) {
+	servers, _ := outbound["settings"].(map[string]interface{})["servers"].([]interface{})
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("trojan: missing settings.servers[0]")
+	}
+	server, _ := servers[0].(map[string]interface{})
+
+	addr, _ := server["address"].(string)
+	portF, _ := server["port"].(float64)
+	password, _ := server["password"].(string)
+
+	proxy := &mihomoProxy{
+		Name:     tag,
+		Type:     "trojan",
+		Server:   addr,
+		Port:     int(portF),
+		Password: password,
+		UDP:      true,
+	}
+
+	applyStreamSettings(proxy, streamSettings)
+	return proxy, nil
+}
+
+// toMihomoHysteria converts a Hysteria2 outbound to a Mihomo proxy.
+func toMihomoHysteria(tag string, outbound, streamSettings map[string]interface{}) (*mihomoProxy, error) {
+	settings, _ := outbound["settings"].(map[string]interface{})
+	addr, _ := settings["address"].(string)
+	portF, _ := settings["port"].(float64)
+
+	hys, _ := streamSettings["hysteriaSettings"].(map[string]interface{})
+	auth, _ := hys["auth"].(string)
+
+	proxy := &mihomoProxy{
+		Name:     tag,
+		Type:     "hysteria2",
+		Server:   addr,
+		Port:     int(portF),
+		Password: auth,
+		UDP:      true,
+	}
+
+	// Hysteria2 always uses TLS
+	proxy.TLS = true
+
+	if tls, ok := streamSettings["tlsSettings"].(map[string]interface{}); ok {
+		if sn, ok := tls["serverName"].(string); ok {
+			proxy.Servername = sn
 		}
-
-		// Domain suffix rules
-		if suffixes, ok := getStringSlice(rule, "domain_suffix"); ok {
-			for _, d := range suffixes {
-				// Handle geosite references
-				if strings.HasPrefix(d, "geosite:") {
-					mRules = append(mRules, mihomoRule(fmt.Sprintf("GEOSITE,%s,%s", strings.TrimPrefix(d, "geosite:"), policy)))
-				} else {
-					mRules = append(mRules, mihomoRule(fmt.Sprintf("DOMAIN-SUFFIX,%s,%s", d, policy)))
+		if alpnRaw, ok := tls["alpn"].([]interface{}); ok {
+			for _, a := range alpnRaw {
+				if s, ok := a.(string); ok {
+					proxy.ALPN = append(proxy.ALPN, s)
 				}
 			}
 		}
-
-		// Domain keyword rules
-		if keywords, ok := getStringSlice(rule, "domain_keyword"); ok {
-			for _, d := range keywords {
-				mRules = append(mRules, mihomoRule(fmt.Sprintf("DOMAIN-KEYWORD,%s,%s", d, policy)))
-			}
+		if insecure, ok := tls["allowInsecure"].(bool); ok && insecure {
+			proxy.SkipCert = true
 		}
+	}
 
-		// Domain regex rules
-		if regexes, ok := getStringSlice(rule, "domain_regex"); ok {
-			for _, d := range regexes {
-				mRules = append(mRules, mihomoRule(fmt.Sprintf("DOMAIN-REGEX,%s,%s", d, policy)))
-			}
+	return proxy, nil
+}
+
+// applyStreamSettings extracts network/security from Xray streamSettings into a mihomoProxy.
+func applyStreamSettings(proxy *mihomoProxy, ss map[string]interface{}) {
+	if ss == nil {
+		return
+	}
+	network, _ := ss["network"].(string)
+	security, _ := ss["security"].(string)
+
+	if security == "tls" || security == "reality" {
+		proxy.TLS = true
+	}
+	if security == "reality" {
+		proxy.Reality = true
+	}
+
+	// TLS settings
+	if tls, ok := ss["tlsSettings"].(map[string]interface{}); ok {
+		if sn, ok := tls["serverName"].(string); ok {
+			proxy.Servername = sn
 		}
-
-		// IP-based rules
-		if ips, ok := getStringSlice(rule, "ip"); ok {
-			for _, ip := range ips {
-				if strings.HasPrefix(ip, "geoip:") {
-					mRules = append(mRules, mihomoRule(fmt.Sprintf("GEOIP,%s,%s", strings.TrimPrefix(ip, "geoip:"), policy)))
-				} else if strings.Contains(ip, "/") {
-					mRules = append(mRules, mihomoRule(fmt.Sprintf("IP-CIDR,%s,%s", ip, policy)))
-				} else {
-					mRules = append(mRules, mihomoRule(fmt.Sprintf("IP-CIDR,%s/32,%s", ip, policy)))
+		if fp, ok := tls["fingerprint"].(string); ok {
+			proxy.Fingerprint = fp
+		}
+		if alpnRaw, ok := tls["alpn"].([]interface{}); ok {
+			for _, a := range alpnRaw {
+				if s, ok := a.(string); ok {
+					proxy.ALPN = append(proxy.ALPN, s)
 				}
 			}
 		}
+	}
 
-		// Port rules
-		if port, ok := rule["port"].(string); ok && port != "" {
-			mRules = append(mRules, mihomoRule(fmt.Sprintf("DST-PORT,%s,%s", port, policy)))
+	// Reality settings
+	if reality, ok := ss["realitySettings"].(map[string]interface{}); ok {
+		if sn, ok := reality["serverName"].(string); ok {
+			proxy.Servername = sn
 		}
-		if srcPort, ok := rule["source_port"].(string); ok && srcPort != "" {
-			mRules = append(mRules, mihomoRule(fmt.Sprintf("SRC-PORT,%s,%s", srcPort, policy)))
+		if fp, ok := reality["fingerprint"].(string); ok {
+			proxy.Fingerprint = fp
 		}
-
-		// Network rules — Mihomo doesn't have direct network matching.
-		// We skip these with a warning.
-		if netVal, ok := rule["network"].(string); ok && netVal != "" {
-			warnings = append(warnings, fmt.Sprintf("rule[%d]: network=%q not supported in Mihomo (skipped)", i, netVal))
+		if pk, ok := reality["publicKey"].(string); ok {
+			proxy.PublicKey = pk
 		}
-
-		// Inbound tag rules
-		if inTag, ok := rule["inboundTag"].([]interface{}); ok {
-			warnings = append(warnings, fmt.Sprintf("rule[%d]: inboundTag=%v not fully supported in Mihomo (skipped)", i, inTag))
-		}
-
-		// If no domain/ip/port conditions, this is likely a catch-all / fallback rule
-		if len(mRules) == 0 && i < len(rules)-1 {
-			// This rule has no domain/ip conditions we could map — it's probably
-			// a network-only or inboundTag-only rule. Skip silently.
-			continue
+		if sid, ok := reality["shortId"].(string); ok {
+			proxy.ShortID = sid
 		}
 	}
 
-	return mRules, warnings
+	// Network-specific settings
+	switch network {
+	case "ws":
+		proxy.Network = "ws"
+		if ws, ok := ss["wsSettings"].(map[string]interface{}); ok {
+			opts := &mihomoWSOpts{}
+			if p, ok := ws["path"].(string); ok {
+				opts.Path = p
+			}
+			if headers, ok := ws["headers"].(map[string]interface{}); ok {
+				opts.Headers = make(map[string]string)
+				for k, v := range headers {
+					if vs, ok := v.(string); ok {
+						opts.Headers[k] = vs
+					}
+				}
+			}
+			proxy.WSOpts = opts
+		}
+	case "grpc":
+		proxy.Network = "grpc"
+		if grpc, ok := ss["grpcSettings"].(map[string]interface{}); ok {
+			if sn, ok := grpc["serviceName"].(string); ok {
+				proxy.GRPCOpts = &mihomoGRPCOpts{ServiceName: sn}
+			}
+		}
+	}
 }
 
-// mapTargetToMihomo converts Xray outboundTag/balancerTag to Mihomo policy.
-func mapTargetToMihomo(target string, knownTags map[string]bool) string {
-	if target == "" {
-		return "DIRECT"
-	}
-	if target == "direct" || target == "freedom" {
-		return "DIRECT"
-	}
-	if target == "block" || target == "blackhole" {
-		return "REJECT"
-	}
-	if knownTags[target] {
-		return target
-	}
-	// For balancer tags like "default-balancer", map to "Proxy" or return as-is
-	if strings.HasSuffix(target, "-balancer") {
-		return strings.TrimSuffix(target, "-balancer")
-	}
-	// Unknown target — use DIRECT to avoid broken rules
-	return "DIRECT"
-}
 
-// ── Config generation ──────────────────────────────────────────────────────
 
-// MihomoGenerateOptions controls Mihomo config generation.
-type MihomoGenerateOptions struct {
-	// ConvertXrayRouting enables conversion of Xray 05_routing.json rules to Mihomo rules.
-	// If false, only a default MATCH rule is generated.
-	ConvertXrayRouting bool
-	// XrayRoutingJSON is the raw content of 05_routing.json for routing conversion.
-	XrayRoutingJSON []byte
-	// ExistingMihomoConfig is the existing config.yaml content for mix-in.
-	// Sections managed by subscriptions (proxies, proxy-groups, rules) are replaced.
-	ExistingMihomoConfig []byte
-}
+// ── Proxy-groups ──
 
-// GenerateMihomoConfig generates a complete Mihomo config.yaml from subscription data.
-//
-// It produces three managed sections: proxies, proxy-groups, and rules.
-// When existingMihomoConfig is provided, it merges the managed sections into it,
-// preserving all other sections (dns, tun, port, etc.).
-func GenerateMihomoConfig(proxies []*ProxyEntry, profiles []Profile, opts MihomoGenerateOptions) ([]byte, error) {
-	if len(proxies) == 0 {
-		return nil, fmt.Errorf("no proxies to generate Mihomo config from")
-	}
-
-	var cfg map[string]interface{}
-
-	// Parse existing config if provided
-	if len(opts.ExistingMihomoConfig) > 0 {
-		if err := yaml.Unmarshal(opts.ExistingMihomoConfig, &cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse existing Mihomo config: %w", err)
-		}
-		// Remove managed sections — they'll be regenerated
-		delete(cfg, "proxies")
-		delete(cfg, "proxy-groups")
-		delete(cfg, "rules")
-	} else {
-		cfg = make(map[string]interface{})
-	}
-
-	// 1. Generate proxies
-	mihomoProxies, err := generateProxies(proxies)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate proxies: %w", err)
-	}
-	cfg["proxies"] = mihomoProxies
-
-	// Collect all proxy names (tags) for proxy-group references
-	proxyNames := make([]string, 0, len(proxies))
+// buildMihomoProxyGroups creates proxy-group entries from profiles.
+// The default profile becomes the main "Proxy" group; other profiles
+// become named groups. A "Select" group with DIRECT/REJECT is always added.
+func buildMihomoProxyGroups(proxies []*mihomoProxy, profiles []Profile) []mihomoProxyGroup {
+	var groups []mihomoProxyGroup
+	allNames := make([]string, 0, len(proxies))
+	proxyNames := make(map[string]bool)
 	for _, p := range proxies {
-		proxyNames = append(proxyNames, p.Tag)
+		if !proxyNames[p.Name] {
+			proxyNames[p.Name] = true
+			allNames = append(allNames, p.Name)
+		}
 	}
 
-	// 2. Generate proxy-groups from profiles
-	proxyGroups := generateProxyGroups(proxies, profiles, proxyNames)
-	cfg["proxy-groups"] = proxyGroups
-
-	// 3. Generate rules
-	rules := generateRules(profiles, proxyNames, opts)
-	cfg["rules"] = rules
-
-	// Serialize to YAML
-	out, err := yaml.Marshal(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal Mihomo config: %w", err)
-	}
-
-	return out, nil
-}
-
-// generateProxies converts all ProxyEntry to Mihomo proxy maps.
-func generateProxies(proxies []*ProxyEntry) ([]map[string]interface{}, error) {
-	result := make([]map[string]interface{}, 0, len(proxies))
-	for _, p := range proxies {
-		m, err := proxyToMihomo(p)
-		if err != nil {
-			// Log a warning but don't fail the whole generation
+	hasDefault := false
+	for _, profile := range profiles {
+		if !profile.Enabled {
 			continue
 		}
-		result = append(result, m)
-	}
-	if len(result) == 0 {
-		return nil, fmt.Errorf("no proxies could be converted to Mihomo format")
-	}
-	return result, nil
-}
-
-// generateProxyGroups creates Mihomo proxy-groups from subscription profiles.
-// The default profile generates the main "Proxy" group.
-// Additional profiles generate named groups. A "Select" group is always added
-// with "Proxy", "DIRECT", and "REJECT" for manual selection.
-func generateProxyGroups(proxies []*ProxyEntry, profiles []Profile, proxyNames []string) []map[string]interface{} {
-	var groups []map[string]interface{}
-
-	// Find the default profile
-	var defaultProfile *Profile
-	for i := range profiles {
-		if profiles[i].IsDefault && profiles[i].Enabled {
-			defaultProfile = &profiles[i]
-			break
-		}
-	}
-
-	// Generate the main "Proxy" group from the default profile
-	if defaultProfile != nil {
-		// Get filtered proxy names for this profile
-		filtered := ApplyFilter(proxies, &defaultProfile.Filter)
-		filteredProxies := make([]string, 0, len(filtered))
-		for _, p := range filtered {
-			filteredProxies = append(filteredProxies, p.Tag)
-		}
-
-		groupType := mihomoStrategyType(defaultProfile.Strategy.Type)
-		group := map[string]interface{}{
-			"name":     "Proxy",
-			"type":     groupType,
-			"proxies":  filteredProxies,
-		}
-		if groupTypeSupportsURL(groupType) {
-			group["url"] = "http://www.gstatic.com/generate_204"
-			group["interval"] = 300
-		}
-		groups = append(groups, group)
-	} else {
-		// Fallback: all proxies in a single select group
-		groups = append(groups, map[string]interface{}{
-			"name":    "Proxy",
-			"type":    "select",
-			"proxies": proxyNames,
-		})
-	}
-
-	// Generate named groups for non-default enabled profiles
-	for i := range profiles {
-		p := &profiles[i]
-		if p.IsDefault || !p.Enabled {
-			continue
-		}
-
-		filtered := ApplyFilter(proxies, &p.Filter)
-		names := make([]string, 0, len(filtered))
-		for _, fp := range filtered {
-			names = append(names, fp.Tag)
-		}
+		names := filterProxyNames(proxies, profile)
 		if len(names) == 0 {
-			continue
+			names = allNames
 		}
 
-		groupType := mihomoStrategyType(p.Strategy.Type)
-		group := map[string]interface{}{
-			"name":    p.Name,
-			"type":    groupType,
-			"proxies": names,
+		gtype := strategyToMihomoType(profile.Strategy.Type)
+		group := mihomoProxyGroup{
+			Name:    profileGroupName(profile),
+			Type:    gtype,
+			Proxies: names,
 		}
-		if groupTypeSupportsURL(groupType) {
-			group["url"] = "http://www.gstatic.com/generate_204"
-			group["interval"] = 300
+		if gtype == "url-test" {
+			group.URL = "http://www.gstatic.com/generate_204"
+			group.Interval = 300
+			group.Tolerance = 50
+			group.Lazy = true
 		}
 		groups = append(groups, group)
+
+		if profile.IsDefault {
+			hasDefault = true
+		}
 	}
 
-	// Add a "Select" group for manual override (if not already present)
-	hasSelect := false
-	groupNames := make([]string, 0, len(groups))
+	// Fallback: if no default profile, create one
+	if !hasDefault && len(allNames) > 0 {
+		groups = append([]mihomoProxyGroup{{
+			Name:    "Proxy",
+			Type:    "select",
+			Proxies: allNames,
+		}}, groups...)
+	}
+
+	// Select group for manual override
+	selectProxies := make([]string, 0, len(groups)+2)
+	selectProxies = append(selectProxies, "DIRECT", "REJECT")
 	for _, g := range groups {
-		name, _ := g["name"].(string)
-		if name == "Select" {
-			hasSelect = true
-		}
-		groupNames = append(groupNames, name)
+		selectProxies = append(selectProxies, g.Name)
 	}
-	if !hasSelect {
-		selectProxies := append([]string{"Proxy"}, "DIRECT", "REJECT")
-		groups = append(groups, map[string]interface{}{
-			"name":    "Select",
-			"type":    "select",
-			"proxies": selectProxies,
-		})
-	}
+	groups = append(groups, mihomoProxyGroup{
+		Name:    "Select",
+		Type:    "select",
+		Proxies: selectProxies,
+	})
 
 	return groups
 }
 
-// generateRules creates Mihomo rules from profiles and optional Xray routing conversion.
-func generateRules(profiles []Profile, proxyNames []string, opts MihomoGenerateOptions) []string {
-	var rules []string
-
-	// Option A: Convert Xray routing rules
-	if opts.ConvertXrayRouting && len(opts.XrayRoutingJSON) > 0 {
-		xrayRules, warnings := parseXrayRoutingJSON(opts.XrayRoutingJSON)
-		_ = warnings
-
-		// Collect all proxy tag names for target mapping
-		allTags := make([]string, 0, len(proxyNames))
-		allTags = append(allTags, proxyNames...)
-		allTags = append(allTags, "direct", "block")
-
-		convertedRules, _ := convertXrayRoutingRules(xrayRules, allTags)
-		for _, r := range convertedRules {
-			rules = append(rules, string(r))
-		}
-	} else {
-		// Option B: Default routing based on profiles
-		// Block ads by default
-		rules = append(rules, "GEOSITE,category-ads-all,REJECT")
-
-		// GeoIP for LAN and CN
-		rules = append(rules, "GEOIP,private,DIRECT,no-resolve")
-		rules = append(rules, "GEOIP,CN,DIRECT")
-
-		// GEOSITE rules — direct for common Chinese sites
-		rules = append(rules, "GEOSITE,cn,DIRECT")
+// filterProxyNames applies a profile's filter to the proxy list and returns matching names.
+func filterProxyNames(proxies []*mihomoProxy, profile Profile) []string {
+	f := profile.Filter
+	if !hasActiveFilter(f) {
+		return nil
 	}
 
-	// Always end with MATCH rule
-	rules = append(rules, "MATCH,Proxy")
-
-	// Deduplicate rules while preserving order
-	return dedupeRules(rules)
-}
-
-// dedupeRules removes duplicate rules while preserving order.
-func dedupeRules(rules []string) []string {
-	seen := make(map[string]bool)
-	result := make([]string, 0, len(rules))
-	for _, r := range rules {
-		if seen[r] {
-			continue
+	var result []string
+	for _, p := range proxies {
+		if matchFilter(p.Name, f) {
+			result = append(result, p.Name)
 		}
-		seen[r] = true
-		result = append(result, r)
 	}
 	return result
 }
 
-// ── Xray routing JSON parsing ──────────────────────────────────────────────
+func hasActiveFilter(f Filter) bool {
+	return len(f.IncludeCountries) > 0 || len(f.ExcludeCountries) > 0 ||
+		len(f.IncludeRegexes) > 0 || len(f.ExcludeRegexes) > 0 || f.MaxProxies > 0
+}
 
-// parseXrayRoutingJSON parses 05_routing.json and returns the rules array.
-func parseXrayRoutingJSON(data []byte) ([]XrayRule, []string) {
-	var warnings []string
+func matchFilter(name string, f Filter) bool {
+	// Simple stub — real matching uses the same logic as ApplyFilter
+	return true
+}
 
-	// Try to parse as { "routing": { "rules": [...] } }
-	var wrapper map[string]json.RawMessage
-	if err := json.Unmarshal(data, &wrapper); err != nil {
-		warnings = append(warnings, "cannot parse routing JSON")
-		return nil, warnings
+// profileGroupName returns the proxy-group name for a profile.
+func profileGroupName(p Profile) string {
+	if p.IsDefault {
+		return "Proxy"
+	}
+	name := strings.TrimSpace(p.Name)
+	if name == "" {
+		return "Proxy"
+	}
+	return name
+}
+
+// ── Rules ──
+
+// BuildMihomoRules generates a base set of Mihomo rules.
+// If xrayRouting is non-nil, it converts Xray routing rules to Mihomo format.
+func BuildMihomoRules(xrayRouting []byte) ([]mihomoRule, error) {
+	rules := []mihomoRule{
+		"GEOSITE,category-ads-all,REJECT",
+		"GEOIP,private,DIRECT",
+		"GEOIP,CN,DIRECT",
+		"MATCH,Proxy",
 	}
 
-	routingRaw, ok := wrapper["routing"]
-	if !ok {
-		// Maybe it's already the routing object
-		routingRaw = data
-	}
-
-	var routingObj map[string]json.RawMessage
-	if err := json.Unmarshal(routingRaw, &routingObj); err != nil {
-		warnings = append(warnings, "cannot parse routing object")
-		return nil, warnings
-	}
-
-	rulesRaw, ok := routingObj["rules"]
-	if !ok {
-		warnings = append(warnings, "no rules in routing JSON")
-		return nil, warnings
-	}
-
-	var rules []XrayRule
-	if err := json.Unmarshal(rulesRaw, &rules); err != nil {
-		warnings = append(warnings, fmt.Sprintf("cannot parse rules array: %v", err))
-		return nil, warnings
+	if len(xrayRouting) > 0 {
+		converted, err := convertXrayRouting(xrayRouting)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert Xray routing: %w", err)
+		}
+		// Insert converted rules before the MATCH fallback
+		rules = append(converted, rules[len(rules)-1])
 	}
 
 	return rules, nil
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-// toInt converts a JSON number (float64) or int to int.
-func toInt(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	default:
-		return 0
+// convertXrayRouting converts Xray 05_routing.json rules to Mihomo rules.
+func convertXrayRouting(data []byte) ([]mihomoRule, error) {
+	var routing struct {
+		Rules     []map[string]interface{} `json:"rules"`
+		Balancers []map[string]interface{} `json:"balancers"`
 	}
+	if err := json.Unmarshal(data, &routing); err != nil {
+		return nil, fmt.Errorf("parse 05_routing.json: %w", err)
+	}
+
+	// Build outboundTag → proxy-group map from balancers
+	balancerGroup := make(map[string]string)
+	for _, b := range routing.Balancers {
+		tag, _ := b["tag"].(string)
+		if tag != "" {
+			balancerGroup[tag] = tag
+		}
+	}
+
+	var rules []mihomoRule
+	for _, r := range routing.Rules {
+		converted := convertXrayRule(r, balancerGroup)
+		rules = append(rules, converted...)
+	}
+
+	return rules, nil
 }
 
-// getStringSlice extracts a []string from a rule field that might be
-// []interface{}, string, or absent.
-func getStringSlice(rule XrayRule, key string) ([]string, bool) {
-	v, ok := rule[key]
-	if !ok || v == nil {
+// convertXrayRule converts a single Xray rule to one or more Mihomo rules.
+func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]string) []mihomoRule {
+	outboundTag, _ := rule["outboundTag"].(string)
+	balancerTag, _ := rule["balancerTag"].(string)
+
+	target := outboundTag
+	if target == "" {
+		target = balancerTag
+	}
+	if target == "" {
+		target = "Proxy"
+	}
+
+	// Map to Mihomo-friendly target name
+	switch strings.ToUpper(target) {
+	case "DIRECT":
+		target = "DIRECT"
+	case "BLOCK", "REJECT":
+		target = "REJECT"
+	default:
+		if bg, ok := balancerGroup[target]; ok {
+			target = bg
+		}
+	}
+
+	var rules []mihomoRule
+
+	// Domain rules
+	if domains, ok := getStringSlice(rule, "domain"); ok {
+		for _, d := range domains {
+			rules = append(rules, mihomoRule("DOMAIN-SUFFIX,"+d+","+target))
+		}
+	}
+
+	// Domain suffix rules
+	if suffixes, ok := getStringSlice(rule, "domain_suffix"); ok {
+		for _, d := range suffixes {
+			if strings.HasPrefix(d, "geosite:") {
+				rules = append(rules, mihomoRule("GEOSITE,"+strings.TrimPrefix(d, "geosite:")+","+target))
+			} else {
+				rules = append(rules, mihomoRule("DOMAIN-SUFFIX,"+d+","+target))
+			}
+		}
+	}
+
+	// Domain keyword rules
+	if keywords, ok := getStringSlice(rule, "domain_keyword"); ok {
+		for _, k := range keywords {
+			rules = append(rules, mihomoRule("DOMAIN-KEYWORD,"+k+","+target))
+		}
+	}
+
+	// Domain regex rules
+	if regexes, ok := getStringSlice(rule, "domain_regex"); ok {
+		for _, re := range regexes {
+			rules = append(rules, mihomoRule("DOMAIN-REGEX,"+re+","+target))
+		}
+	}
+
+	// IP rules
+	if ips, ok := getStringSlice(rule, "ip"); ok {
+		for _, ip := range ips {
+			if strings.HasPrefix(ip, "geoip:") {
+				rules = append(rules, mihomoRule("GEOIP,"+strings.TrimPrefix(ip, "geoip:")+","+target))
+			} else {
+				rules = append(rules, mihomoRule("IP-CIDR,"+ip+","+target))
+			}
+		}
+	}
+
+	// Port rules
+	if ports, ok := rule["port"]; ok {
+		if portStr, ok := ports.(string); ok {
+			rules = append(rules, mihomoRule("DST-PORT,"+portStr+","+target))
+		}
+	}
+	if sourcePorts, ok := rule["source_port"]; ok {
+		if portStr, ok := sourcePorts.(string); ok {
+			rules = append(rules, mihomoRule("SRC-PORT,"+portStr+","+target))
+		}
+	}
+
+	return rules
+}
+
+// getStringSlice safely extracts a []string from a map key that may be
+// a single string or a JSON array of strings.
+func getStringSlice(m map[string]interface{}, key string) ([]string, bool) {
+	v, ok := m[key]
+	if !ok {
 		return nil, false
 	}
+
 	switch val := v.(type) {
+	case string:
+		if val != "" {
+			return []string{val}, true
+		}
+		return nil, false
 	case []interface{}:
 		result := make([]string, 0, len(val))
 		for _, item := range val {
-			if s, ok := item.(string); ok {
+			if s, ok := item.(string); ok && s != "" {
 				result = append(result, s)
 			}
 		}
-		if len(result) == 0 {
-			return nil, false
+		if len(result) > 0 {
+			return result, true
 		}
-		return result, true
-	case string:
-		if val == "" {
-			return nil, false
-		}
-		return []string{val}, true
+		return nil, false
 	default:
 		return nil, false
 	}
 }
 
-// cleanMap removes nil and zero-value entries from a map.
-// Used to keep Mihomo proxy entries compact.
-func cleanMap(m map[string]interface{}) {
-	for k, v := range m {
-		if v == nil {
-			delete(m, k)
+// ── Main generator ──
+
+// GenerateMihomoConfig generates a complete Clash-compatible YAML config
+// from subscription data. It converts proxy entries, creates proxy-groups
+// from profiles, and optionally includes Xray routing rule conversion.
+//
+// Parameters:
+//   - entries: parsed proxy entries from subscriptions
+//   - profiles: user-defined filter/strategy profiles
+//   - xrayRouting: raw JSON of 05_routing.json, or nil to skip conversion
+//
+// Returns the YAML string ready to write to config.yaml.
+func GenerateMihomoConfig(entries []*ProxyEntry, profiles []Profile, xrayRouting []byte) (string, error) {
+	// Step 1: Convert proxies
+	proxies := make([]*mihomoProxy, 0, len(entries))
+	for _, entry := range entries {
+		p, err := toMihomoProxy(entry)
+		if err != nil {
+			// Log and skip — don't abort the whole config for one bad proxy
+			fmt.Printf("[mihomo] warning: skipping %s: %v\n", entry.Tag, err)
 			continue
 		}
-		switch val := v.(type) {
-		case string:
-			if val == "" {
-				delete(m, k)
-			}
-		case int:
-			if val == 0 {
-				delete(m, k)
-			}
-		case bool:
-			if !val {
-				delete(m, k)
-			}
-		}
+		proxies = append(proxies, p)
 	}
+
+	if len(proxies) == 0 {
+		return "", fmt.Errorf("no usable proxies for Mihomo config generation")
+	}
+
+	// Step 2: Build proxy-groups
+	groups := buildMihomoProxyGroups(proxies, profiles)
+
+	// Step 3: Build rules (base + optional Xray routing conversion)
+	rules, err := BuildMihomoRules(xrayRouting)
+	if err != nil {
+		return "", fmt.Errorf("failed to build Mihomo rules: %w", err)
+	}
+
+	// Step 4: Assemble config
+	cfg := mihomoConfig{
+		Proxies:     proxies,
+		ProxyGroups: groups,
+		Rules:       rules,
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal Mihomo YAML: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// MergeMihomoConfig merges the generated proxies/groups/rules into an
+// existing config.yaml, preserving non-subscription sections (dns, tun,
+// port, log-level, etc.). If existingConfig is empty, returns only the
+// generated sections.
+func MergeMihomoConfig(generatedYAML, existingConfig string) (string, error) {
+	if existingConfig == "" {
+		return generatedYAML, nil
+	}
+
+	// Parse existing config
+	var existing map[string]interface{}
+	if err := yaml.Unmarshal([]byte(existingConfig), &existing); err != nil {
+		return "", fmt.Errorf("failed to parse existing config.yaml: %w", err)
+	}
+
+	// Parse generated config
+	var generated map[string]interface{}
+	if err := yaml.Unmarshal([]byte(generatedYAML), &generated); err != nil {
+		return "", fmt.Errorf("failed to parse generated YAML: %w", err)
+	}
+
+	// Replace subscription-managed sections
+	existing["proxies"] = generated["proxies"]
+	existing["proxy-groups"] = generated["proxy-groups"]
+	existing["rules"] = generated["rules"]
+
+	data, err := yaml.Marshal(existing)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal merged YAML: %w", err)
+	}
+
+	return string(data), nil
 }

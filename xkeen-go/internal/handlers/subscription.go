@@ -473,37 +473,40 @@ func (h *SubscriptionHandler) applyMihomo(w http.ResponseWriter, r *http.Request
 	configPath := h.mihomoDir + "/config.yaml"
 
 	var (
-		existingConfig []byte
+		existingConfig string
 		xrayRouting    []byte
 	)
 
 	// Read existing Mihomo config for mix-in
-	existingConfig, _ = os.ReadFile(configPath)
+	if data, err := os.ReadFile(configPath); err == nil {
+		existingConfig = string(data)
+	}
 
 	// Read existing Xray routing if routing conversion is requested
 	if convertRouting {
 		xrayRouting, _ = os.ReadFile(h.xrayDir + "/05_routing.json")
 	}
 
-	opts := subscription.MihomoGenerateOptions{
-		ConvertXrayRouting: convertRouting,
-		XrayRoutingJSON:    xrayRouting,
-		ExistingMihomoConfig: existingConfig,
-	}
-
-	var mihomoYAML []byte
+	var finalYAML string
 	if err := h.scheduler.WithApplyLock(func() error {
-		var err error
-		mihomoYAML, err = subscription.GenerateMihomoConfig(proxies, profiles, opts)
+		// Step 1: Generate Mihomo proxies, groups, and rules from subscription data
+		genYAML, err := subscription.GenerateMihomoConfig(proxies, profiles, xrayRouting)
 		if err != nil {
 			return fmt.Errorf("failed to generate Mihomo config: %v", err)
 		}
+
+		// Step 2: Merge with existing config.yaml (preserve dns, tun, port, etc.)
+		merged, err := subscription.MergeMihomoConfig(genYAML, existingConfig)
+		if err != nil {
+			return fmt.Errorf("failed to merge with existing config: %v", err)
+		}
+		finalYAML = merged
 
 		if err := os.MkdirAll(h.mihomoDir, 0755); err != nil {
 			return fmt.Errorf("failed to create Mihomo config directory: %v", err)
 		}
 
-		if err := os.WriteFile(configPath, mihomoYAML, 0644); err != nil {
+		if err := os.WriteFile(configPath, []byte(finalYAML), 0644); err != nil {
 			return fmt.Errorf("failed to write Mihomo config: %v", err)
 		}
 		return nil
