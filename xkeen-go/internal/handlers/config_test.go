@@ -357,6 +357,136 @@ func TestWriteFile_NoPath(t *testing.T) {
 	}
 }
 
+// --- WriteFile mtime / Optimistic Locking Tests ---
+
+func TestWriteFile_ConflictOnStaleMtime(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+
+	// Read file first to get its mtime
+	readReq := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	readRec := httptest.NewRecorder()
+	handler.ReadFile(readRec, readReq)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("ReadFile failed: %d: %s", readRec.Code, readRec.Body.String())
+	}
+	var readResp ReadFileResponse
+	if err := json.Unmarshal(readRec.Body.Bytes(), &readResp); err != nil {
+		t.Fatalf("failed to parse ReadFile response: %v", err)
+	}
+	if readResp.Modified == 0 {
+		t.Fatal("expected non-zero modified in ReadFile response")
+	}
+
+	// Wait to ensure mtime changes (Unix() = seconds precision)
+	time.Sleep(1100 * time.Millisecond)
+
+	// Modify file on disk directly (simulates external change)
+	if err := os.WriteFile(filePath, []byte(`{"external": true}`), 0644); err != nil {
+		t.Fatalf("failed to modify file: %v", err)
+	}
+
+	// Try to save with stale expected_modified → should get 409
+	body := WriteFileRequest{
+		Path:             filePath,
+		Content:          `{"new": true}`,
+		ExpectedModified: readResp.Modified,
+	}
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify the file was NOT overwritten
+	data, _ := os.ReadFile(filePath)
+	if strings.Contains(string(data), `"new": true`) {
+		t.Error("file was overwritten despite conflict")
+	}
+}
+
+func TestWriteFile_NoCheckWhenExpectedModifiedZero(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+
+	// Save without expected_modified (or 0 — backward compatible)
+	body := WriteFileRequest{
+		Path:    filePath,
+		Content: `{"log":{"loglevel":"info"}}`,
+	}
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify file was written
+	data, _ := os.ReadFile(filePath)
+	if !strings.Contains(string(data), `"loglevel":"info"`) {
+		t.Error("file was not updated")
+	}
+}
+
+func TestReadFile_ReturnsModified(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+
+	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	rec := httptest.NewRecorder()
+	handler.ReadFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ReadFile failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp ReadFileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp.Modified == 0 {
+		t.Error("expected non-zero modified field in ReadFile response")
+	}
+}
+
+func TestWriteFile_ResponseIncludesModified(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
+
+	body := WriteFileRequest{
+		Path:    filePath,
+		Content: `{"log":{"loglevel":"debug"}}`,
+	}
+	req := httptest.NewRequest("POST", "/api/config/file", marshalBody(t, body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.WriteFile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	modified, ok := result["modified"].(float64)
+	if !ok || modified == 0 {
+		t.Error("expected non-zero modified field in WriteFile response")
+	}
+}
+
 // --- DeleteFile Tests ---
 
 func TestDeleteFile_Success(t *testing.T) {

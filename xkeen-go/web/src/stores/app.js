@@ -10,6 +10,7 @@ import * as statusService from '../services/status.js';
 import * as modeService from '../services/mode.js';
 import { filterLogs } from '../utils/log-filter.js';
 import { computeDiff as computeDiffHtml } from '../utils/diff.js';
+import { formatBackupTime } from '../utils/format.js';
 
 export const useAppStore = defineStore('app', () => {
     // ── UI state ──
@@ -103,7 +104,12 @@ export const useAppStore = defineStore('app', () => {
         try {
             const data = await configService.getFile(path);
             if (data.path) {
-                currentFile.value = { path: data.path, content: data.content, valid: data.valid };
+                currentFile.value = {
+                    path: data.path,
+                    content: data.content,
+                    valid: data.valid,
+                    modified: data.modified
+                };
                 isValidJson.value = data.valid;
                 lastSavedContent.value = data.content;
             }
@@ -113,11 +119,25 @@ export const useAppStore = defineStore('app', () => {
     async function saveFile(content) {
         if (!currentFile.value) { showToast('Файл не выбран', 'error'); return false; }
         try {
-            await configService.saveFile(currentFile.value.path, content);
+            const data = await configService.saveFile(
+                currentFile.value.path,
+                content,
+                currentFile.value.modified
+            );
+            // Update local cache after successful save
+            currentFile.value.content = content;
+            if (data && data.modified !== undefined) {
+                currentFile.value.modified = data.modified;
+            }
             lastSavedContent.value = content;
             showToast('Сохранено успешно', 'success');
             return true;
         } catch (err) {
+            if (err.status === 409) {
+                showToast('Файл изменён на диске, перезагружаем…', 'error');
+                await loadFile(currentFile.value.path);
+                return false;
+            }
             showToast(err.message || 'Ошибка сохранения', 'error');
             return false;
         }
@@ -271,7 +291,7 @@ export const useAppStore = defineStore('app', () => {
         backupsModal.selectedBackup = backup;
         try {
             const backupContent = await configService.getBackupContent(backup.path);
-            backupsModal.diffContent = computeDiffHtml(currentFile.value?.content || '', backupContent);
+            backupsModal.diffContent = computeDiffHtml(lastSavedContent.value || '', backupContent);
         } catch { showToast('Не удалось загрузить содержимое', 'error'); }
     }
 
@@ -292,9 +312,7 @@ export const useAppStore = defineStore('app', () => {
         } catch { showToast('Не удалось загрузить', 'error'); }
     }
 
-    function formatBackupTime(timestamp) {
-        return new Date(timestamp * 1000).toLocaleString();
-    }
+    // formatBackupTime imported from ../utils/format.js
 
     // ── Actions: Diff ──
     function openDiffModal(currentContent, savedContent) {

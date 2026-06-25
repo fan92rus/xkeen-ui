@@ -324,12 +324,10 @@ func (h *ServiceHandler) Stop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Restart restarts the xkeen service.
-// POST /api/xkeen/restart
-// Runs restart asynchronously to avoid blocking the request.
-func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
+// RestartService restarts the xkeen service asynchronously in a background goroutine.
+// Safe to call from non-HTTP contexts (e.g., subscription Apply).
+func (h *ServiceHandler) RestartService() {
 	h.wg.Add(1)
-	// Run restart in background goroutine
 	go func() {
 		defer h.wg.Done()
 
@@ -347,6 +345,13 @@ func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second)
 		h.TriggerStatusCheck()
 	}()
+}
+
+// Restart restarts the xkeen service.
+// POST /api/xkeen/restart
+// Runs restart asynchronously to avoid blocking the request.
+func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	h.RestartService()
 
 	// Return immediately
 	respondJSON(w, http.StatusOK, ServiceResponse{
