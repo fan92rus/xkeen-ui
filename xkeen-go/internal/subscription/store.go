@@ -61,12 +61,12 @@ func (s *Store) GetConfig() *SubscriptionConfig {
 	return cloneConfig(s.config)
 }
 
-// Save persists the current config to disk.
+// Save persists the current config to disk. Holds RLock through disk write
+// to prevent concurrent writers from modifying s.config during save.
 func (s *Store) Save() error {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	cfg := cloneConfig(s.config)
-	s.mu.RUnlock()
-
 	return s.saveConfig(cfg)
 }
 
@@ -196,7 +196,15 @@ func (s *Store) SetFilters(filters *Filter) error {
 func (s *Store) GetFilters() *Filter {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	dp := s.defaultProfile()
+	dp := s.findDefaultProfile()
+	if dp == nil {
+		return &Filter{
+			IncludeCountries: []string{},
+			ExcludeCountries: []string{},
+			IncludeRegexes:   []string{},
+			ExcludeRegexes:   []string{},
+		}
+	}
 	return cloneFilter(&dp.Filter)
 }
 
@@ -213,7 +221,10 @@ func (s *Store) SetStrategy(strategy *RoutingStrategy) error {
 func (s *Store) GetStrategy() *RoutingStrategy {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	dp := s.defaultProfile()
+	dp := s.findDefaultProfile()
+	if dp == nil {
+		return &RoutingStrategy{Type: "all"}
+	}
 	cp := dp.Strategy
 	return &cp
 }
@@ -324,6 +335,18 @@ func (s *Store) DeleteProfile(id string) error {
 	return fmt.Errorf("profile %s not found", id)
 }
 
+// findDefaultProfile returns a pointer to the existing default profile, or nil.
+// Unlike defaultProfile(), this does NOT mutate the config — safe for read paths.
+// Caller must hold at least s.mu.RLock.
+func (s *Store) findDefaultProfile() *Profile {
+	for i := range s.config.Profiles {
+		if s.config.Profiles[i].IsDefault {
+			return &s.config.Profiles[i]
+		}
+	}
+	return nil
+}
+
 // defaultProfile returns a pointer to the default profile (creates one if missing).
 // Caller must hold s.mu.
 func (s *Store) defaultProfile() *Profile {
@@ -426,6 +449,20 @@ func (s *Store) migrateRegexFields() {
 
 // ---------- Proxies (cached to proxy-cache.json) ----------
 
+// atomicWriteFile writes data to path atomically via temp file + rename.
+// Mirror of saveConfig's tmp+rename pattern, usable for other file writes.
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp) // cleanup on rename failure
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+	return nil
+}
+
 // proxyCachePath returns the path for the proxy cache file,
 // derived from the store path (subscriptions.json → proxy-cache.json).
 func (s *Store) proxyCachePath() string {
@@ -457,7 +494,7 @@ func (s *Store) saveProxyCache(proxies []*ProxyEntry) {
 		log.Printf("[store] failed to marshal proxy cache: %v", err)
 		return
 	}
-	if err := os.WriteFile(cachePath, data, 0644); err != nil {
+	if err := atomicWriteFile(cachePath, data, 0644); err != nil {
 		log.Printf("[store] failed to write proxy cache: %v", err)
 	}
 }

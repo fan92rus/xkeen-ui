@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -71,9 +73,16 @@ func parseVless(rawURI string) (*ProxyEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid vless port %q: %w", portStr, err)
 	}
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid vless port %d: out of range 1-65535", port)
+	}
 
 	// Parse query params
-	params, _ := url.ParseQuery(queryStr)
+	params, err := url.ParseQuery(queryStr)
+	if err != nil {
+		log.Printf("[subscription] vless: malformed query params (%v), continuing with partial params", err)
+		params = make(url.Values)
+	}
 
 	// Decode fragment for remarks
 	remarks := ""
@@ -261,8 +270,15 @@ func parseTrojan(rawURI string) (*ProxyEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid trojan port %q: %w", portStr, err)
 	}
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid trojan port %d: out of range 1-65535", port)
+	}
 
-	params, _ := url.ParseQuery(queryStr)
+	params, err := url.ParseQuery(queryStr)
+	if err != nil {
+		log.Printf("[subscription] trojan: malformed query params (%v), continuing with partial params", err)
+		params = make(url.Values)
+	}
 	remarks := extractRemarks(fragment)
 
 	outbound, err := buildTrojanOutbound(password, host, port, params, "")
@@ -394,8 +410,15 @@ func parseHysteria2(rawURI string) (*ProxyEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid hysteria2 port %q: %w", portStr, err)
 	}
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid hysteria2 port %d: out of range 1-65535", port)
+	}
 
-	params, _ := url.ParseQuery(queryStr)
+	params, err := url.ParseQuery(queryStr)
+	if err != nil {
+		log.Printf("[subscription] hysteria2: malformed query params (%v), continuing with partial params", err)
+		params = make(url.Values)
+	}
 	remarks := extractRemarks(fragment)
 
 	outbound, err := buildHysteria2Outbound(password, host, port, params, "")
@@ -473,17 +496,50 @@ func buildHysteria2Outbound(password, host string, port int, params url.Values, 
 
 // --- VMESS ---
 
-func GenerateTags(entries []*ProxyEntry) {
-	counters := make(map[string]int)
+// proxyStableKey returns a stable identifier for a proxy entry, used for
+// deterministic tag assignment across refreshes regardless of list order.
+// RawURI is the most stable and unique identity per proxy.
+func proxyStableKey(e *ProxyEntry) string {
+	if e.RawURI != "" {
+		return e.RawURI
+	}
+	// Fallback for entries without RawURI (e.g. tests): use a composite of fields
+	if e.Tag != "" {
+		return e.Tag
+	}
+	if e.Remarks != "" {
+		return e.Remarks
+	}
+	return fmt.Sprintf("%s-%s-%s", e.Protocol, e.Country, e.Remarks)
+}
 
+// GenerateTags assigns deterministic tags based on stable sort within each country.
+// Unlike the old positional approach, tags are order-independent across refreshes:
+// the same set of proxies always receives the same tags.
+func GenerateTags(entries []*ProxyEntry) {
+	type entryWithKey struct {
+		entry *ProxyEntry
+		key   string
+	}
+
+	// Group by country
+	byCountry := make(map[string][]entryWithKey)
 	for _, entry := range entries {
 		cc := strings.ToLower(entry.Country)
 		if cc == "" {
-			cc = "xu" // unknown
+			cc = "xu"
 		}
+		byCountry[cc] = append(byCountry[cc], entryWithKey{entry: entry, key: proxyStableKey(entry)})
+	}
 
-		counters[cc]++
-		entry.Tag = fmt.Sprintf("proxy-%s-%d", cc, counters[cc])
+	// Sort each group by stable key, then assign numbers
+	for cc, group := range byCountry {
+		sort.SliceStable(group, func(i, j int) bool {
+			return group[i].key < group[j].key
+		})
+		for n, ek := range group {
+			ek.entry.Tag = fmt.Sprintf("proxy-%s-%d", cc, n+1)
+		}
 	}
 
 	// Update the tag in the outbound JSON for each entry
@@ -604,9 +660,15 @@ func extractRemarks(fragment string) string {
 	return decoded
 }
 
+const maxSubscriptionSize = 10 * 1024 * 1024 // 10MB — generous for a real sub (<1MB)
+
 // ParseSubscriptionContent parses a raw subscription response (base64-encoded or plain text).
 // Returns a list of ProxyEntry from all recognized URIs.
 func ParseSubscriptionContent(data []byte) ([]*ProxyEntry, error) {
+	if len(data) > maxSubscriptionSize {
+		return nil, fmt.Errorf("subscription body too large: %d bytes (max %d)", len(data), maxSubscriptionSize)
+	}
+
 	content := strings.TrimSpace(string(data))
 
 	// Try base64 decode first
@@ -627,6 +689,7 @@ func ParseSubscriptionContent(data []byte) ([]*ProxyEntry, error) {
 
 		entry, err := ParseURI(line)
 		if err != nil {
+			log.Printf("[subscription] skipped URI: %v", err)
 			errors = append(errors, err.Error())
 			continue
 		}
@@ -646,6 +709,7 @@ func ParseSubscriptionContent(data []byte) ([]*ProxyEntry, error) {
 // ParseProxiesFromURIs parses a list of share URIs (not base64-encoded).
 func ParseProxiesFromURIs(uris []string) ([]*ProxyEntry, error) {
 	var entries []*ProxyEntry
+	var parseErrors int
 	for _, uri := range uris {
 		uri = strings.TrimSpace(uri)
 		if uri == "" {
@@ -653,11 +717,16 @@ func ParseProxiesFromURIs(uris []string) ([]*ProxyEntry, error) {
 		}
 		entry, err := ParseURI(uri)
 		if err != nil {
-			continue // skip unrecognized
+			log.Printf("[subscription] skipped URI: %v", err)
+			parseErrors++
+			continue
 		}
 		entries = append(entries, entry)
 	}
 	GenerateTags(entries)
+	if len(entries) == 0 && parseErrors > 0 {
+		return entries, fmt.Errorf("all %d URIs failed to parse", parseErrors)
+	}
 	return entries, nil
 }
 

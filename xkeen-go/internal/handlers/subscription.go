@@ -235,6 +235,11 @@ func (h *SubscriptionHandler) UpdateFilters(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if err := subscription.ValidateRegexes(&req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	if err := h.store.SetFilters(&req); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save filters: %v", err))
 		return
@@ -321,56 +326,64 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate outbounds for filtered proxies only
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
-		return
-	}
+	// Declare variables needed after the locked write section
+	var (
+		observatoryJSON []byte
+		outboundsPath   = h.xrayDir + "/04_outbounds.json"
+		routingPath     = h.xrayDir + "/05_routing.json"
+		observatoryPath = h.xrayDir + "/07_observatory.json"
+	)
 
-	// Read existing routing (if any)
-	var existingRouting json.RawMessage
-	routingPath := h.xrayDir + "/05_routing.json"
-	if data, err := os.ReadFile(routingPath); err == nil {
-		existingRouting = data
-	}
-
-	// Generate routing with all profiles
-	routingJSON, err := subscription.GenerateRoutingJSON(allProxies, profiles, existingRouting)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
-		return
-	}
-
-	// Generate observatory if any profile needs it
-	var observatoryJSON []byte
-	if subscription.NeedsObservatory(profiles) {
-		observatoryJSON, err = subscription.GenerateObservatoryJSON()
+	// Generate and write config files under the apply lock to serialize
+	// with concurrent auto-apply runs.
+	if err := h.scheduler.WithApplyLock(func() error {
+		outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate observatory: %v", err))
-			return
+			return fmt.Errorf("failed to generate outbounds: %v", err)
 		}
-	}
 
-	// Ensure directory exists
-	if err := os.MkdirAll(h.xrayDir, 0755); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create config directory: %v", err))
-		return
-	}
+		// Read existing routing (if any)
+		var existingRouting json.RawMessage
+		if data, err := os.ReadFile(routingPath); err == nil {
+			existingRouting = data
+		}
 
-	outboundsPath := h.xrayDir + "/04_outbounds.json"
-	observatoryPath := h.xrayDir + "/07_observatory.json"
+		// Generate routing with the SAME filtered list used for outbounds, so the
+		// first-proxy "proxy" tag and balancer selectors stay consistent
+		// (outboundTag resolves against a single shared list).
+		routingJSON, err := subscription.GenerateRoutingJSON(filteredProxies, profiles, existingRouting)
+		if err != nil {
+			return fmt.Errorf("failed to generate routing: %v", err)
+		}
 
-	// Write all files atomically (tmp + rename)
-	files := map[string][]byte{
-		outboundsPath: outboundsJSON,
-		routingPath:   routingJSON,
-	}
-	if observatoryJSON != nil {
-		files[observatoryPath] = observatoryJSON
-	}
-	if err := atomicWriteAll(files); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config files: %v", err))
+		// Generate observatory if any profile needs it
+		if subscription.NeedsObservatory(profiles) {
+			observatoryJSON, err = subscription.GenerateObservatoryJSON()
+			if err != nil {
+				return fmt.Errorf("failed to generate observatory: %v", err)
+			}
+		}
+
+		// Ensure directory exists
+		if err := os.MkdirAll(h.xrayDir, 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %v", err)
+		}
+
+		// Write all files atomically (tmp + rename)
+		files := map[string][]byte{
+			outboundsPath: outboundsJSON,
+			routingPath:   routingJSON,
+		}
+		if observatoryJSON != nil {
+			files[observatoryPath] = observatoryJSON
+		}
+		if err := atomicWriteAll(files); err != nil {
+			return fmt.Errorf("failed to write config files: %v", err)
+		}
+
+		return nil
+	}); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -454,7 +467,8 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		existingRouting = data
 	}
 
-	routingJSON, err := subscription.GenerateRoutingJSON(allProxies, profiles, existingRouting)
+	// Generate routing from the same filtered list as outbounds (see Apply handler).
+	routingJSON, err := subscription.GenerateRoutingJSON(filteredProxies, profiles, existingRouting)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate routing: %v", err))
 		return
@@ -543,6 +557,10 @@ func (h *SubscriptionHandler) CreateProfile(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if err := subscription.ValidateRegexes(&p.Filter); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := h.store.AddProfile(&p); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -560,6 +578,10 @@ func (h *SubscriptionHandler) UpdateProfile(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	p.ID = id
+	if err := subscription.ValidateRegexes(&p.Filter); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := h.store.UpdateProfile(&p); err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return

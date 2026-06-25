@@ -39,6 +39,9 @@ type Scheduler struct {
 
 	// metricsPort is the Xray metrics port (0 = disabled).
 	metricsPort int
+
+	// applyMu serializes config-file generation+writes between auto-apply and the HTTP Apply handler.
+	applyMu sync.Mutex
 }
 
 // NewScheduler creates a new scheduler.
@@ -70,13 +73,44 @@ func (s *Scheduler) SetMetricsPort(port int) {
 	if port > 0 {
 		metricsJSON := GenerateMetricsJSON(port)
 		if metricsJSON != nil {
-			if err := os.WriteFile(metricsPath, metricsJSON, 0644); err != nil {
+			if err := atomicWrite(metricsPath, metricsJSON); err != nil {
 				log.Printf("[scheduler] failed to write metrics config: %v", err)
 			}
 		}
 	} else {
 		os.Remove(metricsPath)
 	}
+}
+
+// recoverPanic catches a panic in a scheduler goroutine, logs it, and lets the
+// goroutine complete normally so the WaitGroup is not held forever.
+func (s *Scheduler) recoverPanic(name string) {
+	if r := recover(); r != nil {
+		log.Printf("[subscription] recovered panic in %s: %v", name, r)
+	}
+}
+
+// WithApplyLock runs fn while holding the apply mutex, serializing file
+// generation+writes between the scheduler's auto-apply and the HTTP Apply handler.
+func (s *Scheduler) WithApplyLock(fn func() error) error {
+	s.applyMu.Lock()
+	defer s.applyMu.Unlock()
+	return fn()
+}
+
+// atomicWrite writes data to path atomically: write to path+".tmp", then rename.
+// This prevents partial/corrupted files on crash mid-write.
+func atomicWrite(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		// Clean up the orphaned temp file on rename failure.
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Start begins the per-minute subscription interval checker
@@ -187,7 +221,9 @@ func (s *Scheduler) runAutoApply() {
 
 	// 3. Generate and write config files (profiles handle filtering internally)
 	profiles := s.store.GetProfiles()
-	if err := s.writeConfigFiles(allProxies, profiles); err != nil {
+	if err := s.WithApplyLock(func() error {
+		return s.writeConfigFiles(allProxies, profiles)
+	}); err != nil {
 		log.Printf("[subscription] auto-apply: write failed: %v", err)
 		return
 	}
@@ -219,7 +255,9 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 		return fmt.Errorf("xray config dir not set")
 	}
 
-	// Generate outbounds for ALL proxies
+	// Generate outbounds for ALL proxies (filtering is handled per-profile via
+	// balancer selectors). Both outbounds and routing receive the SAME allProxies
+	// list so the first-proxy "proxy" tag and selectors stay consistent.
 	outboundsJSON, err := GenerateOutboundsJSON(allProxies)
 	if err != nil {
 		return fmt.Errorf("generate outbounds: %w", err)
@@ -232,7 +270,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 		existingRouting = data
 	}
 
-	// Generate routing with profiles
+	// Generate routing with the same allProxies list
 	routingJSON, err := GenerateRoutingJSON(allProxies, profiles, existingRouting)
 	if err != nil {
 		return fmt.Errorf("generate routing: %w", err)
@@ -244,12 +282,12 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	}
 
 	// Write outbounds
-	if err := os.WriteFile(dir+"/04_outbounds.json", outboundsJSON, 0644); err != nil {
+	if err := atomicWrite(dir+"/04_outbounds.json", outboundsJSON); err != nil {
 		return fmt.Errorf("write outbounds: %w", err)
 	}
 
 	// Write routing
-	if err := os.WriteFile(routingPath, routingJSON, 0644); err != nil {
+	if err := atomicWrite(routingPath, routingJSON); err != nil {
 		return fmt.Errorf("write routing: %w", err)
 	}
 
@@ -260,7 +298,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 		if err != nil {
 			return fmt.Errorf("generate observatory: %w", err)
 		}
-		if err := os.WriteFile(obsPath, obsJSON, 0644); err != nil {
+		if err := atomicWrite(obsPath, obsJSON); err != nil {
 			return fmt.Errorf("write observatory: %w", err)
 		}
 	} else {
@@ -272,7 +310,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	if s.metricsPort > 0 {
 		metricsJSON := GenerateMetricsJSON(s.metricsPort)
 		if metricsJSON != nil {
-			if err := os.WriteFile(metricsPath, metricsJSON, 0644); err != nil {
+			if err := atomicWrite(metricsPath, metricsJSON); err != nil {
 				return fmt.Errorf("write metrics: %w", err)
 			}
 		}
@@ -291,6 +329,7 @@ func (s *Scheduler) startIntervalChecker() {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer s.recoverPanic("intervalChecker")
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 
@@ -330,6 +369,7 @@ func (s *Scheduler) checkAndRefresh() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				defer s.recoverPanic("checkAndRefresh")
 				log.Printf("[subscription] auto-refreshing %q (%s)", sub.Name, sub.ID)
 				if err := s.RefreshOne(sub.ID); err != nil {
 					log.Printf("[subscription] auto-refresh failed for %q: %v", sub.Name, err)
@@ -371,6 +411,7 @@ func (s *Scheduler) RefreshAll() error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer s.recoverPanic("RefreshAll")
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			entries, err := s.fetcher.Fetch(ctx, sub.URL)

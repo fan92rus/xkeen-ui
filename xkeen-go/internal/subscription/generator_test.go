@@ -225,10 +225,23 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 	if len(balancer.Selector) != 3 {
 		t.Errorf("expected selector with 3 concrete tags (no filter = all pass), got %v", balancer.Selector)
 	}
+	// First proxy gets tag "proxy" (not its original tag), rest get "proxy-*"
+	hasProxy := false
+	hasProxyPrefix := 0
 	for _, s := range balancer.Selector {
-		if !strings.HasPrefix(s, "proxy-") {
-			t.Errorf("expected proxy-* tag in selector, got %q", s)
+		if s == "proxy" {
+			hasProxy = true
+		} else if strings.HasPrefix(s, "proxy-") {
+			hasProxyPrefix++
+		} else {
+			t.Errorf("expected 'proxy' or 'proxy-*' tag in selector, got %q", s)
 		}
+	}
+	if !hasProxy {
+		t.Error("expected 'proxy' in balancer selector (for the renamed first outbound)")
+	}
+	if hasProxyPrefix != 2 {
+		t.Errorf("expected 2 proxy-* tags in selector (for the non-first proxies), got %d", hasProxyPrefix)
 	}
 	if balancer.Strategy["type"] != "random" {
 		t.Errorf("expected strategy type 'random', got %v", balancer.Strategy["type"])
@@ -435,6 +448,109 @@ func TestGenerateRoutingJSON_EmptyProxies(t *testing.T) {
 	}
 }
 
+// --- Cross-check: outbound tags vs balancer selectors (#G1 regression guard) ---
+
+func TestOutboundTagBalancersMatchOutbounds(t *testing.T) {
+	proxies := makeProxies()
+	profiles := defaultProfiles(RoutingStrategy{Type: "leastping"})
+
+	// Generate both outbounds and routing
+	obData, err := GenerateOutboundsJSON(proxies)
+	if err != nil {
+		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
+	}
+
+	rtData, err := GenerateRoutingJSON(proxies, profiles, nil)
+	if err != nil {
+		t.Fatalf("GenerateRoutingJSON failed: %v", err)
+	}
+
+	// Parse outbound tags
+	var obWrap map[string]json.RawMessage
+	if err := json.Unmarshal(obData, &obWrap); err != nil {
+		t.Fatal(err)
+	}
+	var outbounds []map[string]interface{}
+	if err := json.Unmarshal(obWrap["outbounds"], &outbounds); err != nil {
+		t.Fatal(err)
+	}
+	outboundTags := make(map[string]bool)
+	for _, o := range outbounds {
+		if tag, ok := o["tag"].(string); ok {
+			outboundTags[tag] = true
+		}
+	}
+
+	// Parse balancer selectors
+	var rtWrap map[string]json.RawMessage
+	if err := json.Unmarshal(rtData, &rtWrap); err != nil {
+		t.Fatal(err)
+	}
+	var routing struct {
+		Balancers []struct {
+			Tag      string   `json:"tag"`
+			Selector []string `json:"selector"`
+		} `json:"balancers"`
+	}
+	if err := json.Unmarshal(rtWrap["routing"], &routing); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every balancer selector tag MUST exist in outbounds
+	for _, b := range routing.Balancers {
+		for _, sel := range b.Selector {
+			if !outboundTags[sel] {
+				t.Errorf("DANGLING balancer selector %q in balancer %q does not exist in outbounds! (first proxy was renamed to 'proxy' but selector referenced its original tag)", sel, b.Tag)
+			}
+		}
+	}
+}
+
+func TestGenerateRoutingJSON_FirstProxyInBalancerUsesProxyTag(t *testing.T) {
+	proxies := makeProxies()
+	profiles := defaultProfiles(RoutingStrategy{Type: "random"})
+
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
+	if err != nil {
+		t.Fatalf("GenerateRoutingJSON failed: %v", err)
+	}
+
+	var result map[string]json.RawMessage
+	json.Unmarshal(data, &result)
+
+	var routing struct {
+		Balancers []struct {
+			Tag      string   `json:"tag"`
+			Selector []string `json:"selector"`
+		} `json:"balancers"`
+	}
+	json.Unmarshal(result["routing"], &routing)
+
+	if len(routing.Balancers) == 0 {
+		t.Fatal("expected at least one balancer")
+	}
+
+	defaultBalancer := routing.Balancers[0]
+	foundProxy := false
+	for _, s := range defaultBalancer.Selector {
+		if s == "proxy" {
+			foundProxy = true
+			break
+		}
+	}
+	if !foundProxy {
+		t.Errorf("default balancer selector should contain 'proxy' (for the first/renamed outbound), got %v", defaultBalancer.Selector)
+	}
+
+	// Verify first proxy's original tag is NOT in the selector (it was renamed to "proxy")
+	originalTag := proxies[0].Tag
+	for _, s := range defaultBalancer.Selector {
+		if s == originalTag {
+			t.Errorf("first proxy's original tag %q should NOT be in balancer selector (it was renamed to 'proxy' in outbounds)", originalTag)
+		}
+	}
+}
+
 // --- GenerateObservatoryJSON ---
 
 func TestGenerateObservatoryJSON(t *testing.T) {
@@ -454,8 +570,8 @@ func TestGenerateObservatoryJSON(t *testing.T) {
 		t.Fatalf("failed to parse observatory JSON: %v", err)
 	}
 
-	if len(result.Observatory.SubjectSelector) != 1 || result.Observatory.SubjectSelector[0] != "proxy-" {
-		t.Errorf("expected subjectSelector ['proxy-'], got %v", result.Observatory.SubjectSelector)
+	if len(result.Observatory.SubjectSelector) != 1 || result.Observatory.SubjectSelector[0] != "proxy" {
+		t.Errorf("expected subjectSelector ['proxy'], got %v", result.Observatory.SubjectSelector)
 	}
 	if result.Observatory.ProbeURL != "https://www.google.com/generate_204" {
 		t.Errorf("unexpected probeURL: %q", result.Observatory.ProbeURL)
@@ -906,11 +1022,12 @@ func TestGenerateRoutingJSON_MultipleProfiles(t *testing.T) {
 	if len(selector) == 0 {
 		t.Error("eu balancer should have non-empty selector")
 	}
-	// EU profile includes DE and NL — should have concrete tags
+	// EU profile includes DE (first proxy → "proxy") and NL (→ "proxy-nl-*")
+	// After the outbound tag fix, the first proxy's selector entry is "proxy", not its original tag.
 	for _, s := range selector {
 		tag := s.(string)
-		if !strings.HasPrefix(tag, "proxy-") {
-			t.Errorf("expected proxy-* tag in selector, got %q", tag)
+		if !strings.HasPrefix(tag, "proxy") {
+			t.Errorf("expected 'proxy' or 'proxy-*' tag in selector, got %q", tag)
 		}
 	}
 }
@@ -934,5 +1051,69 @@ func TestGenerateRoutingJSON_DisabledProfile(t *testing.T) {
 	balancers := routing["balancers"].([]interface{})
 	if len(balancers) != 1 {
 		t.Errorf("disabled profile should be skipped, expected 1 balancer, got %d", len(balancers))
+	}
+}
+
+// TestApplyPath_NoDanglingSelector_WhenFirstProxyFiltered is a regression guard for
+// the reviewer's MEDIUM finding: when outbounds use filteredProxies but routing is
+// (mistakenly) given allProxies, the first proxy of filteredProxies gets tag "proxy"
+// in outbounds while routing resolves a different tag. This test exercises the
+// CORRECT contract — both generators receive the SAME filtered list — and asserts
+// every balancer selector tag exists in the outbounds, even when allProxies[0] is
+// excluded by the default profile's filter.
+func TestApplyPath_NoDanglingSelector_WhenFirstProxyFiltered(t *testing.T) {
+	allProxies := makeProxies() // tags proxy-de-1 (index0), proxy-nl-1, proxy-ee-1 (sorted by stable key)
+	// Default profile excludes the FIRST proxy's country so it is filtered out.
+	// makeProxies order after stable sort is not guaranteed; exclude by regex on remarks
+	// to drop exactly one proxy regardless of order, then check the survivors.
+	profiles := []Profile{{
+		ID: "default", Name: "Default", Enabled: true, IsDefault: true,
+		Filter:   Filter{ExcludeRegexes: []string{"Germany"}},
+		Strategy: RoutingStrategy{Type: "random"},
+	}}
+
+	// Simulate the Apply path: filter, then pass the SAME filtered list to both generators.
+	filtered := CollectFilteredProxies(allProxies, profiles)
+	if len(filtered) == 0 {
+		t.Fatal("expected at least one proxy to survive the filter")
+	}
+	obData, err := GenerateOutboundsJSON(filtered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtData, err := GenerateRoutingJSON(filtered, profiles, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Collect outbound tags.
+	var obWrap map[string]json.RawMessage
+	json.Unmarshal(obData, &obWrap)
+	var outbounds []map[string]interface{}
+	json.Unmarshal(obWrap["outbounds"], &outbounds)
+	actual := map[string]bool{}
+	for _, o := range outbounds {
+		if tag, ok := o["tag"].(string); ok {
+			actual[tag] = true
+		}
+	}
+
+	// Every balancer selector MUST reference an existing outbound tag.
+	var rtWrap map[string]json.RawMessage
+	json.Unmarshal(rtData, &rtWrap)
+	var routing struct {
+		Balancers []struct {
+			Tag      string   `json:"tag"`
+			Selector []string `json:"selector"`
+		} `json:"balancers"`
+	}
+	json.Unmarshal(rtWrap["routing"], &routing)
+
+	for _, b := range routing.Balancers {
+		for _, sel := range b.Selector {
+			if !actual[sel] {
+				t.Errorf("DANGLING balancer selector %q (balancer %q) not found in outbounds %v", sel, b.Tag, actual)
+			}
+		}
 	}
 }
