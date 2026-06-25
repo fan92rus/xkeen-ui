@@ -35,5 +35,5 @@ export async function getStatus() {
  */
 export async function getCommands() {
     const data = await get('/api/xkeen/commands');
-    return data.commands || [];
+    return { commands: data.commands || [], error: data.error || '' };
 }

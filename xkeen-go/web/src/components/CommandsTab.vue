@@ -27,13 +27,16 @@ async function loadCommandPalette() {
     loading.value = true;
     loadError.value = '';
     try {
-        const commands = await getCommands();
+        const { commands, error } = await getCommands();
         categories.value = groupCommandsByCategory(commands);
         const idx = {};
         for (const cat of categories.value) {
             for (const c of cat.commands) idx[c.name] = c;
         }
         commandIndex.value = idx;
+        if (!commands.length && error) {
+            loadError.value = error;
+        }
     } catch (err) {
         categories.value = [];
         commandIndex.value = {};

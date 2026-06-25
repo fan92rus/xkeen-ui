@@ -34,6 +34,7 @@ type CommandInfo struct {
 // CommandsListResponse represents the response listing available commands.
 type CommandsListResponse struct {
 	Commands []CommandInfo `json:"commands"`
+	Error    string        `json:"error,omitempty"`
 }
 
 // CommandsHandler handles XKeen CLI command metadata.
@@ -68,9 +69,18 @@ func (h *CommandsHandler) GetCommands(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusOK, CommandsListResponse{
+	response := CommandsListResponse{
 		Commands: commands,
-	})
+	}
+
+	if len(commands) == 0 {
+		// include the underlying error so the UI can show why
+		if errMsg := h.registry.LoadError(); errMsg != "" {
+			response.Error = errMsg
+		}
+	}
+
+	respondJSON(w, http.StatusOK, response)
 }
 
 // RegisterCommandsRoutes registers command-related routes.

@@ -38,6 +38,10 @@ const SAMPLE = [
   { cmd: '-remove', description: 'Полная деинсталляция', category: 'Удаление', dangerous: true },
 ];
 
+function apiResponse(commands, error) {
+  return { commands, error: error || '' };
+}
+
 function mountCommands() {
   return mount(CommandsTab, { global: { plugins: [createPinia()] } });
 }
@@ -46,7 +50,7 @@ describe('CommandsTab', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockGetCommands.mockReset();
-    mockGetCommands.mockResolvedValue(SAMPLE);
+    mockGetCommands.mockResolvedValue(apiResponse(SAMPLE));
   });
 
   it('mounts, fetches the palette, and renders backend commands', async () => {
@@ -112,10 +116,11 @@ describe('CommandsTab', () => {
   it('shows an empty-state hint when the registry returns no commands', async () => {
     // xkeen not installed → backend returns []. UI must not crash and should
     // tell the user why there is nothing to run.
-    mockGetCommands.mockResolvedValue([]);
+    mockGetCommands.mockResolvedValue(apiResponse([], 'XKeen не установлен'));
     const w = mountCommands();
     await flushPromises();
-    expect(w.text()).toContain('Команды недоступны');
+    expect(w.text()).toContain('Не удалось загрузить список команд');
+    expect(w.text()).toContain('XKeen не установлен');
     expect(w.findAll('.command-item')).toHaveLength(0);
   });
 });

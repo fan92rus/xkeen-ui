@@ -23,6 +23,7 @@ type CommandRegistry struct {
 	loader    func() (map[string]CommandConfig, error) // injectable for tests
 	cache     map[string]CommandConfig
 	loaded    bool
+	loadErr   string
 }
 
 // NewCommandRegistry creates a registry that loads commands from
@@ -64,12 +65,14 @@ func (r *CommandRegistry) ensureLoaded() {
 	}
 	cmds, err := r.loader()
 	if err != nil {
+		r.loadErr = err.Error()
 		log.Printf("CommandRegistry: load failed (%s -help): %v — serving empty command set", r.xkeenPath, err)
 		r.cache = map[string]CommandConfig{}
 	} else if cmds == nil {
 		r.cache = map[string]CommandConfig{}
 	} else {
 		r.cache = cmds
+		r.loadErr = ""
 	}
 	r.loaded = true
 }
@@ -116,6 +119,13 @@ func (r *CommandRegistry) Count() int {
 	return len(r.cache)
 }
 
+// LoadError returns the last load error message (empty if load succeeded).
+func (r *CommandRegistry) LoadError() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.loadErr
+}
+
 // Refresh re-runs the loader and replaces the cache. Useful after xkeen is
 // updated (e.g. via -uk) so new commands become available without a restart.
 func (r *CommandRegistry) Refresh() {
@@ -123,6 +133,7 @@ func (r *CommandRegistry) Refresh() {
 	defer r.mu.Unlock()
 	cmds, err := r.loader()
 	if err != nil {
+		r.loadErr = err.Error()
 		log.Printf("CommandRegistry: refresh failed (%s -help): %v — keeping previous command set", r.xkeenPath, err)
 		return // keep existing cache on refresh error
 	}
@@ -131,5 +142,6 @@ func (r *CommandRegistry) Refresh() {
 	} else {
 		r.cache = cmds
 	}
+	r.loadErr = ""
 	r.loaded = true
 }
