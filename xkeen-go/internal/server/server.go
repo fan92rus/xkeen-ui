@@ -118,6 +118,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		},
 	})
 	s.commandRegistry = handlers.NewCommandRegistry(handlers.DefaultXKeenPath)
+	if cfg.XkeenBinary != "" {
+		s.commandRegistry = handlers.NewCommandRegistry(cfg.XkeenBinary)
+	}
 	s.commandsHandler = handlers.NewCommandsHandler(s.commandRegistry)
 	s.updateHandler = handlers.NewUpdateHandler()
 	s.interactiveHandler = handlers.NewInteractiveHandler(&handlers.InteractiveConfig{
