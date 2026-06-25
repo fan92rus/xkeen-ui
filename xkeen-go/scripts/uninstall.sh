@@ -36,12 +36,14 @@ fi
 
 # 2. Kill any remaining processes
 log "Checking for running processes..."
-for PID in $(ps 2>/dev/null | grep "xkeen-ui" | grep -v grep | awk '{print $1}'); do
+# Exclude the uninstall script itself from the kill loop (its path
+# contains "xkeen-ui-uninstall").
+for PID in $(ps 2>/dev/null | grep "xkeen-ui" | grep -v grep | grep -v uninstall | awk '{print $1}'); do
     log "Killing process $PID..."
     kill "$PID" 2>/dev/null || true
 done
 sleep 1
-for PID in $(ps 2>/dev/null | grep "xkeen-ui" | grep -v grep | awk '{print $1}'); do
+for PID in $(ps 2>/dev/null | grep "xkeen-ui" | grep -v grep | grep -v uninstall | awk '{print $1}'); do
     kill -9 "$PID" 2>/dev/null || true
 done
 
