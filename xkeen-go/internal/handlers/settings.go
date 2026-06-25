@@ -17,6 +17,27 @@ import (
 	"github.com/fan92rus/xkeen-ui/internal/utils"
 )
 
+// UpdateLogLevelResponse is the response for the UpdateLogLevel endpoint.
+type UpdateLogLevelResponse struct {
+	Success  bool   `json:"success"`
+	LogLevel string `json:"log_level"`
+	Message  string `json:"message"`
+}
+
+// LogBackupsResponse is the response for ListBackupsForLogConfig.
+type LogBackupsResponse struct {
+	FilePath string     `json:"file"`
+	Backups  []FileInfo `json:"backups"`
+}
+
+// MetricsPortResponse is the response for metrics port endpoints.
+type MetricsPortResponse struct {
+	Ok          bool `json:"ok"`
+	MetricsPort int  `json:"metrics_port"`
+	Enabled     bool `json:"enabled"`
+	Error       string `json:"error,omitempty"`
+}
+
 // SettingsHandler handles Xray settings operations.
 type SettingsHandler struct {
 	validator       *utils.PathValidator
@@ -198,10 +219,10 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":   true,
-		"log_level": req.LogLevel,
-		"message":   fmt.Sprintf("Log level updated to '%s'. Restart Xray to apply changes.", req.LogLevel),
+	respondJSON(w, http.StatusOK, UpdateLogLevelResponse{
+		Success:  true,
+		LogLevel: req.LogLevel,
+		Message:  fmt.Sprintf("Log level updated to '%s'. Restart Xray to apply changes.", req.LogLevel),
 	})
 }
 
@@ -279,9 +300,9 @@ func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http
 		return backups[i].Modified > backups[j].Modified
 	})
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"file":    h.logConfigPath,
-		"backups": backups,
+	respondJSON(w, http.StatusOK, LogBackupsResponse{
+		FilePath: h.logConfigPath,
+		Backups:  backups,
 	})
 }
 
@@ -292,9 +313,10 @@ func (h *SettingsHandler) SetUpdateMetrics(fn func(int)) {
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
 func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"metrics_port": h.cfg.MetricsPort,
-		"enabled":      h.cfg.MetricsPort > 0,
+	respondJSON(w, http.StatusOK, MetricsPortResponse{
+		Ok:          true,
+		MetricsPort: h.cfg.MetricsPort,
+		Enabled:     h.cfg.MetricsPort > 0,
 	})
 }
 
@@ -305,17 +327,17 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 		MetricsPort int `json:"metrics_port"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request"})
+		respondJSON(w, http.StatusBadRequest, MetricsPortResponse{Ok: false, Error: "invalid request"})
 		return
 	}
 	if req.MetricsPort < 0 || req.MetricsPort > 65535 {
-		respondJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "port must be 0-65535"})
+		respondJSON(w, http.StatusBadRequest, MetricsPortResponse{Ok: false, Error: "port must be 0-65535"})
 		return
 	}
 
 	h.cfg.MetricsPort = req.MetricsPort
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "save failed: " + err.Error()})
+		respondJSON(w, http.StatusInternalServerError, MetricsPortResponse{Ok: false, Error: "save failed: " + err.Error()})
 		return
 	}
 
@@ -328,10 +350,10 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 		h.updateMetrics(req.MetricsPort)
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":           true,
-		"metrics_port": req.MetricsPort,
-		"enabled":      req.MetricsPort > 0,
+	respondJSON(w, http.StatusOK, MetricsPortResponse{
+		Ok:          true,
+		MetricsPort: req.MetricsPort,
+		Enabled:     req.MetricsPort > 0,
 	})
 }
 

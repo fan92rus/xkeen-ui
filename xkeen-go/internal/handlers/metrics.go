@@ -36,6 +36,23 @@ type MetricsSnapshot struct {
 	Debug      string      `json:"debug,omitempty"`
 }
 
+// StatsResponse is the response for the GetStats endpoint.
+type StatsResponse struct {
+	Available bool        `json:"available"`
+	Inbound   interface{} `json:"inbound,omitempty"`
+	Outbound  interface{} `json:"outbound,omitempty"`
+	Debug     string      `json:"debug"`
+	Error     string      `json:"error,omitempty"`
+}
+
+// ObservatoryResponse is the response for the GetObservatory endpoint.
+type ObservatoryResponse struct {
+	Available bool        `json:"available"`
+	Results   interface{} `json:"results,omitempty"`
+	Debug     string      `json:"debug"`
+	Error     string      `json:"error,omitempty"`
+}
+
 // WSMessage is a message sent over the metrics WebSocket.
 type WSMessage struct {
 	Type    string            `json:"type"` // "history", "snapshot", "error", "ping"
@@ -482,17 +499,17 @@ func (h *MetricsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	snap := h.collectSnapshot()
 	if !snap.Available {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
-			"error":     snap.Debug,
-			"available": false,
+		respondJSON(w, http.StatusServiceUnavailable, StatsResponse{
+			Error:     snap.Debug,
+			Available: false,
 		})
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"available": true,
-		"inbound":   snap.Inbound,
-		"outbound":  snap.Outbound,
-		"debug":     snap.Debug,
+	respondJSON(w, http.StatusOK, StatsResponse{
+		Available: true,
+		Inbound:   snap.Inbound,
+		Outbound:  snap.Outbound,
+		Debug:     snap.Debug,
 	})
 }
 
@@ -501,15 +518,15 @@ func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 func (h *MetricsHandler) GetObservatory(w http.ResponseWriter, r *http.Request) {
 	snap := h.collectSnapshot()
 	if !snap.Available {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
-			"error":     snap.Debug,
-			"available": false,
+		respondJSON(w, http.StatusServiceUnavailable, ObservatoryResponse{
+			Error:     snap.Debug,
+			Available: false,
 		})
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"available": true,
-		"results":   snap.Observable,
+	respondJSON(w, http.StatusOK, ObservatoryResponse{
+		Available: true,
+		Results:   snap.Observable,
 	})
 }
 

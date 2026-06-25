@@ -338,9 +338,9 @@ func (h *LogsHandler) ReadLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"path":    cleanPath,
-		"entries": entries,
+	respondJSON(w, http.StatusOK, LogEntriesResponse{
+		Path:    cleanPath,
+		Entries: entries,
 	})
 }
 

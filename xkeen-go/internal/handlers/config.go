@@ -104,6 +104,57 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// SetModeResponse is the response for setting the operation mode.
+type SetModeResponse struct {
+	Success bool   `json:"success"`
+	Mode    string `json:"mode"`
+}
+
+// SaveFileResponse is the response for saving a config file.
+type SaveFileResponse struct {
+	Success  bool   `json:"success"`
+	Path     string `json:"path"`
+	Backup   string `json:"backup"`
+	Modified int64  `json:"modified,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+// RenameFileResponse is the response for renaming a config file.
+type RenameFileResponse struct {
+	Success bool   `json:"success"`
+	OldPath string `json:"old_path"`
+	NewPath string `json:"new_path"`
+	Backup  string `json:"backup"`
+}
+
+// CreateFileResponse is the response for creating a config file.
+type CreateFileResponse struct {
+	Success bool   `json:"success"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+// ListBackupsResponse is the response for listing backups.
+type ListBackupsResponse struct {
+	FilePath string     `json:"file"`
+	Backups  []FileInfo `json:"backups"`
+}
+
+// RestoreBackupResponse is the response for restoring from a backup.
+type RestoreBackupResponse struct {
+	Success       bool   `json:"success"`
+	BackupPath    string `json:"backup_path"`
+	Content       string `json:"content,omitempty"`
+	OriginalName  string `json:"original_name,omitempty"`
+	RestoreToPath string `json:"restore_to_path,omitempty"`
+}
+
+// LogEntriesResponse is the response for reading log entries.
+type LogEntriesResponse struct {
+	Path    string       `json:"path"`
+	Entries []LogMessage `json:"entries"`
+}
+
 // ListFiles returns a list of config files in the specified directory.
 // GET /api/config/files?path=/opt/etc/xray/configs&mode=xray
 func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
@@ -234,9 +285,9 @@ func (h *ConfigHandler) SetMode(w http.ResponseWriter, r *http.Request) {
 		// Continue anyway, mode is updated in memory
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"mode":    req.Mode,
+	respondJSON(w, http.StatusOK, SetModeResponse{
+		Success: true,
+		Mode:    req.Mode,
 	})
 }
 
@@ -428,11 +479,11 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		newModified = info.ModTime().Unix()
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"path":     cleanPath,
-		"backup":   backupPath,
-		"modified": newModified,
+	respondJSON(w, http.StatusOK, SaveFileResponse{
+		Success:  true,
+		Path:     cleanPath,
+		Backup:   backupPath,
+		Modified: newModified,
 	})
 }
 
@@ -549,11 +600,11 @@ func (h *ConfigHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"path":    cleanPath,
-		"backup":  backupPath,
-		"message": "file deleted",
+	respondJSON(w, http.StatusOK, SaveFileResponse{
+		Success: true,
+		Path:    cleanPath,
+		Backup:  backupPath,
+		Message: "file deleted",
 	})
 }
 
@@ -615,11 +666,11 @@ func (h *ConfigHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"old_path": oldCleanPath,
-		"new_path": newCleanPath,
-		"backup":   backupPath,
+	respondJSON(w, http.StatusOK, RenameFileResponse{
+		Success: true,
+		OldPath: oldCleanPath,
+		NewPath: newCleanPath,
+		Backup:  backupPath,
 	})
 }
 
@@ -669,10 +720,10 @@ func (h *ConfigHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"path":    cleanPath,
-		"message": "file created",
+	respondJSON(w, http.StatusCreated, CreateFileResponse{
+		Success: true,
+		Path:    cleanPath,
+		Message: "file created",
 	})
 }
 
@@ -717,9 +768,9 @@ func (h *ConfigHandler) ListBackups(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"file":    filePath,
-		"backups": backups,
+	respondJSON(w, http.StatusOK, ListBackupsResponse{
+		FilePath: filePath,
+		Backups:  backups,
 	})
 }
 
@@ -774,12 +825,12 @@ func (h *ConfigHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":         true,
-		"backup_path":     cleanBackupPath,
-		"original_name":   originalName,
-		"content":         string(data),
-		"restore_to_path": filepath.Join(filepath.Dir(cleanBackupPath), "..", originalName),
+	respondJSON(w, http.StatusOK, RestoreBackupResponse{
+		Success:       true,
+		BackupPath:    cleanBackupPath,
+		OriginalName:  originalName,
+		Content:       string(data),
+		RestoreToPath: filepath.Join(filepath.Dir(cleanBackupPath), "..", originalName),
 	})
 }
 
@@ -824,10 +875,10 @@ func (h *ConfigHandler) GetBackupContent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":     true,
-		"backup_path": cleanBackupPath,
-		"content":     string(data),
+	respondJSON(w, http.StatusOK, RestoreBackupResponse{
+		Success:     true,
+		BackupPath:  cleanBackupPath,
+		Content:     string(data),
 	})
 }
 
