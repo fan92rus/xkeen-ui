@@ -49,6 +49,35 @@ func TestParseHelp_RealFixture_DescriptionsExtracted(t *testing.T) {
 	}
 }
 
+func TestParseHelp_RealFixture_CategoryPopulated(t *testing.T) {
+	cmds := parseHelp(loadHelpFixture(t))
+
+	// Every parsed command must carry the category header it appeared under.
+	for flag, c := range cmds {
+		if c.Category == "" {
+			t.Errorf("%s has empty category", flag)
+		}
+	}
+
+	// Spot-check known command → category mappings from the real help output.
+	cases := map[string]string{
+		"-status": "Управление прокси-клиентом",
+		"-v":      "Информация",
+		"-i":      "Установка",
+		"-remove": "Удаление",
+	}
+	for flag, want := range cases {
+		c, ok := cmds[flag]
+		if !ok {
+			t.Errorf("%s missing from parsed commands", flag)
+			continue
+		}
+		if c.Category != want {
+			t.Errorf("%s category = %q, want %q", flag, c.Category, want)
+		}
+	}
+}
+
 func TestParseHelp_RealFixture_DangerousFlags(t *testing.T) {
 	cmds := parseHelp(loadHelpFixture(t))
 
