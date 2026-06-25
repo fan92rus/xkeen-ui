@@ -259,6 +259,7 @@ func printUsage() {
 	fmt.Println("    xkeen-ui stop       Stop the service")
 	fmt.Println("    xkeen-ui restart    Restart the service")
 	fmt.Println("    xkeen-ui status     Check service status")
+	fmt.Println("    xkeen-ui uninstall  Remove from system")
 	fmt.Println("    xkeen-ui log        Tail the log file")
 	fmt.Println()
 	fmt.Println("EXAMPLES:")
