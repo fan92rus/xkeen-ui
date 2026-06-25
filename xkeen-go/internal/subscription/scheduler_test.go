@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -879,10 +880,10 @@ func TestScheduler_UpdateAutoApply_CronSwap(t *testing.T) {
 }
 
 func TestScheduler_RefreshAll_FailureContinues(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if callCount <= 1 {
+		callCount.Add(1)
+		if callCount.Load() <= 1 {
 			// First request fails
 			w.WriteHeader(500)
 			return
@@ -1310,11 +1311,11 @@ func TestRefreshOne_SetsSubscriptionID(t *testing.T) {
 }
 
 func TestRefreshOne_ReplacesOldProxies(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		var lines string
-		if callCount == 1 {
+		if callCount.Load() == 1 {
 			lines = "vless://uuid@1.2.3.4:443?type=tcp#Old1"
 		} else {
 			lines = "vless://uuid@5.6.7.8:443?type=tcp#New1\nvless://uuid@9.10.11.12:443?type=tcp#New2"

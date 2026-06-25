@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +16,11 @@ import (
 )
 
 // mockCommandExecutor implements CommandExecutor for testing.
+// It is safe for concurrent use: Execute may be invoked from background
+// goroutines (e.g. RestartService), so all field access is mutex-guarded to
+// keep tests clean under the race detector.
 type mockCommandExecutor struct {
+	mu      sync.Mutex
 	results map[string]mockResult
 	calls   []mockCall
 }
@@ -38,19 +43,34 @@ func newMockCmdExecutor() *mockCommandExecutor {
 
 func (m *mockCommandExecutor) Execute(ctx context.Context, name string, args ...string) (string, error) {
 	key := name + " " + strings.Join(args, " ")
+	m.mu.Lock()
 	m.calls = append(m.calls, mockCall{name: name, args: args})
-	if r, ok := m.results[key]; ok {
-		return r.output, r.err
+	r, ok := m.results[key]
+	if !ok {
+		// Default: try by command name
+		r, ok = m.results[name]
 	}
-	// Default: try by command name
-	if r, ok := m.results[name]; ok {
+	m.mu.Unlock()
+	if ok {
 		return r.output, r.err
 	}
 	return "", errors.New("command not configured")
 }
 
 func (m *mockCommandExecutor) setResult(cmd string, output string, err error) {
+	m.mu.Lock()
 	m.results[cmd] = mockResult{output: output, err: err}
+	m.mu.Unlock()
+}
+
+// getCalls returns a snapshot of the recorded calls, safe to call from the
+// test goroutine even if background goroutines have already finished.
+func (m *mockCommandExecutor) getCalls() []mockCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]mockCall, len(m.calls))
+	copy(out, m.calls)
+	return out
 }
 
 // --- GetStatus Tests ---
@@ -263,22 +283,25 @@ func TestRestartService_RunsCommandAndAsync(t *testing.T) {
 	// RestartService should return immediately (non-blocking)
 	handler.RestartService()
 
-	// Give the background goroutine time to execute
-	time.Sleep(100 * time.Millisecond)
+	// Deterministically wait for the background restart goroutine to finish.
+	// This establishes happens-before between the goroutine's write to
+	// exec.calls and the reads below, so the test is race-free without sleep.
+	handler.wg.Wait()
 
 	// Verify the restart command was executed by the executor
-	if len(exec.calls) == 0 {
+	calls := exec.getCalls()
+	if len(calls) == 0 {
 		t.Error("expected at least one command execution")
 	}
 	foundRestart := false
-	for _, call := range exec.calls {
+	for _, call := range calls {
 		if call.name == "xkeen" && len(call.args) > 0 && call.args[0] == "-restart" {
 			foundRestart = true
 			break
 		}
 	}
 	if !foundRestart {
-		t.Errorf("expected 'xkeen -restart' command to be executed, calls: %+v", exec.calls)
+		t.Errorf("expected 'xkeen -restart' command to be executed, calls: %+v", calls)
 	}
 }
 

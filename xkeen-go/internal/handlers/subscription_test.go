@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -617,8 +618,8 @@ func TestApply_GeneratedAtUpdated(t *testing.T) {
 func TestApply_RestartCalled(t *testing.T) {
 	h, _ := newTestHandler(t)
 
-	restartCalled := 0
-	h.SetRestartFn(func() { restartCalled++ })
+	var restartCalled atomic.Int32
+	h.SetRestartFn(func() { restartCalled.Add(1) })
 
 	addTestSubscriptionWithProxies(t, h.store, 3)
 
@@ -641,21 +642,21 @@ func TestApply_RestartCalled(t *testing.T) {
 
 	// Wait briefly for the async goroutine to fire
 	for i := 0; i < 50; i++ {
-		if restartCalled == 1 {
+		if restartCalled.Load() == 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if restartCalled != 1 {
-		t.Errorf("expected restartFn to be called once, got %d", restartCalled)
+	if restartCalled.Load() != 1 {
+		t.Errorf("expected restartFn to be called once, got %d", restartCalled.Load())
 	}
 }
 
 func TestApply_NoRestartWhenFalse(t *testing.T) {
 	h, _ := newTestHandler(t)
 
-	restartCalled := 0
-	h.SetRestartFn(func() { restartCalled++ })
+	var restartCalled atomic.Int32
+	h.SetRestartFn(func() { restartCalled.Add(1) })
 
 	addTestSubscriptionWithProxies(t, h.store, 3)
 
@@ -673,8 +674,8 @@ func TestApply_NoRestartWhenFalse(t *testing.T) {
 		t.Errorf("expected no restart_initiated in response, got %v", result["restart_initiated"])
 	}
 
-	if restartCalled != 0 {
-		t.Errorf("expected restartFn not to be called, got %d", restartCalled)
+	if restartCalled.Load() != 0 {
+		t.Errorf("expected restartFn not to be called, got %d", restartCalled.Load())
 	}
 }
 
