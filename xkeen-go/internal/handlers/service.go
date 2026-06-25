@@ -133,6 +133,38 @@ type ServiceResponse struct {
 	Status  *ServiceStatus `json:"status,omitempty"`
 }
 
+// checkServiceRunning runs "status" and returns true if the service appears running.
+func (h *ServiceHandler) checkServiceRunning(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, StatusTimeout)
+	defer cancel()
+
+	output, err := h.executeCommandWithTimeout(ctx, "status")
+	if err != nil {
+		return false
+	}
+
+	notRunning := strings.Contains(output, "is not running") ||
+		strings.Contains(output, "не запущен")
+
+	return !notRunning &&
+		(strings.Contains(output, "is running") ||
+			strings.Contains(output, "running (PID:") ||
+			strings.Contains(output, "active (running)") ||
+			strings.Contains(output, "запущен"))
+}
+
+// waitForStatus polls service status until it matches expected or timeout expires.
+func (h *ServiceHandler) waitForStatus(expectedRunning bool, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if h.checkServiceRunning(context.Background()) == expectedRunning {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
+}
+
 // executeCommandWithTimeout safely executes a whitelisted command with a timeout context.
 func (h *ServiceHandler) executeCommandWithTimeout(ctx context.Context, action string) (string, error) {
 	cmd, exists := h.allowedCommands[action]
@@ -286,8 +318,8 @@ func (h *ServiceHandler) Start(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Start completed: %s", output)
 		}
 
-		// Wait a moment for service to start, then trigger status check
-		time.Sleep(1 * time.Second)
+		// Wait for service to confirm it started (max 10s), then wait a bit more
+		h.waitForStatus(true, 10*time.Second)
 		h.TriggerStatusCheck()
 	}()
 
@@ -315,7 +347,7 @@ func (h *ServiceHandler) Stop(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Stop completed: %s", output)
 		}
 
-		// Wait a moment for service to stop, then trigger status check
+		// Brief wait for service to stabilize, then check status
 		time.Sleep(1 * time.Second)
 		h.TriggerStatusCheck()
 	}()

@@ -212,6 +212,7 @@ func TestGetStatus_Timeout(t *testing.T) {
 func TestStart_ReturnsImmediately(t *testing.T) {
 	exec := newMockCmdExecutor()
 	exec.setResult("xkeen -start", "Xray started successfully", nil)
+	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
 	req := httptest.NewRequest("POST", "/api/xkeen/start", nil)
@@ -236,6 +237,7 @@ func TestStart_ReturnsImmediately(t *testing.T) {
 func TestStop_ReturnsImmediately(t *testing.T) {
 	exec := newMockCmdExecutor()
 	exec.setResult("xkeen -stop", "Xray stopped successfully", nil)
+	exec.setResult("xkeen -status", "Xray is not running", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
 	req := httptest.NewRequest("POST", "/api/xkeen/stop", nil)
@@ -534,6 +536,7 @@ func TestClose_WaitsForBackgroundGoroutines(t *testing.T) {
 	exec := newMockCmdExecutor()
 	exec.setResult("xkeen -start", "started", nil)
 	exec.setResult("xkeen -stop", "stopped", nil)
+	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
 	// Fire start — it spawns goroutine that sleeps 1s then triggers status check
