@@ -204,7 +204,6 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -213,7 +212,7 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send initial status immediately
-	h.sendStatusEvent(w, flusher)
+	h.sendStatusEvent(r.Context(), w, flusher)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -221,14 +220,14 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ticker.C:
-			if err := h.sendStatusEvent(w, flusher); err != nil {
+			if err := h.sendStatusEvent(r.Context(), w, flusher); err != nil {
 				return
 			}
 		case <-r.Context().Done():
 			return
 		case <-h.statusTrigger:
 			// Instant check triggered by start/stop/restart
-			if err := h.sendStatusEvent(w, flusher); err != nil {
+			if err := h.sendStatusEvent(r.Context(), w, flusher); err != nil {
 				return
 			}
 		}
@@ -236,11 +235,11 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendStatusEvent sends a single status event to the SSE client
-func (h *ServiceHandler) sendStatusEvent(w http.ResponseWriter, flusher http.Flusher) error {
-	ctx, cancel := context.WithTimeout(context.Background(), StatusTimeout)
+func (h *ServiceHandler) sendStatusEvent(ctx context.Context, w http.ResponseWriter, flusher http.Flusher) error {
+	cmdCtx, cancel := context.WithTimeout(ctx, StatusTimeout)
 	defer cancel()
 
-	output, err := h.executeCommandWithTimeout(ctx, "status")
+	output, err := h.executeCommandWithTimeout(cmdCtx, "status")
 
 	notRunning := strings.Contains(output, "is not running") ||
 		strings.Contains(output, "не запущен")
@@ -260,8 +259,11 @@ func (h *ServiceHandler) sendStatusEvent(w http.ResponseWriter, flusher http.Flu
 	}
 
 	data, _ := json.Marshal(status)
-	log.Printf("[SSE] Sending status event: %s", string(data))
-	fmt.Fprintf(w, "event: status\ndata: %s\n\n", data)
+	log.Printf("[SSE] Status event sent (running=%v)", status.Running)
+	_, writeErr := fmt.Fprintf(w, "event: status\ndata: %s\n\n", data)
+	if writeErr != nil {
+		return writeErr
+	}
 	flusher.Flush()
 	return nil
 }
