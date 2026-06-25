@@ -517,7 +517,7 @@ func install() error {
 
 	// Auto-start service after installation
 	fmt.Println("Starting service...")
-	startCmd := exec.Command("sh", "-c", "nohup sh "+installInitScript+" start >> "+installLogFile+" 2>&1 &")
+	startCmd := exec.Command("sh", "-c", "(sh "+installInitScript+" start </dev/null >>"+installLogFile+" 2>&1 &)")
 	if err := startCmd.Run(); err != nil {
 		fmt.Printf("Warning: failed to start service: %v\n", err)
 		fmt.Println("Please start manually: xkeen-ui start")
@@ -553,7 +553,7 @@ func uninstall() error {
 	}
 
 	// Launch script in background via shell and exit immediately
-	cmd := exec.Command("sh", "-c", "nohup sh "+tmpScript+" >/dev/null 2>&1 &")
+	cmd := exec.Command("sh", "-c", "sh "+tmpScript+" </dev/null >>"+installLogFile+" 2>&1 &")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to start uninstall script: %w", err)
 	}
@@ -566,42 +566,44 @@ func uninstall() error {
 func stopProcess() {
 	myPID := os.Getpid()
 
-	// Try to find and kill by pgrep (exclude current process)
-	cmd := exec.Command("pgrep", "-f", binaryName)
-	output, err := cmd.Output()
-	if err == nil && len(output) > 0 {
-		pids := strings.Fields(strings.TrimSpace(string(output)))
-		for _, pidStr := range pids {
-			var pid int
-			fmt.Sscanf(pidStr, "%d", &pid)
-			// Skip current process
-			if pid == myPID {
-				continue
-			}
-			fmt.Printf("Killing process by PID: %d\n", pid)
-			_ = exec.Command("kill", pidStr).Run()
+	// Use ps+grep+awk instead of pgrep for BusyBox compatibility.
+	// pgrep may not be available on all Keenetic builds.
+	pids := findProcessPIDs()
+	for _, pidStr := range pids {
+		var pid int
+		fmt.Sscanf(pidStr, "%d", &pid)
+		if pid == myPID {
+			continue
 		}
+		fmt.Printf("Killing process by PID: %d\n", pid)
+		_ = exec.Command("kill", pidStr).Run()
 	}
 
 	// Wait a moment
 	exec.Command("sleep", "1").Run()
 
 	// Force kill if still running
-	cmd = exec.Command("pgrep", "-f", binaryName)
-	output, err = cmd.Output()
-	if err == nil && len(output) > 0 {
-		pids := strings.Fields(strings.TrimSpace(string(output)))
-		for _, pidStr := range pids {
-			var pid int
-			fmt.Sscanf(pidStr, "%d", &pid)
-			// Skip current process
-			if pid == myPID {
-				continue
-			}
-			fmt.Println("Force killing xkeen-ui...")
-			_ = exec.Command("kill", "-9", pidStr).Run()
+	pids = findProcessPIDs()
+	for _, pidStr := range pids {
+		var pid int
+		fmt.Sscanf(pidStr, "%d", &pid)
+		if pid == myPID {
+			continue
 		}
+		fmt.Println("Force killing xkeen-ui...")
+		_ = exec.Command("kill", "-9", pidStr).Run()
 	}
+}
+
+// findProcessPIDs returns PIDs of all xkeen-ui processes via ps+grep+awk.
+// Compatible with BusyBox where pgrep may be unavailable.
+func findProcessPIDs() []string {
+	cmd := exec.Command("sh", "-c", "ps 2>/dev/null | grep 'xkeen-ui' | grep -v grep | grep -v uninstall | awk '{print $1}'")
+	output, err := cmd.Output()
+	if err != nil || len(output) == 0 {
+		return nil
+	}
+	return strings.Fields(strings.TrimSpace(string(output)))
 }
 
 // generateSecret generates a random secret for session encryption

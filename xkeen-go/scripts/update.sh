@@ -26,8 +26,8 @@ WAIT_COUNT=0
 while kill -0 "$OLD_PID" 2>/dev/null; do
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
-    # Timeout after 30 seconds
-    if [ $WAIT_COUNT -gt 30 ]; then
+    # Timeout after 60 seconds (graceful shutdown can take up to 30s)
+    if [ $WAIT_COUNT -gt 60 ]; then
         log "ERROR: Timeout waiting for process $OLD_PID to terminate"
         rm -f "$NEW_BINARY"
         exit 1

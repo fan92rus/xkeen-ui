@@ -28,6 +28,10 @@ import (
 // UpdateShutdownCh is used to signal main goroutine that the update
 // has completed and the server should perform a graceful shutdown
 // before the binary is replaced.
+// minBinarySize is the minimum acceptable binary size (2MB) for update verification.
+// Uncompressed Go binary with embedded frontend is ~6.4MB; UPX-compressed is ~1.9MB.
+const minBinarySize = 2_000_000
+
 var UpdateShutdownCh = make(chan struct{}, 1)
 
 // UpdateHandler handles application update operations.
@@ -367,7 +371,7 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Verification failed: %v", err)})
 		return
 	}
-	if info.Size() < 1000000 { // Less than 1MB is suspicious
+	if info.Size() < minBinarySize {
 		sendEvent("error", ErrorData{Error: "Downloaded file too small, likely corrupted"})
 		return
 	}
@@ -423,7 +427,7 @@ func (h *UpdateHandler) downloadFile(ctx context.Context, path, url string) erro
 
 	req.Header.Set("User-Agent", "XKEEN-UI/"+version.GetVersion())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

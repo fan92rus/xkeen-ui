@@ -12,9 +12,13 @@ import { filterLogs } from '../utils/log-filter.js';
 import { computeDiff as computeDiffHtml } from '../utils/diff.js';
 import { formatBackupTime } from '../utils/format.js';
 
+function safeLS(key, fallback) {
+    try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
 export const useAppStore = defineStore('app', () => {
     // ── UI state ──
-    const activeTab = ref(location.hash.slice(1) || localStorage.getItem('xkeen_active_tab') || 'editor');
+    const activeTab = ref(location.hash.slice(1) || safeLS('xkeen_active_tab', 'editor'));
     const loading = ref(false);
 
     // ── Toast ──
