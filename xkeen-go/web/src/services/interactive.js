@@ -1,4 +1,5 @@
 // services/interactive.js - WebSocket client for interactive command execution
+import { warn } from '../utils/logger.js';
 
 const WS_BASE = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_HOST = WS_BASE + '//' + window.location.host;
@@ -27,7 +28,7 @@ export class InteractiveSession {
                 const msg = JSON.parse(event.data);
                 this.handleMessage(msg);
             } catch (e) {
-                console.warn('Failed to parse WebSocket message:', event.data);
+                warn('Failed to parse WebSocket message:', event.data);
             }
         };
 

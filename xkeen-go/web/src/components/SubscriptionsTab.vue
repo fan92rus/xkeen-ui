@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as api from '../services/subscription.js';
 import { fmtTime } from '../utils/format.js';
+import { error as logError } from '../utils/logger.js';
 import { filterProxies } from '../services/filter.js';
 import { formatJson } from '../utils/json-format.js';
 import { countByCountry as _countByCountry, countryState as _countryState, uniqueCountries, textFilterProxies } from '../utils/subscriptions-grouping.js';
@@ -108,7 +109,7 @@ const filteredProxies = computed(() => {
 
 /* ---- helpers ---- */
 function _toast(msg, type) { app.showToast(msg, type); }
-function _err(e) { console.error('[sub]', e); _toast(e.message || 'Ошибка', 'error'); }
+function _err(e) { logError('[sub]', e); _toast(e.message || 'Ошибка', 'error'); }
 async function _reload() {
     subs.value = (await api.listSubscriptions()).subscriptions || [];
 }
@@ -198,7 +199,7 @@ async function loadProxies() {
         const d = await api.getProxies();
         proxies.value = d.proxies || [];
     } catch (e) {
-        console.error('[sub] loadProxies error:', e);
+        logError('[sub] loadProxies error:', e);
         proxies.value = [];
     }
 }
@@ -254,7 +255,7 @@ async function loadProfiles() {
     try {
         profiles.value = await api.listProfiles();
     } catch (e) {
-        console.error('[sub] loadProfiles:', e);
+        logError('[sub] loadProfiles:', e);
         _toast('Не удалось загрузить профили', 'error');
     }
 }
@@ -344,7 +345,7 @@ onMounted(async () => {
         const d = await api.listSubscriptions();
         subs.value = d.subscriptions || [];
         await Promise.all([loadProxies(), loadProfiles()]);
-    } catch (e) { console.error('[sub] init error:', e); }
+    } catch (e) { logError('[sub] init error:', e); }
 });
 </script>
 

@@ -11,6 +11,7 @@ import * as modeService from '../services/mode.js';
 import { filterLogs } from '../utils/log-filter.js';
 import { computeDiff as computeDiffHtml } from '../utils/diff.js';
 import { formatBackupTime } from '../utils/format.js';
+import { error as logError } from '../utils/logger.js';
 
 function safeLS(key, fallback) {
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
@@ -174,7 +175,7 @@ export const useAppStore = defineStore('app', () => {
                 currentMode.value = data.mode;
                 logFile.value = data.mode === 'mihomo' ? '/opt/var/log/mihomo/access.log' : '/opt/var/log/xray/access.log';
             }
-        } catch (err) { console.error('Failed to check mode availability:', err); }
+        } catch (err) { logError('Failed to check mode availability:', err); }
     }
 
     // ── Actions: Service ──

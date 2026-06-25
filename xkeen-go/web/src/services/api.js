@@ -1,4 +1,5 @@
 // services/api.js - Base HTTP client with CSRF and error handling
+import { warn } from '../utils/logger.js';
 
 const API_BASE = '';
 
@@ -59,7 +60,7 @@ export async function postStream(path, data, onMessage) {
                     try {
                         onMessage(JSON.parse(line));
                     } catch (e) {
-                        console.warn('Failed to parse stream line:', line);
+                        warn('Failed to parse stream line:', line);
                     }
                 }
             }
@@ -69,7 +70,7 @@ export async function postStream(path, data, onMessage) {
             try {
                 onMessage(JSON.parse(buffer));
             } catch (e) {
-                console.warn('Failed to parse final buffer:', buffer);
+                warn('Failed to parse final buffer:', buffer);
             }
         }
     } finally {

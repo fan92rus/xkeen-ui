@@ -1,4 +1,5 @@
 // services/update.js - Update API service
+import { error as logError } from '../utils/logger.js';
 import * as api from './api.js';
 
 export async function checkUpdate(prerelease = false) {
@@ -42,7 +43,7 @@ export function startUpdate(options) {
                                 case 'error': onError?.(data); reject(new Error(data.error)); return;
                             }
                         } catch (e) {
-                            console.error('Failed to parse SSE data:', e);
+                            logError('Failed to parse SSE data:', e);
                         }
                     }
                 }

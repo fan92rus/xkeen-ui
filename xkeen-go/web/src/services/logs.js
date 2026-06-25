@@ -1,5 +1,6 @@
 // services/logs.js - Logs fetching and WebSocket streaming
 
+import { warn } from '../utils/logger.js';
 import { get } from './api.js';
 import { computeBackoffDelay } from '../utils/backoff.js';
 
@@ -43,7 +44,7 @@ export function createLogStream(onMessage, onError, onStatus) {
                     onMessage(data);
                 }
             } catch (e) {
-                console.warn('Failed to parse WebSocket message:', e);
+                warn('Failed to parse WebSocket message:', e);
             }
         };
 

@@ -1,5 +1,6 @@
 // services/metrics.js - WebSocket client for Xray metrics with localStorage caching
 
+import { error as logError } from '../utils/logger.js';
 import { computeBackoffDelay } from '../utils/backoff.js';
 
 const STORAGE_KEY = 'xkeen_metrics_history';
@@ -68,7 +69,7 @@ export class MetricsWS {
 					this.onError(msg.error);
 				}
 			} catch (e) {
-				console.error('MetricsWS: failed to parse message', e);
+				logError('MetricsWS: failed to parse message', e);
 			}
 		};
 
