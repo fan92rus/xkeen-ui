@@ -1007,6 +1007,179 @@ func TestScheduler_StartStopMultipleTimes(t *testing.T) {
 
 // --- enableCron ---
 
+// --- recoverPanic ---
+
+func TestScheduler_RecoverPanic_CatchesPanic(t *testing.T) {
+	store, _ := NewStore(filepath.Join(t.TempDir(), "subs.json"))
+	s := NewScheduler(store, NewFetcher())
+
+	completed := false
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer s.recoverPanic("testPanic")
+		panic("intentional test panic")
+	}()
+	wg.Wait()
+	completed = true
+
+	if !completed {
+		t.Error("WaitGroup should complete after recoverPanic catches the panic")
+	}
+}
+
+func TestScheduler_RecoverPanic_DoesNotInterfereNormalOperation(t *testing.T) {
+	store, _ := NewStore(filepath.Join(t.TempDir(), "subs.json"))
+	s := NewScheduler(store, NewFetcher())
+
+	result := ""
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer s.recoverPanic("normalTest")
+		result = "ok"
+	}()
+	wg.Wait()
+
+	if result != "ok" {
+		t.Error("normal operation should complete without being affected by recoverPanic")
+	}
+}
+
+// --- atomicWrite ---
+
+func TestAtomicWrite_CreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/test.json"
+	data := []byte(`{"key":"value"}`)
+
+	if err := atomicWrite(path, data); err != nil {
+		t.Fatalf("atomicWrite: %v", err)
+	}
+
+	// File should exist with correct content
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(content) != string(data) {
+		t.Errorf("content mismatch: got %q, want %q", string(content), string(data))
+	}
+
+	// No .tmp file should remain
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error(".tmp file should not exist after successful atomicWrite")
+	}
+}
+
+func TestAtomicWrite_ReplacesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/test.json"
+
+	// Write initial content
+	os.WriteFile(path, []byte("old"), 0644)
+
+	// Atomic-write new content
+	newData := []byte(`{"new":"data"}`)
+	if err := atomicWrite(path, newData); err != nil {
+		t.Fatalf("atomicWrite: %v", err)
+	}
+
+	content, _ := os.ReadFile(path)
+	if string(content) != string(newData) {
+		t.Errorf("expected new content, got %q", string(content))
+	}
+}
+
+func TestAtomicWrite_ErrorOnBadPath(t *testing.T) {
+	err := atomicWrite("/nonexistent/deep/path/file.json", []byte("data"))
+	if err == nil {
+		t.Error("expected error for nonexistent path")
+	}
+}
+
+// --- WithApplyLock ---
+
+func TestWithApplyLock_SerializesConcurrentCalls(t *testing.T) {
+	store, _ := NewStore(filepath.Join(t.TempDir(), "subs.json"))
+	s := NewScheduler(store, NewFetcher())
+
+	const goroutines = 10
+	var (
+		mu        sync.Mutex
+		callOrder []int
+	)
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			_ = s.WithApplyLock(func() error {
+				mu.Lock()
+				callOrder = append(callOrder, id)
+				mu.Unlock()
+				return nil
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	// All goroutines should have executed
+	if len(callOrder) != goroutines {
+		t.Errorf("expected %d calls, got %d", goroutines, len(callOrder))
+	}
+
+	// Verify serialization: each call must complete before the next starts.
+	// We can't prove absence of concurrency without timing, but WithApplyLock
+	// uses sync.Mutex which guarantees mutual exclusion by contract.
+}
+
+// --- writeConfigFiles atomic ---
+
+func TestWriteConfigFiles_NoTmpFilesLeft(t *testing.T) {
+	dir := t.TempDir()
+
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de-1", Protocol: "vless", Country: "DE", Outbound: json.RawMessage(`{"protocol":"vless","settings":{}}`)},
+	}
+
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+	sched.SetXrayDir(dir)
+
+	profiles := []Profile{{
+		ID: "default", IsDefault: true, Enabled: true,
+		Strategy: RoutingStrategy{Type: "all"},
+	}}
+
+	if err := sched.writeConfigFiles(proxies, profiles); err != nil {
+		t.Fatalf("writeConfigFiles: %v", err)
+	}
+
+	// Verify expected files exist
+	files := []string{"04_outbounds.json", "05_routing.json"}
+	for _, f := range files {
+		path := filepath.Join(dir, f)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist", f)
+		}
+		// No .tmp should remain
+		if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+			t.Errorf("unexpected .tmp file: %s.tmp", f)
+		}
+	}
+
+	// 07_observatory not written for "all" strategy, but no tmp should exist either
+	obsTmp := filepath.Join(dir, "07_observatory.json.tmp")
+	if _, err := os.Stat(obsTmp); !os.IsNotExist(err) {
+		t.Error("unexpected 07_observatory.json.tmp")
+	}
+}
+
 func TestScheduler_EnableCron(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))

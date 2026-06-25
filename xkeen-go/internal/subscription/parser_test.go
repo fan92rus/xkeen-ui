@@ -765,6 +765,212 @@ naive://ignored
 	}
 }
 
+// --- Port Validation (#P4) ---
+
+func TestParseVless_InvalidPort_OutOfRange(t *testing.T) {
+	tests := []struct { name string; uri string }{
+		{"port 0", "vless://uuid@1.2.3.4:0?security=tls&type=tcp#Test"},
+		{"port 99999", "vless://uuid@1.2.3.4:99999?security=tls&type=tcp#Test"},
+		{"port 65536", "vless://uuid@1.2.3.4:65536?security=tls&type=tcp#Test"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseURI(tt.uri)
+			if err == nil {
+				t.Error("expected error for invalid port " + tt.name)
+			}
+			if !strings.Contains(err.Error(), "out of range") {
+				t.Errorf("error should mention out of range, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestParseTrojan_InvalidPort_OutOfRange(t *testing.T) {
+	_, err := ParseURI("trojan://pass@host:0?security=tls&type=tcp#Test")
+	if err == nil {
+		t.Error("expected error for port 0")
+	}
+	if !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("error should mention out of range, got: %v", err)
+	}
+}
+
+func TestParseHysteria2_InvalidPort_OutOfRange(t *testing.T) {
+	_, err := ParseURI("hysteria2://pass@host:0?security=tls#Test")
+	if err == nil {
+		t.Error("expected error for port 0")
+	}
+	if !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("error should mention out of range, got: %v", err)
+	}
+}
+
+// --- Stable Tags (#S7) ---
+
+func TestGenerateTags_StableAcrossReorder(t *testing.T) {
+	// Create 4 proxies with different RawURIs — like a real subscription
+	entries1 := []*ProxyEntry{
+		{Country: "DE", RawURI: "vless://a@1.1.1.1:443#DE1"},
+		{Country: "DE", RawURI: "vless://b@2.2.2.2:443#DE2"},
+		{Country: "NL", RawURI: "vless://c@3.3.3.3:443#NL1"},
+	}
+	GenerateTags(entries1)
+	tags1 := map[string]string{}
+	for _, e := range entries1 {
+		tags1[e.RawURI] = e.Tag
+	}
+
+	// Same proxies in REVERSE order
+	entries2 := []*ProxyEntry{
+		{Country: "NL", RawURI: "vless://c@3.3.3.3:443#NL1"},
+		{Country: "DE", RawURI: "vless://b@2.2.2.2:443#DE2"},
+		{Country: "DE", RawURI: "vless://a@1.1.1.1:443#DE1"},
+	}
+	GenerateTags(entries2)
+
+	// Each proxy should have the SAME tag in both calls
+	for uri, want := range tags1 {
+		got := ""
+		for _, e := range entries2 {
+			if e.RawURI == uri {
+				got = e.Tag
+				break
+			}
+		}
+		if got != want {
+			t.Errorf("proxy %q: expected tag %q, got %q (tags should be stable across reorder)", uri, want, got)
+		}
+	}
+}
+
+func TestGenerateTags_StableAcrossRefreshSameSet(t *testing.T) {
+	// Same set of proxies should produce identical tags on two separate calls
+	uris := []string{
+		"vless://a@1.1.1.1:443?security=tls&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20DE1",
+		"vless://b@2.2.2.2:443?security=tls&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20DE2",
+		"vless://c@3.3.3.3:443?security=tls&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20DE3",
+	}
+
+	entries1, _ := ParseProxiesFromURIs(uris)
+	entries2, _ := ParseProxiesFromURIs(uris)
+
+	// reorder to simulate list changed
+	entries3, _ := ParseProxiesFromURIs([]string{uris[2], uris[0], uris[1]})
+
+	tags1 := map[string]string{}
+	for _, e := range entries1 {
+		tags1[e.RawURI] = e.Tag
+	}
+
+	for _, e := range entries2 {
+		expected, ok := tags1[e.RawURI]
+		if !ok {
+			t.Errorf("unexpected proxy in entries2: %s", e.RawURI)
+			continue
+		}
+		if e.Tag != expected {
+			t.Errorf("proxy %s: second call tag %q != first call %q", e.RawURI, e.Tag, expected)
+		}
+	}
+
+	for _, e := range entries3 {
+		expected, ok := tags1[e.RawURI]
+		if !ok {
+			t.Errorf("unexpected proxy in entries3: %s", e.RawURI)
+			continue
+		}
+		if e.Tag != expected {
+			t.Errorf("proxy %s (reordered): tag %q != first call %q", e.RawURI, e.Tag, expected)
+		}
+	}
+}
+
+// --- #P1 Guard: merged batch no collision ---
+
+func TestGenerateTags_MergedBatchNoCollision(t *testing.T) {
+	// Simulate two subscriptions' proxies merged into ONE list before GenerateTags
+	merged := []*ProxyEntry{
+		{Country: "DE", RawURI: "vless://sub1-de@1.1.1.1:443#Sub1-DE"},
+		{Country: "DE", RawURI: "vless://sub1-de@2.2.2.2:443#Sub1-DE2"},
+		{Country: "DE", RawURI: "vless://sub2-de@3.3.3.3:443#Sub2-DE"},
+		{Country: "NL", RawURI: "vless://sub1-nl@4.4.4.4:443#Sub1-NL"},
+	}
+	GenerateTags(merged)
+
+	tagSet := make(map[string]bool)
+	for _, e := range merged {
+		if tagSet[e.Tag] {
+			t.Errorf("DUPLICATE tag %q found for proxy %s", e.Tag, e.RawURI)
+		}
+		tagSet[e.Tag] = true
+	}
+	if len(tagSet) != len(merged) {
+		t.Errorf("expected %d unique tags, got %d", len(merged), len(tagSet))
+	}
+	// Verify tag format
+	for _, e := range merged {
+		if !strings.HasPrefix(e.Tag, "proxy-") {
+			t.Errorf("tag %q should start with 'proxy-'", e.Tag)
+		}
+	}
+}
+
+// --- #P8 Size limit ---
+
+func TestParseSubscriptionContent_TooLarge(t *testing.T) {
+	// Create a payload just over the limit
+	big := make([]byte, maxSubscriptionSize+1)
+	for i := range big {
+		big[i] = 'a'
+	}
+	_, err := ParseSubscriptionContent(big)
+	if err == nil {
+		t.Error("expected error for oversized subscription body")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error should mention too large, got: %v", err)
+	}
+}
+
+// --- #P6/#P7 ParseProxiesFromURIs returns error on total failure ---
+
+func TestParseProxiesFromURIs_AllFailReturnsError(t *testing.T) {
+	uris := []string{
+		"vmess://dGVzdA==",
+		"ss://creds@host:8388",
+		"invalid-uri-without-scheme",
+	}
+	entries, err := ParseProxiesFromURIs(uris)
+	if err == nil {
+		t.Error("expected error when all URIs fail")
+	}
+	if !strings.Contains(err.Error(), "failed") {
+		t.Errorf("error should mention failure, got: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(entries))
+	}
+}
+
+func TestParseProxiesFromURIs_MixedBadGood(t *testing.T) {
+	uris := []string{
+		"vmess://dGVzdA==",
+		"vless://uuid@1.2.3.4:443?security=tls&type=tcp#Test",
+		"invalid-uri",
+	}
+	entries, err := ParseProxiesFromURIs(uris)
+	if err != nil {
+		t.Errorf("expected no error for mixed input, got: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("expected 1 good entry, got %d", len(entries))
+	}
+	if len(entries) > 0 && entries[0].Protocol != "vless" {
+		t.Errorf("expected vless protocol, got %s", entries[0].Protocol)
+	}
+}
+
 func TestParseTrojan_Reality(t *testing.T) {
 	uri := "trojan://pass@10.0.0.1:443?security=reality&type=tcp&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#Trojan%20Reality"
 	entry, err := ParseURI(uri)

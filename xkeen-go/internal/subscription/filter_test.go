@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -310,6 +311,75 @@ func TestApplyFilter_AllRulesCombined(t *testing.T) {
 			t.Errorf("expected remarks to contain 'Server', got %q", p.Remarks)
 		}
 	}
+}
+
+// --- ValidateRegexes ---
+
+func TestValidateRegexes_Valid(t *testing.T) {
+	f := &Filter{
+		IncludeRegexes: []string{"Fast|Premium", "(?i)server"},
+		ExcludeRegexes: []string{"Gaming"},
+	}
+	if err := ValidateRegexes(f); err != nil {
+		t.Errorf("expected nil error for valid regexes, got: %v", err)
+	}
+}
+
+func TestValidateRegexes_InvalidInclude(t *testing.T) {
+	f := &Filter{
+		IncludeRegexes: []string{"valid", "[invalid", "also-valid"},
+	}
+	err := ValidateRegexes(f)
+	if err == nil {
+		t.Fatal("expected error for invalid include regex")
+	}
+	if !containsSubstr(err.Error(), "include_regexes[1]") {
+		t.Errorf("error should mention include_regexes[1], got: %v", err)
+	}
+	if !containsSubstr(err.Error(), "[invalid") {
+		t.Errorf("error should include the invalid pattern, got: %v", err)
+	}
+}
+
+func TestValidateRegexes_InvalidExclude(t *testing.T) {
+	f := &Filter{
+		ExcludeRegexes: []string{"bad(regex"},
+	}
+	err := ValidateRegexes(f)
+	if err == nil {
+		t.Fatal("expected error for invalid exclude regex")
+	}
+	if !containsSubstr(err.Error(), "exclude_regexes[0]") {
+		t.Errorf("error should mention exclude_regexes[0], got: %v", err)
+	}
+}
+
+func TestValidateRegexes_EmptyOk(t *testing.T) {
+	f := &Filter{}
+	if err := ValidateRegexes(f); err != nil {
+		t.Errorf("expected nil error for empty filter, got: %v", err)
+	}
+
+	f2 := &Filter{
+		IncludeRegexes: []string{""},   // empty string should be skipped
+		ExcludeRegexes: nil,
+	}
+	if err := ValidateRegexes(f2); err != nil {
+		t.Errorf("expected nil error for empty pattern, got: %v", err)
+	}
+}
+
+func TestValidateRegexes_EmptyPatternInSlice(t *testing.T) {
+	f := &Filter{
+		IncludeRegexes: []string{"valid", "", "also-valid"},
+	}
+	if err := ValidateRegexes(f); err != nil {
+		t.Errorf("empty string in slice should be skipped, got: %v", err)
+	}
+}
+
+func containsSubstr(s, sub string) bool {
+	return strings.Contains(s, sub)
 }
 
 func contains(s, sub string) bool {

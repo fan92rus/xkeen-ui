@@ -328,6 +328,28 @@ func TestUpdateFilters(t *testing.T) {
 	}
 }
 
+func TestUpdateFilters_InvalidRegex(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "PUT", "/subscriptions/filters", map[string]interface{}{
+		"include_regexes": []string{"valid", "[invalid"},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 400 for invalid regex, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if errMsg, ok := result["error"].(string); ok {
+		if !strings.Contains(errMsg, "include_regexes[1]") {
+			t.Errorf("error should mention include_regexes[1], got: %s", errMsg)
+		}
+	} else {
+		t.Errorf("response should have 'error' string field, got: %v", result)
+	}
+}
+
 func TestGetStrategy(t *testing.T) {
 	h, _ := newTestHandler(t)
 	router := newTestRouter(h)
@@ -1202,6 +1224,32 @@ func TestCreateProfile_RejectsEmptyName(t *testing.T) {
 	}
 }
 
+func TestCreateProfile_InvalidRegex(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	resp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "Filtered",
+		"enabled": true,
+		"filter": map[string]interface{}{
+			"exclude_regexes": []string{"[bad"},
+		},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 400 for invalid regex, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if errMsg, ok := result["error"].(string); ok {
+		if !strings.Contains(errMsg, "exclude_regexes[0]") {
+			t.Errorf("error should mention exclude_regexes[0], got: %s", errMsg)
+		}
+	} else {
+		t.Errorf("response should have 'error' string field, got: %v", result)
+	}
+}
+
 func TestCreateProfile_RejectsMaxProfiles(t *testing.T) {
 	h, _ := newTestHandler(t)
 	router := newTestRouter(h)
@@ -1341,6 +1389,43 @@ func TestUpdateProfile_NotFound(t *testing.T) {
 	})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateProfile_InvalidRegex(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := newTestRouter(h)
+
+	// Create a profile first, then update it with bad regex
+	createResp := doRequest(t, router, "POST", "/subscriptions/profiles", map[string]interface{}{
+		"name":    "Mutable",
+		"enabled": true,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", createResp.StatusCode)
+	}
+	createResult := parseResponse(t, createResp)
+	profileID := createResult["id"].(string)
+
+	resp := doRequest(t, router, "PUT", "/subscriptions/profiles/"+profileID, map[string]interface{}{
+		"name":    "Updated",
+		"enabled": true,
+		"filter": map[string]interface{}{
+			"include_regexes": []string{"unclosed["},
+		},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 400 for invalid regex, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if errMsg, ok := result["error"].(string); ok {
+		if !strings.Contains(errMsg, "include_regexes[0]") {
+			t.Errorf("error should mention include_regexes[0], got: %s", errMsg)
+		}
+	} else {
+		t.Errorf("response should have 'error' string field, got: %v", result)
 	}
 }
 

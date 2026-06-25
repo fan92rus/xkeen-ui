@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -46,6 +47,31 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 
 // compileRegexes compiles a list of regex pattern strings.
 // Invalid patterns are silently skipped.
+// ValidateRegexes validates all regex patterns in a filter, returning an error describing
+// the first invalid pattern (with which field it came from). Returns nil if all are valid.
+func ValidateRegexes(f *Filter) error {
+	check := func(field, pattern string) error {
+		if pattern == "" {
+			return nil
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("invalid regex in %s: %q: %w", field, pattern, err)
+		}
+		return nil
+	}
+	for i, p := range f.IncludeRegexes {
+		if err := check(fmt.Sprintf("include_regexes[%d]", i), p); err != nil {
+			return err
+		}
+	}
+	for i, p := range f.ExcludeRegexes {
+		if err := check(fmt.Sprintf("exclude_regexes[%d]", i), p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func compileRegexes(patterns []string) []*regexp.Regexp {
 	var res []*regexp.Regexp
 	for _, p := range patterns {

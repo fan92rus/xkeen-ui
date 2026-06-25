@@ -6,6 +6,18 @@ import (
 	"sort"
 )
 
+// outboundTag returns the tag that will be assigned to proxy p in the outbounds JSON.
+// The first proxy in the slice always gets tag "proxy" (the default outbound contract);
+// all others keep their assigned ProxyEntry.Tag. Both the outbounds and routing generators
+// MUST use this helper so balancer selectors never reference a tag that doesn't exist in outbounds.
+// Pointer identity is used so that filtered subsets (via ApplyFilter) resolve correctly.
+func outboundTag(proxies []*ProxyEntry, p *ProxyEntry) string {
+	if len(proxies) > 0 && p == proxies[0] {
+		return "proxy"
+	}
+	return p.Tag
+}
+
 // CollectFilteredProxies returns the union of proxies needed by all enabled profiles.
 // For the default profile, its filter is applied to determine which proxies belong to it.
 // For non-default profiles, each profile's filter is applied independently.
@@ -75,12 +87,7 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 			return nil, fmt.Errorf("failed to parse outbound JSON for proxy %d: %w", i, err)
 		}
 
-		// First proxy gets tag "proxy" (default outbound)
-		if i == 0 {
-			outbound["tag"] = "proxy"
-		} else {
-			outbound["tag"] = p.Tag
-		}
+		outbound["tag"] = outboundTag(proxies, p)
 
 		raw, err := json.Marshal(outbound)
 		if err != nil {
@@ -213,7 +220,7 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 			// Default profile uses filtered proxy tags for its balancer selector.
 			filtered := ApplyFilter(proxies, &profile.Filter)
 			for _, p := range filtered {
-				selector = append(selector, p.Tag)
+				selector = append(selector, outboundTag(proxies, p))
 			}
 			sort.Strings(selector)
 			// Fallback: if filter removes all proxies, use regex to match any
@@ -224,7 +231,7 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 			// Concrete tag list from filtered proxies.
 			filtered := ApplyFilter(proxies, &profile.Filter)
 			for _, p := range filtered {
-				selector = append(selector, p.Tag)
+				selector = append(selector, outboundTag(proxies, p))
 			}
 			sort.Strings(selector)
 		}
@@ -281,7 +288,7 @@ func replaceBalancerRules(rulesRaw json.RawMessage) json.RawMessage {
 func GenerateObservatoryJSON() ([]byte, error) {
 	observatory := map[string]interface{}{
 		"observatory": map[string]interface{}{
-			"subjectSelector": []string{"proxy-"},
+			"subjectSelector": []string{"proxy"},
 			"probeURL":        "https://www.google.com/generate_204",
 			"probeInterval":   "30s",
 		},

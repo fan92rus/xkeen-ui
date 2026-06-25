@@ -1348,3 +1348,216 @@ func TestProxyCache_ProxyNamesFromCache(t *testing.T) {
 		t.Error("'direct' with empty remarks should not be in map")
 	}
 }
+
+// ---------- #S2: GetFilters/GetStrategy no-mutate ----------
+
+func TestGetFilters_NoDefaultProfile_DoesNotMutate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	// Create a file with profiles but NO IsDefault profile
+	cfg := &SubscriptionConfig{
+		Profiles: []Profile{
+			{ID: "custom1", Name: "Custom", Enabled: true, IsDefault: false, Strategy: RoutingStrategy{Type: "random"}},
+		},
+	}
+	data, _ := json.MarshalIndent(cfg, "", "    ")
+	os.WriteFile(path, data, 0644)
+
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	// Before: profiles count + no IsDefault
+	beforeCfg := store.GetConfig()
+	beforeCount := len(beforeCfg.Profiles)
+
+	// Call read methods — these must NOT mutate
+	filters := store.GetFilters()
+	strategy := store.GetStrategy()
+
+	// Verify they returned non-nil sensible defaults
+	if filters == nil {
+		t.Error("GetFilters returned nil")
+	}
+	if filters.IncludeCountries == nil {
+		t.Error("GetFilters returned nil IncludeCountries")
+	}
+	if strategy == nil {
+		t.Error("GetStrategy returned nil")
+	}
+	if strategy.Type != "all" {
+		t.Errorf("expected default strategy type 'all', got %q", strategy.Type)
+	}
+
+	// After: profiles should NOT have been mutated (no new default appended)
+	afterCfg := store.GetConfig()
+	if len(afterCfg.Profiles) != beforeCount {
+		t.Errorf("Profiles slice was mutated: before=%d, after=%d (expected no change)", beforeCount, len(afterCfg.Profiles))
+	}
+	// Verify no IsDefault magically appeared
+	for _, p := range afterCfg.Profiles {
+		if p.IsDefault {
+			t.Errorf("Profile %s was unexpectedly marked IsDefault", p.ID)
+		}
+	}
+}
+
+func TestGetStrategy_NoDefaultProfile_DoesNotMutate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+
+	// Create a file with profiles but NO IsDefault
+	cfg := &SubscriptionConfig{
+		Profiles: []Profile{
+			{ID: "custom2", Name: "Custom 2", Enabled: true, IsDefault: false, Filter: Filter{MaxProxies: 5}},
+		},
+	}
+	data, _ := json.MarshalIndent(cfg, "", "    ")
+	os.WriteFile(path, data, 0644)
+
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	beforeCount := len(store.GetConfig().Profiles)
+
+	// Call GetStrategy — must NOT add a default profile
+	_ = store.GetStrategy()
+
+	afterCfg := store.GetConfig()
+	if len(afterCfg.Profiles) != beforeCount {
+		t.Errorf("GetStrategy mutated Profiles: before=%d, after=%d", beforeCount, len(afterCfg.Profiles))
+	}
+}
+
+// ---------- #S3: Save under lock ----------
+
+func TestSave_ConcurrentWithWriter_DoesNotLoseUpdates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+	store, _ := NewStore(path)
+
+	var wg sync.WaitGroup
+	// Concurrent writer: add 10 subscriptions
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			err := store.AddSubscription(&Subscription{
+				Name: fmt.Sprintf("Race-%d", i),
+				URL:  fmt.Sprintf("https://sub-%d.example.com", i),
+				Enabled: true,
+			})
+			if err != nil {
+				t.Errorf("AddSubscription(%d): %v", i, err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	// While writer is running, call Save repeatedly
+	for i := 0; i < 5; i++ {
+		if err := store.Save(); err != nil {
+			t.Errorf("Save iteration %d: %v", i, err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	wg.Wait()
+
+	// All 10 subscriptions must be present (if Save held lock, none lost)
+	cfg := store.GetConfig()
+	if len(cfg.Subscriptions) != 10 {
+		t.Errorf("expected 10 subscriptions after concurrent write+save, got %d (possible lost update)", len(cfg.Subscriptions))
+	}
+}
+
+// ---------- #S6: atomicWriteFile ----------
+
+func TestAtomicWriteFile_ProducesCorrectContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "atomic-test.json")
+
+	content := []byte(`{"hello":"world"}`)
+	if err := atomicWriteFile(path, content, 0644); err != nil {
+		t.Fatalf("atomicWriteFile: %v", err)
+	}
+
+	// Verify file content
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Errorf("content mismatch:\nwant: %q\ngot:  %q", string(content), string(data))
+	}
+
+	// Verify no .tmp leftover
+	tmpPath := path + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Error("temp file was not cleaned up after atomic write")
+	}
+}
+
+func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "overwrite-test.json")
+
+	// Write initial content
+	os.WriteFile(path, []byte("old"), 0644)
+
+	// Overwrite atomically
+	newContent := []byte(`{"updated": true}`)
+	if err := atomicWriteFile(path, newContent, 0644); err != nil {
+		t.Fatalf("atomicWriteFile overwrite: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after overwrite: %v", err)
+	}
+	if string(data) != string(newContent) {
+		t.Errorf("overwrite content mismatch:\nwant: %q\ngot:  %q", string(newContent), string(data))
+	}
+
+	// No .tmp leftover
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file leftover after overwrite")
+	}
+}
+
+func TestProxyCache_AtomicWriteNoCorruption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subscriptions.json")
+	store, _ := NewStore(path)
+
+	proxies := []*ProxyEntry{
+		{Tag: "proxy-de-1", Protocol: "vless", Country: "DE"},
+		{Tag: "proxy-nl-1", Protocol: "vless", Country: "NL"},
+	}
+	store.SetProxies(proxies)
+
+	// Read the cache file directly to verify atomic write produced valid JSON
+	cachePath := filepath.Join(dir, "proxy-cache.json")
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+
+	var loaded []*ProxyEntry
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("unmarshal cache (corrupted?): %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Errorf("expected 2 proxies in cache, got %d", len(loaded))
+	}
+
+	// Verify no .tmp leftover
+	tmpPath := cachePath + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Error(".tmp file leftover after proxy cache write")
+	}
+}
