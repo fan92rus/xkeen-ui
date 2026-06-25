@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -523,30 +522,23 @@ func (m *Middleware) handleAuthFailure(w http.ResponseWriter, r *http.Request, m
 }
 
 func (m *Middleware) respondUnauthorized(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":    false,
-		"error": message,
-	})
+	writeJSON(w, http.StatusUnauthorized, &messageResponse{OK: false, Error: message})
 }
 
 func (m *Middleware) respondForbidden(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusForbidden)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":    false,
-		"error": message,
-	})
+	writeJSON(w, http.StatusForbidden, &messageResponse{OK: false, Error: message})
+}
+
+type rateLimitResponse struct {
+	OK         bool   `json:"ok"`
+	Error      string `json:"error"`
+	RetryAfter int    `json:"retry_after"`
 }
 
 func (m *Middleware) respondTooManyRequests(w http.ResponseWriter, retryAfter time.Duration) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusTooManyRequests)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":          false,
-		"error":       "Too many failed attempts. Please try again later.",
-		"retry_after": int(retryAfter.Seconds()),
+	writeJSON(w, http.StatusTooManyRequests, &rateLimitResponse{
+		OK: false, Error: "Too many failed attempts. Please try again later.",
+		RetryAfter: int(retryAfter.Seconds()),
 	})
 }
 

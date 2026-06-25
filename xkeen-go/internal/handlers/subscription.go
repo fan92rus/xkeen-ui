@@ -15,6 +15,82 @@ import (
 )
 
 // SubscriptionHandler handles subscription management API endpoints.
+
+// API response types for subscription handlers.
+
+
+type listSubscriptionsResponse struct {
+	Subscriptions	interface{} `json:"subscriptions"`
+	Filters	interface{} `json:"filters"`
+	Strategy	interface{} `json:"strategy"`
+	GeneratedAt	interface{} `json:"generated_at,omitempty"`
+}
+
+
+type subSuccessResponse struct {
+	Success	bool `json:"success"`
+	Subscription	interface{} `json:"subscription,omitempty"`
+}
+
+
+type subDeleteResponse struct {
+	Success	bool `json:"success"`
+	ID	string `json:"id"`
+}
+
+
+type subFetchResponse struct {
+	Success	bool `json:"success"`
+	ProxyCount	int `json:"proxy_count"`
+	Total	int `json:"total"`
+	Proxies	interface{} `json:"proxies"`
+}
+
+
+type subProxiesResponse struct {
+	Total	int `json:"total"`
+	Proxies	interface{} `json:"proxies"`
+}
+
+
+type subFiltersResponse struct {
+	Success	bool `json:"success"`
+	Filters	interface{} `json:"filters"`
+}
+
+
+type subStrategyResponse struct {
+	Success	bool `json:"success"`
+	Strategy	interface{} `json:"strategy"`
+}
+
+
+type subApplyResponse struct {
+	Success	bool `json:"success"`
+	ProxyCount	int `json:"proxy_count"`
+	Files	map[string]string `json:"files"`
+	RestartInitiated	bool `json:"restart_initiated,omitempty"`
+}
+
+
+type subPreviewResponse struct {
+	ProxyCount	int `json:"proxy_count"`
+	FilteredProxyCount	int `json:"filtered_proxy_count"`
+	Outbounds	interface{} `json:"outbounds,omitempty"`
+	Routing	interface{} `json:"routing,omitempty"`
+	Observatory	interface{} `json:"observatory,omitempty"`
+	Message	string `json:"message,omitempty"`
+	Profiles	interface{} `json:"profiles,omitempty"`
+}
+
+
+type subScheduleResponse struct {
+	Enabled	bool `json:"enabled"`
+	Cron	string `json:"cron"`
+	NextRun	interface{} `json:"next_run,omitempty"`
+}
+
+
 type SubscriptionHandler struct {
 	store      *subscription.Store
 	fetcher    *subscription.Fetcher
@@ -51,11 +127,11 @@ func (h *SubscriptionHandler) Stop() {
 // GET /api/subscriptions
 func (h *SubscriptionHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	cfg := h.store.GetConfig()
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"subscriptions": cfg.Subscriptions,
-		"filters":       h.store.GetFilters(),
-		"strategy":      h.store.GetStrategy(),
-		"generated_at":  cfg.GeneratedAt,
+	respondJSON(w, http.StatusOK, &listSubscriptionsResponse{
+		Subscriptions: cfg.Subscriptions,
+		Filters:       h.store.GetFilters(),
+		Strategy:      h.store.GetStrategy(),
+		GeneratedAt:   cfg.GeneratedAt,
 	})
 }
 
@@ -81,10 +157,7 @@ func (h *SubscriptionHandler) AddSubscription(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"success":      true,
-		"subscription": req,
-	})
+	respondJSON(w, http.StatusCreated, &subSuccessResponse{Success: true, Subscription: req})
 }
 
 // UpdateSubscription updates an existing subscription.
@@ -109,10 +182,7 @@ func (h *SubscriptionHandler) UpdateSubscription(w http.ResponseWriter, r *http.
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":      true,
-		"subscription": req,
-	})
+	respondJSON(w, http.StatusOK, &subSuccessResponse{Success: true, Subscription: req})
 }
 
 // DeleteSubscription removes a subscription.
@@ -129,10 +199,7 @@ func (h *SubscriptionHandler) DeleteSubscription(w http.ResponseWriter, r *http.
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"id":      id,
-	})
+	respondJSON(w, http.StatusOK, &subDeleteResponse{Success: true, ID: id})
 }
 
 // ---------- Fetch ----------
@@ -196,12 +263,7 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 
 	h.store.SetProxies(merged)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":     true,
-		"proxy_count": len(entries),
-		"total":       len(entries),
-		"proxies":     entries,
-	})
+	respondJSON(w, http.StatusOK, &subFetchResponse{Success: true, ProxyCount: len(entries), Total: len(entries), Proxies: entries})
 }
 
 // ---------- Proxies ----------
@@ -211,10 +273,7 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request) {
 	allProxies := h.store.GetProxies()
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"total":   len(allProxies),
-		"proxies": allProxies,
-	})
+	respondJSON(w, http.StatusOK, &subProxiesResponse{Total: len(allProxies), Proxies: allProxies})
 }
 
 // ---------- Filters ----------
@@ -245,10 +304,7 @@ func (h *SubscriptionHandler) UpdateFilters(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"filters": req,
-	})
+	respondJSON(w, http.StatusOK, &subFiltersResponse{Success: true, Filters: req})
 }
 
 // ---------- Strategy ----------
@@ -287,10 +343,7 @@ func (h *SubscriptionHandler) UpdateStrategy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"strategy": req,
-	})
+	respondJSON(w, http.StatusOK, &subStrategyResponse{Success: true, Strategy: req})
 }
 
 // ---------- Apply / Preview ----------
@@ -402,23 +455,20 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[subscription] applied %d/%d proxies with %d profiles: %s, %s", len(filteredProxies), len(allProxies), len(profiles), outboundsPath, routingPath)
 
-	response := map[string]interface{}{
-		"success":     true,
-		"proxy_count": len(filteredProxies),
-		"files": map[string]string{
-			"outbounds":   outboundsPath,
-			"routing":     routingPath,
-			"observatory": "",
-		},
+	files := map[string]string{
+		"outbounds":   outboundsPath,
+		"routing":     routingPath,
+		"observatory": "",
 	}
 	if observatoryJSON != nil {
-		response["files"].(map[string]string)["observatory"] = observatoryPath
+		files["observatory"] = observatoryPath
 	}
+	resp := &subApplyResponse{Success: true, ProxyCount: len(filteredProxies), Files: files}
 	if req.Restart && h.restartFn != nil {
-		response["restart_initiated"] = true
+		resp.RestartInitiated = true
 	}
 
-	respondJSON(w, http.StatusOK, response)
+	respondJSON(w, http.StatusOK, resp)
 }
 
 // Preview returns a dry-run of what Apply would generate, without writing files.
@@ -428,14 +478,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	profiles := h.store.GetProfiles()
 
 	if len(allProxies) == 0 {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"proxy_count":         0,
-			"filtered_proxy_count": 0,
-			"outbounds":           nil,
-			"routing":             nil,
-			"observatory":         nil,
-			"message":             "no proxies available",
-		})
+		respondJSON(w, http.StatusOK, &subPreviewResponse{ProxyCount: 0, FilteredProxyCount: 0, Message: "no proxies available"})
 		return
 	}
 
@@ -443,13 +486,9 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	filteredProxies := subscription.CollectFilteredProxies(allProxies, profiles)
 
 	if len(filteredProxies) == 0 {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"proxy_count":         len(allProxies),
-			"filtered_proxy_count": 0,
-			"outbounds":           nil,
-			"routing":             nil,
-			"observatory":         nil,
-			"message":             "no proxies pass the current filters",
+		respondJSON(w, http.StatusOK, &subPreviewResponse{
+			ProxyCount: len(allProxies), FilteredProxyCount: 0,
+			Message: "no proxies pass the current filters",
 		})
 		return
 	}
@@ -481,13 +520,12 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"proxy_count":         len(allProxies),
-		"filtered_proxy_count": len(filteredProxies),
-		"outbounds":           json.RawMessage(outboundsJSON),
-		"routing":             json.RawMessage(routingJSON),
-		"observatory":         observatoryJSON,
-		"profiles":            profiles,
+	respondJSON(w, http.StatusOK, &subPreviewResponse{
+		ProxyCount: len(allProxies), FilteredProxyCount: len(filteredProxies),
+		Outbounds:   json.RawMessage(outboundsJSON),
+		Routing:     json.RawMessage(routingJSON),
+		Observatory: observatoryJSON,
+		Profiles:    profiles,
 	})
 }
 
@@ -610,11 +648,7 @@ func (h *SubscriptionHandler) GetAutoApply(w http.ResponseWriter, r *http.Reques
 	enabled, cronExpr := h.store.GetAutoApply()
 	nextRun := h.scheduler.GetNextRun()
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"enabled":   enabled,
-		"cron":      cronExpr,
-		"next_run":  nextRun,
-	})
+	respondJSON(w, http.StatusOK, &subScheduleResponse{Enabled: enabled, Cron: cronExpr, NextRun: nextRun})
 }
 
 // UpdateAutoApplyRequest is the request body for UpdateAutoApply.
@@ -649,11 +683,7 @@ func (h *SubscriptionHandler) UpdateAutoApply(w http.ResponseWriter, r *http.Req
 	}
 
 	nextRun := h.scheduler.GetNextRun()
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"enabled":  req.Enabled,
-		"cron":     req.Cron,
-		"next_run": nextRun,
-	})
+	respondJSON(w, http.StatusOK, &subScheduleResponse{Enabled: req.Enabled, Cron: req.Cron, NextRun: nextRun})
 }
 
 // RegisterSubscriptionRoutes registers subscription-related routes.

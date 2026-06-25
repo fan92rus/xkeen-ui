@@ -7,6 +7,37 @@ import (
 	"net/http"
 )
 
+// API response types for auth handlers.
+// Using typed structs instead of map[string]interface{} for compile-time safety.
+
+type loginResponse struct {
+	OK                    bool   `json:"ok"`
+	CSRFToken             string `json:"csrf_token,omitempty"`
+	RequirePasswordChange bool   `json:"require_password_change,omitempty"`
+	Message               string `json:"message,omitempty"`
+	Error                 string `json:"error,omitempty"`
+}
+
+type statusResponse struct {
+	OK       bool `json:"ok"`
+	LoggedIn bool `json:"logged_in"`
+}
+
+type messageResponse struct {
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// writeJSON is a helper that serializes v as JSON to w and sets Content-Type.
+func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("writeJSON error: %v", err)
+	}
+}
+
 // Auth handlers (login page, login/logout, password change, index page).
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -59,10 +90,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "Invalid password",
-		})
+		writeJSON(w, http.StatusUnauthorized, &loginResponse{OK: false, Error: "Invalid password"})
 		return
 	}
 
@@ -83,19 +111,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// Set CSRF token cookie (for client-side access)
 	s.SetCSRFTokenCookie(w, csrfToken)
 
-	// Check if password change is required (default credentials)
-	response := map[string]interface{}{
-		"ok":         true,
-		"csrf_token": csrfToken,
-	}
-
+	// Build response with optional password change requirement
+	resp := &loginResponse{OK: true, CSRFToken: csrfToken}
 	if s.cfg.Auth.ForcePasswordChange {
-		response["require_password_change"] = true
-		response["message"] = "You must change the default password before continuing"
+		resp.RequirePasswordChange = true
+		resp.Message = "You must change the default password before continuing"
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -104,10 +127,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	ClearSessionCookie(w)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok": true,
-	})
+	writeJSON(w, http.StatusOK, &messageResponse{OK: true})
 }
 
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
@@ -119,11 +139,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":        true,
-		"logged_in": loggedIn,
-	})
+	writeJSON(w, http.StatusOK, &statusResponse{OK: true, LoggedIn: loggedIn})
 }
 
 // changePassword handles password change requests.
@@ -135,45 +151,25 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "Invalid request body",
-		})
+		writeJSON(w, http.StatusBadRequest, &messageResponse{OK: false, Error: "Invalid request body"})
 		return
 	}
 
 	// Validate input
 	if req.CurrentPassword == "" || req.NewPassword == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "Current password and new password are required",
-		})
+		writeJSON(w, http.StatusBadRequest, &messageResponse{OK: false, Error: "Current password and new password are required"})
 		return
 	}
 
 	// Validate new password length
 	if len(req.NewPassword) < 8 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "New password must be at least 8 characters long",
-		})
+		writeJSON(w, http.StatusBadRequest, &messageResponse{OK: false, Error: "New password must be at least 8 characters long"})
 		return
 	}
 
 	// Check if new password is same as current
 	if req.CurrentPassword == req.NewPassword {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "New password must be different from current password",
-		})
+		writeJSON(w, http.StatusBadRequest, &messageResponse{OK: false, Error: "New password must be different from current password"})
 		return
 	}
 
@@ -184,12 +180,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 			var err error
 			s.defaultHash, err = s.security.HashPassword("admin")
 			if err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"ok":    false,
-					"error": "Internal server error",
-				})
+				writeJSON(w, http.StatusInternalServerError, &messageResponse{OK: false, Error: "Internal server error"})
 				return
 			}
 		}
@@ -197,24 +188,14 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.security.CheckPassword(req.CurrentPassword, storedHash) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "Current password is incorrect",
-		})
+		writeJSON(w, http.StatusUnauthorized, &messageResponse{OK: false, Error: "Current password is incorrect"})
 		return
 	}
 
 	// Hash new password
 	newHash, err := s.security.HashPassword(req.NewPassword)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "Failed to hash new password",
-		})
+		writeJSON(w, http.StatusInternalServerError, &messageResponse{OK: false, Error: "Failed to hash new password"})
 		return
 	}
 
@@ -225,22 +206,13 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	// Save config to file
 	if err := s.cfg.SaveConfig(s.configPath); err != nil {
 		log.Printf("Failed to save config: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "Failed to save configuration",
-		})
+		writeJSON(w, http.StatusInternalServerError, &messageResponse{OK: false, Error: "Failed to save configuration"})
 		return
 	}
 
 	log.Printf("Password changed successfully")
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":      true,
-		"message": "Password changed successfully",
-	})
+	writeJSON(w, http.StatusOK, &messageResponse{OK: true, Message: "Password changed successfully"})
 }
 
 func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {

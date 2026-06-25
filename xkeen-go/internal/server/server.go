@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -263,23 +262,26 @@ func validateAndResolveBackupPath(xrayConfigDir string, allowedRoots []string) (
 }
 
 // healthCheck returns server health status.
+type healthResponse struct {
+	OK      bool   `json:"ok"`
+	Status  string `json:"status"`
+	Version string `json:"version"`
+}
+
+// healthCheck returns server health status.
 func (s *Server) healthCheck(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":      true,
-		"status":  "healthy",
-		"version": "1.0.0",
-	})
+	writeJSON(w, http.StatusOK, &healthResponse{OK: true, Status: "healthy", Version: "1.0.0"})
+}
+
+type csrfTokenResponse struct {
+	OK       bool   `json:"ok"`
+	CSRFToken string `json:"csrf_token"`
 }
 
 // getCSRFToken returns the CSRF token for the current session.
 func (s *Server) getCSRFToken(w http.ResponseWriter, r *http.Request) {
 	csrfToken := GetCSRFToken(r.Context())
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":         true,
-		"csrf_token": csrfToken,
-	})
+	writeJSON(w, http.StatusOK, &csrfTokenResponse{OK: true, CSRFToken: csrfToken})
 }
 
 // Start starts the HTTP server.
