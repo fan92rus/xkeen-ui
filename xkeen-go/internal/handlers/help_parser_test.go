@@ -17,6 +17,28 @@ func loadHelpFixture(t *testing.T) string {
 	return string(data)
 }
 
+func TestStripANSI(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{input: "", expected: ""},
+		{input: "hello", expected: "hello"},
+		{input: "\x1b[96mИнформация\x1b[0m", expected: "Информация"},
+		{input: "\x1b[3mОписание\x1b[0m", expected: "Описание"},
+		{input: "\x1b[1m-bold-\x1b[22m", expected: "-bold-"},
+		{input: "\x1b[38;5;200mcolorful\x1b[0m", expected: "colorful"},
+		{input: "normal [not ansi] \x1b[31mred\x1b[0m", expected: "normal [not ansi] red"},
+		{input: "-start\t\x1b[3mЗапуск\x1b[0m", expected: "-start\tЗапуск"},
+	}
+	for _, tc := range tests {
+		got := stripANSI(tc.input)
+		if got != tc.expected {
+			t.Errorf("stripANSI(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
 func TestParseHelp_RealFixture_Count(t *testing.T) {
 	cmds := parseHelp(loadHelpFixture(t))
 	// The fixture lists ~60 flags. Sanity: a healthy count.

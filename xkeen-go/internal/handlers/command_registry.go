@@ -87,7 +87,7 @@ func (r *CommandRegistry) loadFromXkeen() (map[string]CommandConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseHelp(string(output)), nil
+	return parseHelp(stripANSI(string(output))), nil
 }
 
 // Get returns the config for a command flag and whether it exists.

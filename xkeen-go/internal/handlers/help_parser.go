@@ -2,9 +2,18 @@
 package handlers
 
 import (
+	"regexp"
 	"strings"
 	"time"
 )
+
+// ansiRegex matches ANSI escape sequences (colors, bold, italic, etc.)
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI escape sequences from a string.
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
 
 // DefaultXKeenPath is the xkeen binary whose "-help" output is the source of
 // truth for the interactive command whitelist. Exported so it can be overridden
