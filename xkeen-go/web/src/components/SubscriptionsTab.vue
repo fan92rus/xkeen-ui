@@ -177,16 +177,20 @@ async function fetchOne(id) {
 async function fetchAll() {
     busy.value = true;
     try {
-        let n = 0;
+        let n = 0, errors = 0;
         for (const s of subs.value.filter(x => x.enabled)) {
             try {
                 const d = await api.fetchSubscription(s.id);
                 n += d.total || 0;
-            } catch { /* skip failed */ }
+            } catch { errors++; }
         }
         await _reload();
         await loadProxies();
-        _toast(`Обновлено: ${n} прокси (всего: ${proxies.value.length})`, 'success');
+        if (errors > 0) {
+            _toast(`Обновлено: ${n} прокси (всего: ${proxies.value.length}). Ошибок: ${errors}`, 'error');
+        } else {
+            _toast(`Обновлено: ${n} прокси (всего: ${proxies.value.length})`, 'success');
+        }
     } catch (e) { _err(e); } finally { busy.value = false; }
 }
 async function loadProxies() {
@@ -249,7 +253,10 @@ async function applySubs() {
 async function loadProfiles() {
     try {
         profiles.value = await api.listProfiles();
-    } catch (e) { console.error('[sub] loadProfiles:', e); }
+    } catch (e) {
+        console.error('[sub] loadProfiles:', e);
+        _toast('Не удалось загрузить профили', 'error');
+    }
 }
 
 function switchProfile(id) {

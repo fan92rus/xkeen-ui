@@ -255,6 +255,33 @@ func TestRestart_ReturnsImmediately(t *testing.T) {
 	}
 }
 
+func TestRestartService_RunsCommandAndAsync(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -restart", "Xray restarted successfully", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	// RestartService should return immediately (non-blocking)
+	handler.RestartService()
+
+	// Give the background goroutine time to execute
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify the restart command was executed by the executor
+	if len(exec.calls) == 0 {
+		t.Error("expected at least one command execution")
+	}
+	foundRestart := false
+	for _, call := range exec.calls {
+		if call.name == "xkeen" && len(call.args) > 0 && call.args[0] == "-restart" {
+			foundRestart = true
+			break
+		}
+	}
+	if !foundRestart {
+		t.Errorf("expected 'xkeen -restart' command to be executed, calls: %+v", exec.calls)
+	}
+}
+
 // --- executeCommandWithTimeout Tests ---
 
 func TestExecuteCommandWithTimeout_UnknownAction(t *testing.T) {

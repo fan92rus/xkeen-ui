@@ -11,6 +11,7 @@ export class InteractiveSession {
         this.onComplete = onComplete;
         this.onError = onError;
         this.connected = false;
+        this.completed = false;
     }
 
     connect() {
@@ -36,6 +37,10 @@ export class InteractiveSession {
 
         this.ws.onclose = () => {
             this.connected = false;
+            if (!this.completed) {
+                this.completed = true;
+                this.onComplete?.({ success: false, exitCode: -1 });
+            }
         };
     }
 
@@ -62,6 +67,7 @@ export class InteractiveSession {
     handleMessage(msg) {
         if (msg.type === 'complete') {
             this.connected = false;
+            this.completed = true;
             this.onComplete?.(msg);
         } else if (msg.type === 'output' || msg.type === 'error') {
             this.onMessage?.(msg);

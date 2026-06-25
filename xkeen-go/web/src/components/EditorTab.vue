@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch, inject } from 'vue';
+import { ref, onMounted, onUnmounted, watch, inject, nextTick } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
@@ -75,12 +75,25 @@ watch(isDark, () => {
     }
 });
 
-watch(() => app.editorLoadContent, (content) => {
-    if (content) loadText(content);
+watch(() => app.editorLoadContent, async (content) => {
+    if (content) {
+        loadText(content);
+        await nextTick();
+        app.editorLoadContent = null;
+    }
 });
 
-onMounted(() => {
+onMounted(async () => {
     ready = true;
+    // Reload from backend to ensure fresh content (fixes stale-cache after
+    // Subscriptions 'Apply' rewrites files on disk).
+    if (app.currentFile && app.currentFile.path) {
+        try {
+            await app.loadFile(app.currentFile.path);
+        } catch {
+            // If reload fails (file deleted, etc.), keep whatever we have
+        }
+    }
     const file = pendingFile || app.currentFile;
     if (file) { loadContent(file); pendingFile = null; }
     else createEditor('// Select a file to edit', editorRef.value);

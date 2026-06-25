@@ -592,6 +592,199 @@ func TestApply_GeneratedAtUpdated(t *testing.T) {
 	}
 }
 
+func TestApply_RestartCalled(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	restartCalled := 0
+	h.SetRestartFn(func() { restartCalled++ })
+
+	addTestSubscriptionWithProxies(t, h.store, 3)
+
+	router := newTestRouter(h)
+	resp := doRequest(t, router, "POST", "/subscriptions/apply", map[string]interface{}{
+		"restart": true,
+	})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if result["success"] != true {
+		t.Fatalf("expected success=true")
+	}
+	if result["restart_initiated"] != true {
+		t.Errorf("expected restart_initiated=true in response")
+	}
+
+	// Wait briefly for the async goroutine to fire
+	for i := 0; i < 50; i++ {
+		if restartCalled == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if restartCalled != 1 {
+		t.Errorf("expected restartFn to be called once, got %d", restartCalled)
+	}
+}
+
+func TestApply_NoRestartWhenFalse(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	restartCalled := 0
+	h.SetRestartFn(func() { restartCalled++ })
+
+	addTestSubscriptionWithProxies(t, h.store, 3)
+
+	router := newTestRouter(h)
+	resp := doRequest(t, router, "POST", "/subscriptions/apply", map[string]interface{}{
+		"restart": false,
+	})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if result["restart_initiated"] != nil {
+		t.Errorf("expected no restart_initiated in response, got %v", result["restart_initiated"])
+	}
+
+	if restartCalled != 0 {
+		t.Errorf("expected restartFn not to be called, got %d", restartCalled)
+	}
+}
+
+func TestApply_RestartCalledOnlyWhenFnSet(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	// No restartFn set
+	addTestSubscriptionWithProxies(t, h.store, 3)
+
+	router := newTestRouter(h)
+	resp := doRequest(t, router, "POST", "/subscriptions/apply", map[string]interface{}{
+		"restart": true,
+	})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	result := parseResponse(t, resp)
+	if result["restart_initiated"] != nil {
+		t.Errorf("expected no restart_initiated when restartFn is nil")
+	}
+}
+
+func TestApply_AtomicWriteNoPartialFiles(t *testing.T) {
+	h, xrayDir := newTestHandler(t)
+	router := newTestRouter(h)
+
+	addTestSubscriptionWithProxies(t, h.store, 2)
+
+	resp := doRequest(t, router, "POST", "/subscriptions/apply", nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Verify all expected files exist and are valid JSON
+	paths := []string{
+		filepath.Join(xrayDir, "04_outbounds.json"),
+		filepath.Join(xrayDir, "05_routing.json"),
+	}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Errorf("expected file %s to exist: %v", p, err)
+			continue
+		}
+		if !json.Valid(data) {
+			t.Errorf("file %s is not valid JSON", p)
+		}
+	}
+
+	// Verify no .tmp files remain
+	entries, _ := os.ReadDir(xrayDir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("unexpected .tmp file left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestAtomicWriteAll_CleanupOnError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// First file is written and renamed successfully (atomic)
+	path1 := filepath.Join(tmpDir, "01.json")
+	// Second file target doesn't exist (parent dir missing) — will fail
+	path2 := filepath.Join(tmpDir, "subdir", "02.json")
+
+	files := map[string][]byte{
+		path1: []byte(`{"a":1}`),
+		path2: []byte(`{"b":2}`),
+	}
+
+	err := atomicWriteAll(files)
+	if err == nil {
+		t.Fatal("expected error when target directory doesn't exist")
+	}
+
+	// path1 WAS atomically renamed (rename is atomic, not rolled back)
+	if _, statErr := os.Stat(path1); os.IsNotExist(statErr) {
+		t.Error("expected path1 to exist (atomic rename), but it doesn't")
+	}
+
+	// path2 should NOT exist
+	if data, _ := os.ReadFile(path2); data != nil {
+		t.Error("expected path2 to NOT be written on error")
+	}
+
+	// Verify no .tmp files remain
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("unexpected .tmp file left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestAtomicWriteAll_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	path1 := filepath.Join(tmpDir, "01.json")
+	path2 := filepath.Join(tmpDir, "02.json")
+
+	files := map[string][]byte{
+		path1: []byte(`{"a":1}`),
+		path2: []byte(`{"b":2}`),
+	}
+
+	if err := atomicWriteAll(files); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Verify both files exist and have correct content
+	data1, _ := os.ReadFile(path1)
+	if !strings.Contains(string(data1), `"a":1`) {
+		t.Error("path1 content mismatch")
+	}
+	data2, _ := os.ReadFile(path2)
+	if !strings.Contains(string(data2), `"b":2`) {
+		t.Error("path2 content mismatch")
+	}
+
+	// Verify no .tmp files
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("unexpected .tmp file: %s", e.Name())
+		}
+	}
+}
+
 func TestListSubscriptions_WithData(t *testing.T) {
 	h, _ := newTestHandler(t)
 	router := newTestRouter(h)

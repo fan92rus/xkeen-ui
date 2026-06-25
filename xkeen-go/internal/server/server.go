@@ -136,6 +136,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
 
+	// Wire subscription apply restart to service handler restart
+	s.subscriptionHandler.SetRestartFn(func() { s.serviceHandler.RestartService() })
+
 	// Helper: build tag→remarks from current proxy cache
 	buildProxyNames := func() map[string]string {
 		proxies := subStore.GetProxies()

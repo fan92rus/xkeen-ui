@@ -16,10 +16,11 @@ import (
 
 // SubscriptionHandler handles subscription management API endpoints.
 type SubscriptionHandler struct {
-	store     *subscription.Store
-	fetcher   *subscription.Fetcher
-	scheduler *subscription.Scheduler
-	xrayDir   string // xray config directory for writing generated files
+	store      *subscription.Store
+	fetcher    *subscription.Fetcher
+	scheduler  *subscription.Scheduler
+	xrayDir    string // xray config directory for writing generated files
+	restartFn  func() // optional restart function wired from server.go
 }
 
 // NewSubscriptionHandler creates a new SubscriptionHandler.
@@ -30,6 +31,11 @@ func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fet
 		scheduler: scheduler,
 		xrayDir:   xrayDir,
 	}
+}
+
+// SetRestartFn sets the restart function called when Apply receives restart:true.
+func (h *SubscriptionHandler) SetRestartFn(fn func()) {
+	h.restartFn = fn
 }
 
 // Stop gracefully stops the scheduler.
@@ -352,33 +358,34 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write outbounds
 	outboundsPath := h.xrayDir + "/04_outbounds.json"
-	if err := os.WriteFile(outboundsPath, outboundsJSON, 0644); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write outbounds: %v", err))
-		return
-	}
-
-	// Write routing
-	if err := os.WriteFile(routingPath, routingJSON, 0644); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write routing: %v", err))
-		return
-	}
-
-	// Write/remove observatory
 	observatoryPath := h.xrayDir + "/07_observatory.json"
+
+	// Write all files atomically (tmp + rename)
+	files := map[string][]byte{
+		outboundsPath: outboundsJSON,
+		routingPath:   routingJSON,
+	}
 	if observatoryJSON != nil {
-		if err := os.WriteFile(observatoryPath, observatoryJSON, 0644); err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write observatory: %v", err))
-			return
-		}
-	} else {
-		// Remove observatory file if it exists but is no longer needed
+		files[observatoryPath] = observatoryJSON
+	}
+	if err := atomicWriteAll(files); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config files: %v", err))
+		return
+	}
+
+	// Remove observatory file if it is no longer needed (AFTER atomic write succeeds)
+	if observatoryJSON == nil {
 		os.Remove(observatoryPath)
 	}
 
 	// Update generated timestamp
 	_ = h.store.SetGeneratedAt(time.Now())
+
+	// Trigger async restart if requested
+	if req.Restart && h.restartFn != nil {
+		go h.restartFn()
+	}
 
 	log.Printf("[subscription] applied %d/%d proxies with %d profiles: %s, %s", len(filteredProxies), len(allProxies), len(profiles), outboundsPath, routingPath)
 
@@ -393,6 +400,9 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	}
 	if observatoryJSON != nil {
 		response["files"].(map[string]string)["observatory"] = observatoryPath
+	}
+	if req.Restart && h.restartFn != nil {
+		response["restart_initiated"] = true
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -465,6 +475,37 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		"observatory":         observatoryJSON,
 		"profiles":            profiles,
 	})
+}
+
+// atomicWriteAll writes a set of files atomically using tmp + rename.
+// Each file is written to path+".tmp", then renamed atomically via os.Rename.
+// If any write or rename fails, leftover .tmp files are cleaned up and the error is returned.
+// Already-renamed files are NOT rolled back (each rename is atomic).
+func atomicWriteAll(files map[string][]byte) error {
+	// Track tmp files for cleanup on error
+	tmpFiles := make([]string, 0, len(files))
+
+	for path, data := range files {
+		tmpPath := path + ".tmp"
+		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+			// Clean up all tmp files
+			for _, tf := range tmpFiles {
+				os.Remove(tf)
+			}
+			return fmt.Errorf("failed to write %s: %w", tmpPath, err)
+		}
+		tmpFiles = append(tmpFiles, tmpPath)
+
+		if err := os.Rename(tmpPath, path); err != nil {
+			// Clean up all tmp files
+			for _, tf := range tmpFiles {
+				os.Remove(tf)
+			}
+			return fmt.Errorf("failed to rename %s -> %s: %w", tmpPath, path, err)
+		}
+	}
+
+	return nil
 }
 
 // ---------- Profiles ----------

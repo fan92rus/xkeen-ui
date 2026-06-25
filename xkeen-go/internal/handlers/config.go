@@ -86,15 +86,17 @@ type ListFilesResponse struct {
 
 // ReadFileResponse is the response for the ReadFile endpoint.
 type ReadFileResponse struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-	Valid   bool   `json:"valid"`
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Valid    bool   `json:"valid"`
+	Modified int64  `json:"modified"`
 }
 
 // WriteFileRequest is the request body for the WriteFile endpoint.
 type WriteFileRequest struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path             string `json:"path"`
+	Content          string `json:"content"`
+	ExpectedModified int64  `json:"expected_modified"`
 }
 
 // ErrorResponse represents an API error response.
@@ -308,6 +310,12 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get file modification time
+	modified := int64(0)
+	if info, err := os.Stat(cleanPath); err == nil {
+		modified = info.ModTime().Unix()
+	}
+
 	// Validate based on file type
 	var isValid bool
 	if isYAMLFile(cleanPath) {
@@ -324,9 +332,10 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, ReadFileResponse{
-		Path:    cleanPath,
-		Content: string(data),
-		Valid:   isValid,
+		Path:     cleanPath,
+		Content:  string(data),
+		Valid:    isValid,
+		Modified: modified,
 	})
 }
 
@@ -356,6 +365,21 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusForbidden, err.Error())
 		return
+	}
+
+	// Optimistic locking: check expected_modified against current file mtime
+	if req.ExpectedModified != 0 {
+		if info, statErr := os.Stat(cleanPath); statErr == nil {
+			currentModified := info.ModTime().Unix()
+			if currentModified != req.ExpectedModified {
+				respondError(w, http.StatusConflict, "file modified on disk")
+				return
+			}
+		} else if !os.IsNotExist(statErr) {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to stat file: %v", statErr))
+			return
+		}
+		// If file doesn't exist yet and expected_modified != 0, that's fine — proceed
 	}
 
 	// Validate based on file type
@@ -398,10 +422,17 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get new mtime after write
+	newModified := int64(0)
+	if info, statErr := os.Stat(cleanPath); statErr == nil {
+		newModified = info.ModTime().Unix()
+	}
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"path":    cleanPath,
-		"backup":  backupPath,
+		"success":  true,
+		"path":     cleanPath,
+		"backup":   backupPath,
+		"modified": newModified,
 	})
 }
 

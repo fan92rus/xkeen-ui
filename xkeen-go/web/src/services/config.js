@@ -11,8 +11,8 @@ export async function getFile(path) {
     return get(`/api/config/file?path=${encodeURIComponent(path)}`);
 }
 
-export async function saveFile(path, content) {
-    return post('/api/config/file', { path, content });
+export async function saveFile(path, content, expectedModified) {
+    return post('/api/config/file', { path, content, expected_modified: expectedModified || 0 });
 }
 
 export async function getBackups(filePath) {

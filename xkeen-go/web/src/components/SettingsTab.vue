@@ -76,6 +76,7 @@ const sections = [
 onMounted(() => {
 	loadAutoApply();
 	loadMetricsPort();
+	app.loadXraySettings();
 });
 </script>
 
