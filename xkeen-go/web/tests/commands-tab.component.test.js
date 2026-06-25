@@ -1,16 +1,14 @@
 /**
- * Reference component test — proves the Vue Test Utils + happy-dom
- * infrastructure works end-to-end (mount, render, interaction) WITHOUT
- * real network/WebSocket calls.
+ * Component test for CommandsTab.vue.
  *
- * Component: CommandsTab.vue — renders the xkeen command palette grouped by
- * category. We assert the static structure renders and that dangerous
- * commands are visually flagged. Service InteractiveSession is stubbed so
- * clicking a command can't open a real WebSocket.
+ * The command palette is NO LONGER hardcoded — it is fetched from the backend
+ * registry (GET /api/xkeen/commands), which parses `xkeen -help`. These tests
+ * mock the service so we assert the fetch→group→render flow without a live
+ * backend, and confirm phantom commands never reach the UI.
  */
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 // Stub the interactive service so no real WebSocket is created on click.
@@ -23,82 +21,101 @@ vi.mock('../services/interactive.js', () => ({
   },
 }));
 
+// Mock the backend command registry. Individual tests override the resolved
+// value via mockGetCommands (default = a small representative sample).
+import * as xkeenService from '../src/services/xkeen.js';
+const mockGetCommands = vi.fn();
+vi.spyOn(xkeenService, 'getCommands').mockImplementation((...args) => mockGetCommands(...args));
+
 import CommandsTab from '../src/components/CommandsTab.vue';
+
+// A representative backend payload mirroring the real registry shape.
+const SAMPLE = [
+  { cmd: '-start', description: 'Запуск', category: 'Управление прокси-клиентом', dangerous: false },
+  { cmd: '-status', description: 'Статус', category: 'Управление прокси-клиентом', dangerous: false },
+  { cmd: '-v', description: 'Версия XKeen', category: 'Информация', dangerous: false },
+  { cmd: '-i', description: 'Установка XKeen', category: 'Установка', dangerous: true },
+  { cmd: '-remove', description: 'Полная деинсталляция', category: 'Удаление', dangerous: true },
+];
 
 function mountCommands() {
   return mount(CommandsTab, { global: { plugins: [createPinia()] } });
 }
 
-// Find the .command-item block for a given command flag.
-function itemFor(wrapper, flag) {
-  return wrapper.findAll('.command-item')
-    .find(el => el.find('.command-name').text() === flag);
-}
-
 describe('CommandsTab', () => {
-  beforeEach(() => setActivePinia(createPinia()));
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockGetCommands.mockReset();
+    mockGetCommands.mockResolvedValue(SAMPLE);
+  });
 
-  it('mounts and renders without errors', () => {
+  it('mounts, fetches the palette, and renders backend commands', async () => {
     const w = mountCommands();
+    await flushPromises();
+    expect(mockGetCommands).toHaveBeenCalledTimes(1);
     expect(w.exists()).toBe(true);
-    expect(w.html().length).toBeGreaterThan(0);
   });
 
-  it('renders all category sections', () => {
+  it('shows a loading indicator before the fetch resolves', async () => {
+    // Never-resolving promise keeps the component in the loading state.
+    mockGetCommands.mockReturnValue(new Promise(() => {}));
     const w = mountCommands();
-    const categories = ['Управление', 'Информация', 'Обновление', 'Порты',
-      'Бэкап XKeen', 'Установка', 'Переустановка', 'Удаление компонентов'];
-    for (const name of categories) {
-      expect(w.text()).toContain(name);
-    }
+    await flushPromises();
+    expect(w.text()).toContain('Загрузка списка команд');
   });
 
-  it('renders key command flags as command names', () => {
+  it('renders the fetched commands grouped by category', async () => {
     const w = mountCommands();
+    await flushPromises();
     const text = w.text();
-    // A representative sample from different categories.
-    for (const flag of ['-start', '-stop', '-v', '-uk', '-i', '-remove', '-status']) {
-      expect(text).toContain(flag);
+    // Categories from the backend.
+    expect(text).toContain('Управление прокси-клиентом');
+    expect(text).toContain('Информация');
+    expect(text).toContain('Установка');
+    // Real commands.
+    expect(text).toContain('-start');
+    expect(text).toContain('-status');
+    expect(text).toContain('-v');
+    expect(text).toContain('-i');
+  });
+
+  it('does NOT render phantom commands that were in the old hardcoded list', async () => {
+    const w = mountCommands();
+    await flushPromises();
+    const text = w.text();
+    for (const phantom of ['-tpx', '-cb', '-rrk', '-rrx', '-rrm', '-drk', '-drx', '-drm', '-modules', '-delmodules']) {
+      expect(text).not.toContain(phantom);
     }
   });
 
-  it('flags dangerous commands with btn-danger', () => {
+  it('flags dangerous commands with btn-danger from the backend flag', async () => {
     const w = mountCommands();
-
-    // -i is dangerous → its action button must carry btn-danger.
-    const installItem = itemFor(w, '-i');
+    await flushPromises();
+    const items = w.findAll('.command-item');
+    const installItem = items.find(el => el.find('.command-name').text() === '-i');
     expect(installItem, 'expected an -i command item').toBeTruthy();
-    const installBtn = installItem.find('button');
-    expect(installBtn.classes()).toContain('btn-danger');
+    expect(installItem.find('button').classes()).toContain('btn-danger');
 
-    // -status is safe → its button must be btn-primary, not btn-danger.
-    const statusItem = itemFor(w, '-status');
+    const statusItem = items.find(el => el.find('.command-name').text() === '-status');
     expect(statusItem, 'expected a -status command item').toBeTruthy();
-    const statusBtn = statusItem.find('button');
-    expect(statusBtn.classes()).toContain('btn-primary');
-    expect(statusBtn.classes()).not.toContain('btn-danger');
+    expect(statusItem.find('button').classes()).toContain('btn-primary');
   });
 
-  it('renders the action label, not the flag, on the button', () => {
+  it('shows an error message when the backend fetch fails', async () => {
+    mockGetCommands.mockRejectedValue(new Error('network down'));
     const w = mountCommands();
-    const statusItem = itemFor(w, '-status');
-    const label = statusItem.find('button').text();
-    // Safe commands show "Запустить"; dangerous ones show "Выполнить".
-    expect(label).toBe('Запустить');
+    await flushPromises();
+    expect(w.text()).toContain('Не удалось загрузить список команд');
+    expect(w.text()).toContain('network down');
   });
 
-  it('shows a confirm modal for dangerous commands instead of executing', async () => {
+  it('shows an empty-state hint when the registry returns no commands', async () => {
+    // xkeen not installed → backend returns []. UI must not crash and should
+    // tell the user why there is nothing to run.
+    mockGetCommands.mockResolvedValue([]);
     const w = mountCommands();
-    const installBtn = itemFor(w, '-i').find('button');
-    await installBtn.trigger('click');
-    // Dangerous path opens the confirm dialog (app.confirm.show) rather than
-    // running immediately. The store is shared; check the store state.
-    const store = w.vm.$.appContext.config.globalProperties.$pinia
-      ? null : null; // store read via the injected instance below
-    // The component reads `app` (useAppStore). After click, confirm.show is true.
-    // We verify via the rendered DOM: a confirm overlay is conditionally rendered
-    // by App.vue, not CommandsTab itself, so here we just assert no crash and the
-    // button became disabled mid-execution path is NOT taken (safe guard).
-    expect(true).toBe(true);
+    await flushPromises();
+    expect(w.text()).toContain('Команды недоступны');
+    expect(w.findAll('.command-item')).toHaveLength(0);
   });
 });

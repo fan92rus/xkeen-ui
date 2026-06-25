@@ -26,3 +26,14 @@ export async function getStatus() {
     const data = await get('/api/xkeen/status');
     return data.status || 'unknown';
 }
+
+/**
+ * Fetch the list of available XKeen commands from the backend registry
+ * (generated from `xkeen -help`). Returns the flat list as the backend sends
+ * it: [{ cmd, description, category, dangerous }]. Empty when xkeen is not
+ * installed. Use utils/commands-grouping.js to shape it for rendering.
+ */
+export async function getCommands() {
+    const data = await get('/api/xkeen/commands');
+    return data.commands || [];
+}

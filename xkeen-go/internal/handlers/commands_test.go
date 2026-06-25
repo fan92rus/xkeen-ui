@@ -117,6 +117,9 @@ func TestGetCommands_EachCommandHasRequiredFields(t *testing.T) {
 		if cmd.Description == "" {
 			t.Errorf("command %q has empty Description", cmd.Cmd)
 		}
+		if cmd.Category == "" {
+			t.Errorf("command %q has empty Category", cmd.Cmd)
+		}
 	}
 }
 

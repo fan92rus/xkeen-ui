@@ -60,6 +60,7 @@ func parseHelp(output string) map[string]CommandConfig {
 			result[flag] = CommandConfig{
 				Cmd:         flag,
 				Description: desc,
+				Category:    category,
 				Dangerous:   isDangerous(category, desc),
 				Timeout:     CommandTimeout,
 			}

@@ -1,92 +1,53 @@
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, onMounted } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { InteractiveSession } from '../services/interactive.js';
+import { getCommands } from '../services/xkeen.js';
+import { groupCommandsByCategory } from '../utils/commands-grouping.js';
 
 const app = useAppStore();
 const executingCommand = ref('');
 
-const categories = [
-    { name: 'Управление', commands: [
-        { name: '-start', description: 'Запуск' }, { name: '-stop', description: 'Остановка' },
-        { name: '-restart', description: 'Перезапуск' }, { name: '-status', description: 'Статус' },
-        { name: '-tpx', description: 'Порты, шлюз, протокол' }, { name: '-auto', description: 'Автозапуск вкл/выкл' },
-        { name: '-d', description: 'Задержка автозапуска' }, { name: '-fd', description: 'Файловые дескрипторы' },
-        { name: '-diag', description: 'Диагностика' }, { name: '-channel', description: 'Канал (Stable/Dev)' },
-        { name: '-xray', description: 'Ядро Xray' }, { name: '-mihomo', description: 'Ядро Mihomo' },
-        { name: '-ipv6', description: 'IPv6 вкл/выкл' }, { name: '-dns', description: 'DNS перенаправление' },
-    ]},
-    { name: 'Информация', commands: [
-        { name: '-v', description: 'Версия XKeen' }, { name: '-about', description: 'О программе' },
-        { name: '-ad', description: 'Поддержать разработчиков' }, { name: '-af', description: 'Обратная связь' },
-    ]},
-    { name: 'Обновление', commands: [
-        { name: '-uk', description: 'Обновить XKeen' }, { name: '-ug', description: 'Обновить GeoFile' },
-        { name: '-ux', description: 'Обновить Xray' }, { name: '-um', description: 'Обновить Mihomo' },
-        { name: '-ugc', description: 'Автообновление GeoFile' },
-    ]},
-    { name: 'Порты', commands: [
-        { name: '-ap', description: 'Добавить порт' }, { name: '-dp', description: 'Удалить порт' },
-        { name: '-cp', description: 'Показать порты' },
-    ]},
-    { name: 'Исключённые порты', commands: [
-        { name: '-ape', description: 'Добавить порт' }, { name: '-dpe', description: 'Удалить порт' },
-        { name: '-cpe', description: 'Показать порты' },
-    ]},
-    { name: 'Бэкап XKeen', commands: [
-        { name: '-kb', description: 'Создать копию' }, { name: '-kbr', description: 'Восстановить' },
-    ]},
-    { name: 'Бэкап Xray', commands: [
-        { name: '-cb', description: 'Создать копию' }, { name: '-cbr', description: 'Восстановить' },
-    ]},
-    { name: 'Бэкап Mihomo', commands: [
-        { name: '-mb', description: 'Создать копию' }, { name: '-mbr', description: 'Восстановить' },
-    ]},
-    { name: 'Модули', commands: [
-        { name: '-modules', description: 'Перенести модули' }, { name: '-delmodules', description: 'Удалить модули' },
-    ]},
-    { name: 'Регистрация', commands: [
-        { name: '-rrk', description: 'XKeen' }, { name: '-rrx', description: 'Xray' },
-        { name: '-rrm', description: 'Mihomo' }, { name: '-ri', description: 'Автозапуск init.d' },
-    ]},
-    { name: 'Установка', commands: [
-        { name: '-i', description: 'XKeen + Xray + GeoFile + Mihomo' },
-        { name: '-io', description: 'OffLine установка' },
-    ]},
-    { name: 'Переустановка', commands: [
-        { name: '-k', description: 'Переустановить XKeen' }, { name: '-g', description: 'Переустановить GeoFile' },
-    ]},
-    { name: 'Удаление компонентов', commands: [
-        { name: '-dgs', description: 'GeoSite' }, { name: '-dgi', description: 'GeoIP' },
-        { name: '-dx', description: 'Xray' }, { name: '-dm', description: 'Mihomo' },
-        { name: '-dk', description: 'XKeen' }, { name: '-remove', description: 'Полная деинсталляция' },
-    ]},
-    { name: 'Удаление регистраций', commands: [
-        { name: '-drk', description: 'XKeen' }, { name: '-drx', description: 'Xray' },
-        { name: '-drm', description: 'Mihomo' },
-    ]},
-    { name: 'Удаление задач', commands: [
-        { name: '-dgc', description: 'Автообновление GeoFile' },
-    ]},
-];
+// Command palette comes from the backend registry (GET /api/xkeen/commands),
+// NOT a hardcoded list. The backend parses `xkeen -help`, so the UI always
+// reflects the actually-available, actually-allowed commands.
+const categories = ref([]);
+const loading = ref(true);
+const loadError = ref('');
 
-const dangerousCommands = [
-    '-stop', '-restart', '-i', '-io', '-remove', '-dgs', '-dgi', '-dx', '-dm', '-dk', '-drk', '-drx', '-drm'
-];
+// Flat lookup of { name → { name, description, dangerous } } for the confirm
+// dialog text, rebuilt whenever the palette loads.
+const commandIndex = ref({});
 
-function isDangerous(cmd) { return dangerousCommands.includes(cmd); }
-
-function getCommandInfo(name) {
-    for (const cat of categories) {
-        const cmd = cat.commands.find(c => c.name === name);
-        if (cmd) return cmd;
-    }
-    return null;
+function isDangerous(cmd) {
+    return !!commandIndex.value[cmd]?.dangerous;
 }
+
+async function loadCommandPalette() {
+    loading.value = true;
+    loadError.value = '';
+    try {
+        const commands = await getCommands();
+        categories.value = groupCommandsByCategory(commands);
+        const idx = {};
+        for (const cat of categories.value) {
+            for (const c of cat.commands) idx[c.name] = c;
+        }
+        commandIndex.value = idx;
+    } catch (err) {
+        categories.value = [];
+        commandIndex.value = {};
+        loadError.value = err?.message || 'причина неизвестна';
+    } finally {
+        loading.value = false;
+    }
+}
+
+onMounted(loadCommandPalette);
 
 function executeCommand(command) {
     if (isDangerous(command)) {
-        const info = getCommandInfo(command);
+        const info = commandIndex.value[command];
         app.confirm.description = info?.description || `Выполнить команду ${command}`;
         app.confirm.onConfirm = () => doExecute(command);
         app.confirm.show = true;
@@ -150,7 +111,14 @@ function isLoading(command) { return executingCommand.value === command; }
 
 <template>
   <div class="commands-container">
-    <div class="commands-grid">
+    <div v-if="loading" class="commands-loading">Загрузка списка команд…</div>
+    <div v-else-if="loadError" class="commands-error">
+      Не удалось загрузить список команд: {{ loadError }}
+    </div>
+    <div v-else-if="categories.length === 0" class="commands-empty">
+      Команды недоступны. Убедитесь, что XKeen установлен.
+    </div>
+    <div v-else class="commands-grid">
       <div v-for="category in categories" :key="category.name" class="command-category-block">
         <h3 class="category-title">{{ category.name }}</h3>
         <div class="category-commands-list">

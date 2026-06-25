@@ -18,6 +18,7 @@ const (
 type CommandConfig struct {
 	Cmd         string
 	Description string
+	Category    string
 	Dangerous   bool
 	Timeout     time.Duration
 }
@@ -26,6 +27,7 @@ type CommandConfig struct {
 type CommandInfo struct {
 	Cmd         string `json:"cmd"`
 	Description string `json:"description"`
+	Category    string `json:"category"`
 	Dangerous   bool   `json:"dangerous"`
 }
 
@@ -61,6 +63,7 @@ func (h *CommandsHandler) GetCommands(w http.ResponseWriter, r *http.Request) {
 		commands = append(commands, CommandInfo{
 			Cmd:         config.Cmd,
 			Description: config.Description,
+			Category:    config.Category,
 			Dangerous:   config.Dangerous,
 		})
 	}
