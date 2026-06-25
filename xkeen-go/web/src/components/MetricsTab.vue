@@ -1,104 +1,22 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, shallowReactive, nextTick } from 'vue';
-import { MetricsWS, getProxyNames } from '../services/metrics.js';
-import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip } from 'chart.js';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { getProxyNames } from '../services/metrics.js';
 import { computeTagRates, computeChartData, totalOutboundRates } from '../utils/metrics-rates.js';
-
-Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip);
+import { fmtBytes, fmtRate, fmtRateShort, fmtDelay, fmtTime, fmtTimeShort, fmtDuration, percentile } from '../utils/metrics-format.js';
+import { useMetricsWS } from '../composables/useMetricsWS.js';
+import { useMetricsChart } from '../composables/useMetricsChart.js';
 
 const props = defineProps({ active: Boolean });
 
-// ── State ──
-const wsStatus = ref('disconnected');
-const history = shallowReactive([]);
-const latestSnap = ref(null);
-const wsError = ref('');
+// ── WS composable ──
+const { wsStatus, wsError, history, latestSnap, connect, disconnect } = useMetricsWS();
+
+// ── Chart composable ──
+const { chartCanvas, CHART_H, initCharts, destroyCharts, updateCharts } = useMetricsChart();
+
+// ── Local state ──
 const showInactive = ref(false);
-const chartCanvas = ref(null);
 const proxyNames = ref({}); // tag → remarks
-
-let ws = null;
-let chart = null;
-
-const CHART_H = 250;
-
-const C = {
-	dl: { border: '#3498db', bg: 'rgba(52,152,219,0.12)' },
-	ul: { border: '#e67e22', bg: 'rgba(230,126,34,0.12)' },
-	grid: '#2e3d57',
-	text: '#949b9f',
-};
-
-function makeChartCfg() {
-	return {
-		type: 'line',
-		data: {
-			labels: [],
-			datasets: [
-				{
-					label: '↓ Download',
-					data: [],
-					borderColor: C.dl.border,
-					backgroundColor: C.dl.bg,
-					fill: true, tension: 0.3,
-					pointRadius: 2, pointHoverRadius: 5, borderWidth: 2,
-				},
-				{
-					label: '↑ Upload',
-					data: [],
-					borderColor: C.ul.border,
-					backgroundColor: C.ul.bg,
-					fill: true, tension: 0.3,
-					pointRadius: 2, pointHoverRadius: 5, borderWidth: 2,
-				},
-			],
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			animation: { duration: 200 },
-			plugins: {
-				legend: {
-					position: 'top',
-					align: 'end',
-					labels: {
-						color: C.text,
-						font: { size: 11 },
-						boxWidth: 12, padding: 10,
-						usePointStyle: true, pointStyle: 'circle',
-					},
-				},
-				tooltip: {
-					mode: 'index', intersect: false,
-					backgroundColor: '#2e3d57',
-					titleColor: '#c2c2c2', bodyColor: '#c2c2c2',
-					borderColor: '#4d545f', borderWidth: 1, padding: 8,
-					titleFont: { size: 11 }, bodyFont: { size: 11 },
-					callbacks: {
-						label(ctx) { return ctx.dataset.label + ': ' + fmtRate(ctx.parsed.y); },
-					},
-				},
-			},
-			scales: {
-				x: {
-					ticks: { color: C.text, font: { size: 10 }, maxRotation: 0, maxTicksLimit: 10 },
-					grid: { color: C.grid, lineWidth: 0.5 },
-					border: { color: C.grid },
-				},
-				y: {
-					ticks: {
-						color: C.text, font: { size: 10 }, maxTicksLimit: 5,
-						callback(v) { return fmtRateShort(v); },
-					},
-					grid: { color: C.grid, lineWidth: 0.5 },
-					border: { color: C.grid },
-					beginAtZero: true,
-				},
-			},
-			interaction: { mode: 'nearest', axis: 'x', intersect: false },
-		},
-	};
-}
 
 // ── Computed: chart data (outbound totals = real proxy traffic) ──
 const chartData = computed(() => computeChartData(history));
@@ -210,102 +128,17 @@ const obsTimeline = computed(() => {
 });
 
 // ── Helpers ──
-function fmtBytes(v) {
-	if (!v || v <= 0) return '0 B';
-	const u = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let i = 0;
-	while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-	return v.toFixed(i === 0 ? 0 : 1) + ' ' + u[i];
-}
-function fmtRate(v) {
-	if (!v || v <= 0) return '0 B/s';
-	const u = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-	let i = 0;
-	while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-	return v.toFixed(i === 0 ? 0 : 1) + ' ' + u[i];
-}
-function fmtRateShort(v) {
-	if (!v || v <= 0) return '0';
-	const u = ['B', 'K', 'M', 'G'];
-	let i = 0;
-	while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-	return v.toFixed(i === 0 ? 0 : 1) + u[i];
-}
-function fmtDelay(ms) {
-	if (!ms || ms <= 0) return '—';
-	return ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s';
-}
-function fmtTime(ts) {
-	return new Date(ts * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-function fmtTimeShort(ts) {
-	return new Date(ts * 1000).toLocaleTimeString('ru-RU', { minute: '2-digit', second: '2-digit' });
-}
-function fmtDuration(seconds) {
-	if (seconds < 60) return Math.round(seconds) + 'с';
-	if (seconds < 3600) return Math.floor(seconds / 60) + 'м ' + Math.round(seconds % 60) + 'с';
-	const h = Math.floor(seconds / 3600);
-	const m = Math.floor((seconds % 3600) / 60);
-	return h + 'ч ' + m + 'м';
-}
 function displayName(tag) {
 	const name = proxyNames.value[tag];
-	return name ? tag + ' \u00b7 ' + name : tag;
-}
-function percentile(arr, p) {
-	if (!arr.length) return 0;
-	const sorted = [...arr].sort((a, b) => a - b);
-	const idx = Math.ceil((p / 100) * sorted.length) - 1;
-	return sorted[Math.max(0, idx)];
+	return name ? tag + ' · ' + name : tag;
 }
 
-// ── Chart lifecycle ──
-function initCharts() {
-	destroyCharts();
-	if (chartCanvas.value) chart = new Chart(chartCanvas.value.getContext('2d'), makeChartCfg());
-}
-function destroyCharts() {
-	if (chart) { chart.destroy(); chart = null; }
-}
-function updateCharts() {
-	const data = chartData.value;
-	if (!data || !data.labels.length || !chart) return;
-	const maxPts = 60;
-	const slice = data.labels.length > maxPts ? data.labels.length - maxPts : 0;
-	chart.data.labels = data.labels.slice(slice);
-	chart.data.datasets[0].data = data.dl.slice(slice);
-	chart.data.datasets[1].data = data.ul.slice(slice);
-	chart.update('none');
-}
-watch(chartData, () => { nextTick(updateCharts); });
+// ── Chart update watcher ──
+watch(chartData, () => { nextTick(() => updateCharts(chartData.value)); });
 
-// ── WS lifecycle ──
-function connect() {
-	if (ws) return;
-	wsStatus.value = 'connecting';
-	ws = new MetricsWS({
-		onData: (msg) => {
-			if (msg.type === 'history') history.splice(0, history.length, ...msg.history);
-			else if (msg.type === 'snapshot') {
-				latestSnap.value = msg.snap;
-				history.push(msg.snap);
-				if (history.length > 300) history.splice(0, history.length - 300);
-			}
-		},
-		onError: (err) => { wsError.value = String(err); },
-		onStatus: (status) => { wsStatus.value = status; if (status === 'connected') wsError.value = ''; },
-	});
-	const cached = ws.getCachedHistory();
-	if (cached.length > 0) history.splice(0, history.length, ...cached);
-	ws.connect();
-}
-function disconnect() {
-	if (ws) { ws.disconnect(); ws = null; }
-	wsStatus.value = 'disconnected';
-}
-
+// ── Lifecycle ──
 watch(() => props.active, async (v) => {
-	if (v) { connect(); await nextTick(); initCharts(); updateCharts(); }
+	if (v) { connect(); await nextTick(); initCharts(); updateCharts(chartData.value); }
 	else { destroyCharts(); disconnect(); }
 });
 onMounted(async () => {
@@ -313,7 +146,7 @@ onMounted(async () => {
 		connect();
 		await nextTick();
 		initCharts();
-		updateCharts();
+		updateCharts(chartData.value);
 	}
 	try {
 		const data = await getProxyNames();
