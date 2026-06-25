@@ -136,7 +136,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler := subscription.NewScheduler(subStore, subFetcher)
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
-	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir)
+	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.Mode)
 
 	// Wire subscription apply restart to service handler restart
 	s.subscriptionHandler.SetRestartFn(func() { s.serviceHandler.RestartService() })

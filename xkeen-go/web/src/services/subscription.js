@@ -14,7 +14,11 @@ export const getFilters = () => api.get(`${BASE}/filters`);
 export const updateFilters = (filters) => api.put(`${BASE}/filters`, filters);
 export const getStrategy = () => api.get(`${BASE}/strategy`);
 export const updateStrategy = (strategy) => api.put(`${BASE}/strategy`, strategy);
-export const applySubscriptions = () => api.post(`${BASE}/apply`, { restart: true });
+export const applySubscriptions = (opts = {}) => {
+	const body = { restart: true };
+	if (opts.convertXrayRouting) body.convert_xray_routing = true;
+	return api.post(`${BASE}/apply`, body);
+};
 export const previewSubscriptions = () => api.get(`${BASE}/preview`);
 export const getAutoApply = () => api.get(`${BASE}/auto-apply`);
 export const updateAutoApply = (data) => api.put(`${BASE}/auto-apply`, data);

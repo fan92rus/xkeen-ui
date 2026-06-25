@@ -240,13 +240,18 @@ async function preview() {
     } catch (e) { _err(e); } finally { busy.value = false; }
 }
 async function applySubs() {
-    if (!confirm('Применить и перезапустить Xkeen?')) return;
+    const target = app.currentMode === 'mihomo' ? 'Mihomo' : 'Xray';
+    if (!confirm(`Применить и перезапустить ${target}?`)) return;
     busy.value = true;
     try {
         await _persistProfile();
-        const d = await api.applySubscriptions();
+        const opts = {};
+        if (app.currentMode === 'mihomo') {
+            opts.convertXrayRouting = confirm('Конвертировать существующий Xray routing (05_routing.json) в Mihomo rules?');
+        }
+        const d = await api.applySubscriptions(opts);
         if (d.error) _toast(d.error, 'error');
-        else { _toast('Применено. Xkeen перезапускается.', 'success'); showPreview.value = false; }
+        else { _toast(`Применено. ${target} перезапускается.`, 'success'); showPreview.value = false; }
     } catch (e) { _err(e); } finally { busy.value = false; }
 }
 

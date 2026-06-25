@@ -92,20 +92,24 @@ type subScheduleResponse struct {
 
 
 type SubscriptionHandler struct {
-	store      *subscription.Store
-	fetcher    *subscription.Fetcher
-	scheduler  *subscription.Scheduler
-	xrayDir    string // xray config directory for writing generated files
-	restartFn  func() // optional restart function wired from server.go
+	store       *subscription.Store
+	fetcher     *subscription.Fetcher
+	scheduler   *subscription.Scheduler
+	xrayDir     string // xray config directory for writing generated files
+	mihomoDir   string // mihomo config directory for writing generated files
+	currentMode string // "xray" or "mihomo" — set on construction from config
+	restartFn   func() // optional restart function wired from server.go
 }
 
 // NewSubscriptionHandler creates a new SubscriptionHandler.
-func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fetcher, scheduler *subscription.Scheduler, xrayDir string) *SubscriptionHandler {
+func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fetcher, scheduler *subscription.Scheduler, xrayDir, mihomoDir, mode string) *SubscriptionHandler {
 	return &SubscriptionHandler{
-		store:     store,
-		fetcher:   fetcher,
-		scheduler: scheduler,
-		xrayDir:   xrayDir,
+		store:       store,
+		fetcher:     fetcher,
+		scheduler:   scheduler,
+		xrayDir:     xrayDir,
+		mihomoDir:   mihomoDir,
+		currentMode: mode,
 	}
 }
 
@@ -352,7 +356,8 @@ func (h *SubscriptionHandler) UpdateStrategy(w http.ResponseWriter, r *http.Requ
 // POST /api/subscriptions/apply
 func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Restart bool `json:"restart"`
+		Restart          bool   `json:"restart"`
+		ConvertXrayRouting bool `json:"convert_xray_routing,omitempty"`
 	}
 	// Body is optional
 	if r.Body != nil && r.ContentLength > 0 {
@@ -379,7 +384,12 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Declare variables needed after the locked write section
+	if h.currentMode == "mihomo" {
+		h.applyMihomo(w, r, filteredProxies, profiles, req.ConvertXrayRouting, req.Restart)
+		return
+	}
+
+	// ── Xray mode (existing behavior) ──
 	var (
 		observatoryJSON []byte
 		outboundsPath   = h.xrayDir + "/04_outbounds.json"
@@ -387,29 +397,22 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		observatoryPath = h.xrayDir + "/07_observatory.json"
 	)
 
-	// Generate and write config files under the apply lock to serialize
-	// with concurrent auto-apply runs.
 	if err := h.scheduler.WithApplyLock(func() error {
 		outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
 		if err != nil {
 			return fmt.Errorf("failed to generate outbounds: %v", err)
 		}
 
-		// Read existing routing (if any)
 		var existingRouting json.RawMessage
 		if data, err := os.ReadFile(routingPath); err == nil {
 			existingRouting = data
 		}
 
-		// Generate routing with the SAME filtered list used for outbounds, so the
-		// first-proxy "proxy" tag and balancer selectors stay consistent
-		// (outboundTag resolves against a single shared list).
 		routingJSON, err := subscription.GenerateRoutingJSON(filteredProxies, profiles, existingRouting)
 		if err != nil {
 			return fmt.Errorf("failed to generate routing: %v", err)
 		}
 
-		// Generate observatory if any profile needs it
 		if subscription.NeedsObservatory(profiles) {
 			observatoryJSON, err = subscription.GenerateObservatoryJSON()
 			if err != nil {
@@ -417,12 +420,10 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Ensure directory exists
 		if err := os.MkdirAll(h.xrayDir, 0755); err != nil {
 			return fmt.Errorf("failed to create config directory: %v", err)
 		}
 
-		// Write all files atomically (tmp + rename)
 		files := map[string][]byte{
 			outboundsPath: outboundsJSON,
 			routingPath:   routingJSON,
@@ -440,15 +441,11 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove observatory file if it is no longer needed (AFTER atomic write succeeds)
 	if observatoryJSON == nil {
 		os.Remove(observatoryPath)
 	}
 
-	// Update generated timestamp
 	_ = h.store.SetGeneratedAt(time.Now())
-
-	// Trigger async restart if requested
 	if req.Restart && h.restartFn != nil {
 		go h.restartFn()
 	}
@@ -465,6 +462,66 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := &subApplyResponse{Success: true, ProxyCount: len(filteredProxies), Files: files}
 	if req.Restart && h.restartFn != nil {
+		resp.RestartInitiated = true
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
+// applyMihomo generates and writes a Mihomo config.yaml from subscription data.
+func (h *SubscriptionHandler) applyMihomo(w http.ResponseWriter, r *http.Request, proxies []*subscription.ProxyEntry, profiles []subscription.Profile, convertRouting, restart bool) {
+	configPath := h.mihomoDir + "/config.yaml"
+
+	var (
+		existingConfig []byte
+		xrayRouting    []byte
+	)
+
+	// Read existing Mihomo config for mix-in
+	existingConfig, _ = os.ReadFile(configPath)
+
+	// Read existing Xray routing if routing conversion is requested
+	if convertRouting {
+		xrayRouting, _ = os.ReadFile(h.xrayDir + "/05_routing.json")
+	}
+
+	opts := subscription.MihomoGenerateOptions{
+		ConvertXrayRouting: convertRouting,
+		XrayRoutingJSON:    xrayRouting,
+		ExistingMihomoConfig: existingConfig,
+	}
+
+	var mihomoYAML []byte
+	if err := h.scheduler.WithApplyLock(func() error {
+		var err error
+		mihomoYAML, err = subscription.GenerateMihomoConfig(proxies, profiles, opts)
+		if err != nil {
+			return fmt.Errorf("failed to generate Mihomo config: %v", err)
+		}
+
+		if err := os.MkdirAll(h.mihomoDir, 0755); err != nil {
+			return fmt.Errorf("failed to create Mihomo config directory: %v", err)
+		}
+
+		if err := os.WriteFile(configPath, mihomoYAML, 0644); err != nil {
+			return fmt.Errorf("failed to write Mihomo config: %v", err)
+		}
+		return nil
+	}); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	_ = h.store.SetGeneratedAt(time.Now())
+	if restart && h.restartFn != nil {
+		go h.restartFn()
+	}
+
+	log.Printf("[subscription] applied %d proxies to Mihomo config: %s", len(proxies), configPath)
+
+	files := map[string]string{"config": configPath}
+	resp := &subApplyResponse{Success: true, ProxyCount: len(proxies), Files: files}
+	if restart && h.restartFn != nil {
 		resp.RestartInitiated = true
 	}
 

@@ -37,7 +37,7 @@ func newTestHandler(t *testing.T) (*SubscriptionHandler, string) {
 	scheduler := subscription.NewScheduler(store, fetcher)
 	t.Cleanup(func() { scheduler.Stop() })
 
-	handler := NewSubscriptionHandler(store, fetcher, scheduler, xrayDir)
+	handler := NewSubscriptionHandler(store, fetcher, scheduler, xrayDir, "", "xray")
 	return handler, xrayDir
 }
 
@@ -951,7 +951,7 @@ func TestApply_EmptyBody(t *testing.T) {
 }
 
 func TestNewSubscriptionHandler_NilFields(t *testing.T) {
-	h := NewSubscriptionHandler(nil, nil, nil, "/tmp")
+	h := NewSubscriptionHandler(nil, nil, nil, "/tmp", "", "xray")
 	if h == nil {
 		t.Fatal("expected non-nil handler")
 	}
