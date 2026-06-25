@@ -379,8 +379,12 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	sendEvent("progress", ProgressData{Percent: 70, Status: "preparing update"})
 
 	currentPID := os.Getpid()
-	// Pass binary name to update script so it can find the correct files
-	shellCmd := fmt.Sprintf("nohup sh %s %s %d >/dev/null 2>&1 &", h.updateScript, h.binaryName, currentPID)
+	// Pass binary name to update script so it can find the correct files.
+	// Use a subshell with stdio redirected to the log file instead of nohup,
+	// because nohup is not reliably available on BusyBox/Keenetic.
+	// The subshell ( ... & ) properly backgrounds the process and detaches it
+	// from the terminal, equivalent to a double-fork.
+	shellCmd := fmt.Sprintf("(sh %s %s %d </dev/null >>/opt/var/log/xkeen-ui.log 2>&1 &)", h.updateScript, h.binaryName, currentPID)
 	updateCmd := exec.Command("sh", "-c", shellCmd)
 	if err := updateCmd.Run(); err != nil {
 		// Clean up temp file on error
