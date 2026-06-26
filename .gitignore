@@ -79,3 +79,8 @@ temp/
 # Local dev/testing artifacts
 .pi/
 xkeen-go/web/test/screenshots/
+
+# Vitest cache
+.vite/
+node_modules/.vite/
+xkeen-go/web/node_modules/.vite/

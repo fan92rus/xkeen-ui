@@ -88,14 +88,6 @@ vi.mock('../services/xkeen.js', () => ({
   getCommands: vi.fn(() => Promise.resolve({ commands: [], error: '' })),
 }));
 
-vi.mock('../services/awg.js', () => ({
-  listInterfaces: vi.fn(() => Promise.resolve([])),
-  upInterface: vi.fn(() => Promise.resolve({ ok: true })),
-  downInterface: vi.fn(() => Promise.resolve({ ok: true })),
-  deleteConfig: vi.fn(() => Promise.resolve({ ok: true })),
-  uploadConfig: vi.fn(() => Promise.resolve({ ok: true })),
-}));
-
 vi.mock('../services/interactive.js', () => ({
   InteractiveSession: class {
     constructor() { this.connected = false; }
@@ -156,6 +148,7 @@ import LogsTab from '../src/components/LogsTab.vue';
 import MetricsTab from '../src/components/MetricsTab.vue';
 import SettingsTab from '../src/components/SettingsTab.vue';
 import AwgTab from '../src/components/AwgTab.vue';
+import * as awgService from '../src/services/awg.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -242,13 +235,20 @@ describe('Component smoke tests', () => {
   });
 
   it('AwgTab mounts without errors', async () => {
+    // Spy on listInterfaces before mount
+    const mockList = vi.spyOn(awgService, 'listInterfaces').mockResolvedValue([]);
+
     let w;
     expect(() => {
       w = mountWithPinia(AwgTab);
     }).not.toThrow();
-    await flushPromises();
     expect(w.exists()).toBe(true);
-    expect(w.text()).toContain('AmneziaWG');
+    // Wait for async loadInterfaces to complete
+    await flushPromises();
+    // Should show empty state (mock returns [])
+    expect(w.text()).toContain('Нет AWG-конфигураций');
+
+    mockList.mockRestore();
   });
 
 });
