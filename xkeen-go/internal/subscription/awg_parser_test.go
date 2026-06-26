@@ -223,3 +223,47 @@ PublicKey = peer1`
 		t.Fatalf("expected 1 peer, got %d", len(parsed.Peers))
 	}
 }
+
+func TestParseAWGConf_PeerLabelComment(t *testing.T) {
+	dir := t.TempDir()
+	conf := `[Interface]
+PrivateKey = abc
+ListenPort = 443
+
+# peer: phone
+[Peer]
+PublicKey = key1
+AllowedIPs = 10.8.0.2/32
+
+[Peer]
+PublicKey = key2
+AllowedIPs = 10.8.0.3/32
+
+# peer: laptop
+[Peer]
+PublicKey = key3
+AllowedIPs = 10.8.0.4/32`
+	path := filepath.Join(dir, "labeled.conf")
+	writeConf(t, dir, "labeled.conf", conf)
+
+	parsed, err := ParseAWGConf(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Peers) != 3 {
+		t.Fatalf("expected 3 peers, got %d", len(parsed.Peers))
+	}
+
+	// First peer has label "phone"
+	if parsed.Peers[0].Comment != "peer: phone" {
+		t.Errorf("peer 0 Comment = %q, want %q", parsed.Peers[0].Comment, "peer: phone")
+	}
+	// Second peer has no comment
+	if parsed.Peers[1].Comment != "" {
+		t.Errorf("peer 1 Comment = %q, want empty", parsed.Peers[1].Comment)
+	}
+	// Third peer has label "laptop"
+	if parsed.Peers[2].Comment != "peer: laptop" {
+		t.Errorf("peer 2 Comment = %q, want %q", parsed.Peers[2].Comment, "peer: laptop")
+	}
+}

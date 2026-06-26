@@ -141,9 +141,9 @@
               <div v-else class="awg-peer-list">
                 <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key" class="awg-peer-row">
                   <div class="awg-peer-info">
+                    <span class="awg-peer-name" :class="{ 'awg-peer-name-fallback': !peer.label }">{{ peer.label || 'Без названия' }}</span>
                     <span class="awg-peer-ip">{{ peer.ip }}</span>
                     <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
-                    <span v-if="peer.label" class="awg-peer-tag">{{ peer.label }}</span>
                   </div>
                   <div class="awg-peer-actions">
                     <button v-if="peer.has_client_config" class="btn btn-sm" @click="showPeerQR(iface.name, peer)" :disabled="busy" title="Показать QR-код">📱</button>
@@ -953,26 +953,33 @@ function downloadConfig() {
   flex-shrink: 0;
 }
 
+.awg-peer-name {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--primary-text);
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.awg-peer-name-fallback {
+  color: var(--text-gray);
+  font-style: italic;
+  font-weight: 400;
+}
+
 .awg-peer-ip {
   font-family: var(--font-mono);
   font-size: var(--text-small);
-  font-weight: 600;
-  color: var(--primary-text);
+  color: var(--text-gray);
   white-space: nowrap;
 }
 
 .awg-peer-key {
   font-family: var(--font-mono);
   font-size: var(--text-small);
-  color: var(--text-gray);
+  color: var(--help-text);
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.awg-peer-tag {
-  font-size: var(--text-small);
-  color: var(--primary-color);
-  white-space: nowrap;
 }
 
 /* ── Modal ── */

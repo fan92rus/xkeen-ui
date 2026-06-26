@@ -12,9 +12,10 @@ import (
 //	[Interface] — local interface settings (PrivateKey, Address, ListenPort, etc.)
 //	[Peer]      — remote peer settings (PublicKey, Endpoint, AllowedIPs, etc.)
 type AWGConfigSection struct {
-	Type   string            // "Interface" or "Peer"
-	Values map[string]string // key → value (last value wins for duplicate keys)
-	Order  []string          // keys in order of first appearance
+	Type    string            // "Interface" or "Peer"
+	Values  map[string]string // key → value (last value wins for duplicate keys)
+	Order   []string          // keys in order of first appearance
+	Comment string            // last comment line preceding this section (e.g. "peer: phone")
 }
 
 // AWGConf holds the parsed structure of an AWG .conf file.
@@ -34,14 +35,25 @@ func ParseAWGConf(path string) (*AWGConf, error) {
 
 	result := &AWGConf{}
 	var current *AWGConfigSection
+	var lastComment string // tracks comment line(s) preceding a section
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		// Skip comments and empty lines
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+		// Track comments (# peer: <label>, etc.)
+		if strings.HasPrefix(line, "#") {
+			c := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			if c != "" {
+				lastComment = c
+			}
+			continue
+		}
+
+		// Skip empty lines and ; comments (reset pending comment)
+		if line == "" || strings.HasPrefix(line, ";") {
+			lastComment = ""
 			continue
 		}
 
@@ -49,9 +61,11 @@ func ParseAWGConf(path string) (*AWGConf, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			secType := strings.TrimSpace(line[1 : len(line)-1])
 			current = &AWGConfigSection{
-				Type:   secType,
-				Values: make(map[string]string),
+				Type:    secType,
+				Values:  make(map[string]string),
+				Comment: lastComment,
 			}
+			lastComment = "" // consume
 			if secType == "Interface" {
 				result.Interface = current
 			} else {

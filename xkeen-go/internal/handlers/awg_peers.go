@@ -83,6 +83,10 @@ func extractPeers(conf *subscription.AWGConf) []awgPeer {
 			PublicKey:  p.Values["PublicKey"],
 			AllowedIPs: p.Values["AllowedIPs"],
 		}
+		// Extract label from preceding comment "# peer: <label>"
+		if strings.HasPrefix(p.Comment, "peer:") {
+			peer.Label = strings.TrimSpace(strings.TrimPrefix(p.Comment, "peer:"))
+		}
 		// Extract IP from AllowedIPs (e.g. "10.8.0.2/32" → "10.8.0.2")
 		if allowed := peer.AllowedIPs; allowed != "" {
 			first := strings.Split(allowed, ",")[0]
