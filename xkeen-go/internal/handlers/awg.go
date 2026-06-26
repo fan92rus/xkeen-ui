@@ -70,7 +70,7 @@ func (h *AWGHandler) ListInterfaces(w http.ResponseWriter, r *http.Request) {
 	// Get active interfaces from awg show
 	activeIfaces := h.getActiveInterfaces()
 
-	var result []awgInterface
+	result := make([]awgInterface, 0, len(configs))
 	for _, c := range configs {
 		confPath := filepath.Join(h.awgDir, c.Name+".conf")
 		_, active := activeIfaces[c.Name]
@@ -284,8 +284,9 @@ func (h *AWGHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 		messages = append(messages, fmt.Sprintf("freed mark %d", mark))
 	}
 
-	// Bring down interface
-	exec.Command("awg-quick", "down", name).Run()
+	// Bring down interface — use full config path, same as DownInterface.
+	// 'awg-quick down <name>' searches the default directory, not h.awgDir.
+	exec.Command("awg-quick", "down", confPath).Run()
 	messages = append(messages, "interface down")
 
 	// Remove config file

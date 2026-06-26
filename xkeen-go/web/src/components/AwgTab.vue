@@ -8,12 +8,12 @@
     </div>
 
     <!-- Loading state -->
-    <div v-if="loading && interfaces.length === 0" class="awg-loading">
+    <div v-if="loading && (interfaces || []).length === 0" class="awg-loading">
       Загрузка интерфейсов…
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="interfaces.length === 0" class="awg-empty">
+    <div v-else-if="(interfaces || []).length === 0" class="awg-empty">
       <div class="awg-empty-icon">🔗</div>
       <p class="awg-empty-title">Нет AWG-конфигураций</p>
       <p class="awg-empty-desc">Загрузите конфигурацию в формате WireGuard/AmneziaWG (.conf)</p>
