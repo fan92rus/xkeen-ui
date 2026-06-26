@@ -112,8 +112,11 @@ case "$1" in
         echo "Running XKEEN-UI uninstall..."
         "$DAEMON" uninstall
         ;;
+    check)
+        "$DAEMON" check
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|uninstall}"
+        echo "Usage: $0 {start|stop|restart|status|check|uninstall}"
         exit 1
         ;;
 esac

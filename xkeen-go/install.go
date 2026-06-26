@@ -156,6 +156,24 @@ func install() error {
 	os.Symlink(installInitScript, sLink)
 	os.Symlink(installInitScript, kLink)
 
+	// Create cron watchdog for auto-restart on crash
+	cronDir := "/opt/etc/cron.d"
+	cronFile := filepath.Join(cronDir, "xkeen-ui-watchdog")
+	cronContent := fmt.Sprintf(
+		"* * * * * root %%s check || %%s start >> %%s 2>&1\n",
+		installSymlink, installSymlink, installLogFile,
+	)
+	if err := os.MkdirAll(cronDir, 0755); err != nil {
+		fmt.Printf("Warning: failed to create cron directory: %v\n", err)
+	} else if err := os.WriteFile(cronFile, []byte(cronContent), 0644); err != nil {
+		fmt.Printf("Warning: failed to create cron watchdog: %v\n", err)
+	} else {
+		fmt.Println("Cron watchdog created (checks every minute, restart if down)")
+	}
+
+	// Restart cron to pick up new watchdog
+	exec.Command("killall", "-HUP", "crond").Run()
+
 	fmt.Println()
 	fmt.Println("===================================")
 	fmt.Println("XKEEN-UI installed successfully!")
@@ -185,6 +203,7 @@ func install() error {
 	fmt.Println("  Stop:    xkeen-ui stop")
 	fmt.Println("  Restart: xkeen-ui restart")
 	fmt.Println("  Status:  xkeen-ui status")
+	fmt.Println("  Check:   xkeen-ui check (exit 0=running, 1=stopped — for cron)")
 	fmt.Println("  Logs:    xkeen-ui log")
 	fmt.Println()
 	fmt.Printf("Web interface: http://<router-ip>:8089\n")

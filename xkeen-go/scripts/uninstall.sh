@@ -50,7 +50,13 @@ done
 # 3. Remove PID file
 rm -f "$PIDFILE"
 
-# 4. Remove rc.d symlinks
+# 4. Remove cron watchdog
+log "Removing cron watchdog..."
+rm -f "/opt/etc/cron.d/xkeen-ui-watchdog"
+# Restart cron to apply
+killall -HUP crond 2>/dev/null || true
+
+# 5. Remove rc.d symlinks
 log "Removing rc.d symlinks..."
 rm -f "$RC_DIR/S99xkeen-ui" "$RC_DIR/K01xkeen-ui"
 

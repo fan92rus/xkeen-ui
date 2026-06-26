@@ -79,6 +79,9 @@ func main() {
 				log.Fatalf("Uninstallation failed: %v", err)
 			}
 			os.Exit(0)
+		case "check":
+			checkProcess()
+			os.Exit(0)
 		case "version", "-version", "--version", "-v":
 			printVersion()
 			os.Exit(0)
@@ -111,6 +114,26 @@ func printVersion() {
 	fmt.Printf("XKEEN-UI %s\n", appVersion)
 	fmt.Printf("Build date: %s\n", buildDate)
 	fmt.Printf("Git commit: %s\n", gitCommit)
+}
+
+func checkProcess() {
+	pidData, err := os.ReadFile(installPidFile)
+	if err != nil {
+		os.Exit(1)
+	}
+	var pid int
+	if _, err := fmt.Sscanf(string(pidData), "%d", &pid); err != nil {
+		os.Exit(1)
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil || proc == nil {
+		os.Exit(1)
+	}
+	// Sends signal 0 to check if process exists (no side effects)
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func printUsage() {
