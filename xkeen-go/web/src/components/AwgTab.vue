@@ -141,7 +141,8 @@
                 <option v-for="p in obfuscation[iface.name].presets" :key="p.id" :value="p.id">{{ p.name }}</option>
                 <option v-if="obfuscation[iface.name].current === 'custom' || obfuscation[iface.name].current === 'unknown'" :value="obfuscation[iface.name].current">{{ obfuscationPresetName(iface.name) }}</option>
               </select>
-              <span v-if="currentObfWarning(iface.name)" class="awg-obfuscation-hint" :title="currentObfWarning(iface.name)">⚠ {{ currentObfWarning(iface.name) }}</span>
+              <span v-if="obfuscation[iface.name].applying" class="awg-obfuscation-hint">⟳ Применение…</span>
+              <span v-else-if="currentObfDescription(iface.name)" class="awg-obfuscation-hint" :title="currentObfDescription(iface.name)">{{ currentObfDescription(iface.name) }}</span>
             </div>
 
             <!-- Peers section -->
@@ -383,10 +384,19 @@ async function loadPeers(name) {
 function obfuscationPresetName(name) {
   const o = obfuscation[name];
   if (!o || o.loading) return '—';
-  if (o.current === 'custom') return 'Custom (вручную)';
+  if (o.current === 'custom') return 'Custom (уникальный)';
   if (o.current === 'unknown') return '?';
   const p = (o.presets || []).find(x => x.id === o.current);
   return p ? p.name : o.current;
+}
+
+function currentObfDescription(name) {
+  const o = obfuscation[name];
+  if (!o || o.loading) return '';
+  const p = (o.presets || []).find(x => x.id === o.current);
+  if (p) return p.description || '';
+  if (o.current === 'custom') return 'Пользовательский набор параметров AWG';
+  return '';
 }
 
 function currentObfWarning(name) {
@@ -418,7 +428,8 @@ async function applyObfuscationPreset(name, presetId) {
   obfuscation[name].applying = true;
   try {
     const res = await awgApi.applyObfuscation(name, presetId);
-    obfuscation[name].current = presetId;
+    // For random preset, re-detect from server (params are now concrete, will show 'custom')
+    await loadObfuscation(name);
     if (res.warning) {
       error.value = res.warning;
     }

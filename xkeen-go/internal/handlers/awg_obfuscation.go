@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,17 +38,45 @@ type AWGObfuscationPreset struct {
 	Description string            `json:"description"`
 	Warning     string            `json:"warning,omitempty"`
 	Params      map[string]string `json:"params"`
+	Random      bool              `json:"random,omitempty"` // if true, params generated on apply
 }
 
-// getAWGObfuscationPresets returns the four obfuscation profiles.
-// Order: max protection → energy-efficient.
+// getAWGObfuscationPresets returns the obfuscation profiles.
+// Order: random (recommended) → max protection → energy-efficient → plain.
+//
+// AWG parameter cost model:
+//   - Jc/Jmin/Jmax: junk packets BEFORE handshake only (every ~2-3 min) → negligible
+//   - S1/S2/S3:     stolen bytes from handshake messages → negligible
+//   - S4:           stolen bytes from EVERY transport packet → real bandwidth cost
+//   - H1-H4:        junk packet type markers → negligible (always keep non-zero)
+//   - I1:           init packet magic header → negligible (changes fingerprint)
 func getAWGObfuscationPresets() []AWGObfuscationPreset {
 	return []AWGObfuscationPreset{
 		{
+			ID:          "random",
+			Name:        "🎲 Random (уникальный)",
+			Description: "Уникальные параметры для вашего сервера",
+			Warning:     "Генерирует случайный набор — каждый сервер выглядит по-разному",
+			Params:      nil, // generated on apply
+			Random:      true,
+		},
+		{
 			ID:          "full",
-			Name:        "Full AWG",
-			Description: "Максимальная защита от DPI",
-			Warning:     "+400% мусорных пакетов, высокая нагрузка",
+			Name:        "🛡 Full",
+			Description: "Jc=8 + stolen packets, максимальная защита",
+			Warning:     "Нагрузка только на хендшейк (~каждые 2-3 мин), на трафик не влияет",
+			Params: map[string]string{
+				"Jc": "8", "Jmin": "50", "Jmax": "100",
+				"S1": "30", "S2": "20", "S3": "0", "S4": "0",
+				"H1": "1", "H2": "2", "H3": "3", "H4": "4",
+				"I1": "0",
+			},
+		},
+		{
+			ID:          "light",
+			Name:        "⚡ Light",
+			Description: "Jc=4, стандартный AWG (как WARP)",
+			Warning:     "",
 			Params: map[string]string{
 				"Jc": "4", "Jmin": "40", "Jmax": "70",
 				"S1": "0", "S2": "0", "S3": "0", "S4": "0",
@@ -55,36 +85,46 @@ func getAWGObfuscationPresets() []AWGObfuscationPreset {
 			},
 		},
 		{
-			ID:          "light",
-			Name:        "Light AWG",
-			Description: "Баланс защиты и нагрузки",
-			Warning:     "~двойной трафик",
+			ID:          "minimal",
+			Name:        "🌿 Minimal",
+			Description: "Jc=2, минимальная обфускация",
+			Warning:     "",
 			Params: map[string]string{
-				"Jc": "2", "Jmin": "30", "Jmax": "50",
+				"Jc": "2", "Jmin": "20", "Jmax": "40",
 				"S1": "0", "S2": "0", "S3": "0", "S4": "0",
 				"H1": "1", "H2": "2", "H3": "3", "H4": "4",
 				"I1": "0",
 			},
 		},
 		{
-			ID:          "minimal",
-			Name:        "Minimal AWG",
-			Description: "Минимальная обфускация",
-			Warning:     "~одинарный трафик, без size obfuscation",
-			Params: map[string]string{
-				"Jc": "1", "Jmin": "20", "Jmax": "40",
-				"S1": "0", "S2": "0", "S3": "0", "S4": "0",
-				"H1": "0", "H2": "0", "H3": "0", "H4": "0",
-				"I1": "0",
-			},
-		},
-		{
 			ID:          "plain",
-			Name:        "Plain WG",
+			Name:        "○ Plain WG",
 			Description: "Без AWG-обфускации",
 			Warning:     "НЕ работает для WARP! Только для своего сервера",
 			Params:      map[string]string{},
 		},
+	}
+}
+
+// generateRandomObfuscationParams creates a unique set of AWG parameters.
+// Each server gets different values, preventing DPI from creating a universal
+// fingerprint for all xkeen-ui deployments.
+func generateRandomObfuscationParams() map[string]string {
+	jmin := 30 + rand.IntN(20)        // 30-49
+	jmax := jmin + 20 + rand.IntN(20) // 50-88 (always > jmin)
+	return map[string]string{
+		"Jc":   strconv.Itoa(4 + rand.IntN(8)),   // 4-11
+		"Jmin": strconv.Itoa(jmin),
+		"Jmax": strconv.Itoa(jmax),
+		"S1":   strconv.Itoa(rand.IntN(24)),      // 0-23
+		"S2":   strconv.Itoa(rand.IntN(24)),      // 0-23
+		"S3":   "0",
+		"S4":   "0",
+		"H1":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
+		"H2":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
+		"H3":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
+		"H4":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
+		"I1":   "0",
 	}
 }
 
@@ -183,6 +223,9 @@ func detectObfuscationPreset(confPath string) (string, error) {
 	}
 
 	for _, preset := range getAWGObfuscationPresets() {
+		if preset.Random {
+			continue // random preset has no fixed params to match
+		}
 		if awgParamsEqual(current, preset.Params) {
 			return preset.ID, nil
 		}
@@ -306,16 +349,24 @@ func (h *AWGHandler) ApplyObfuscation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find preset
-	var preset *AWGObfuscationPreset
+	var preset AWGObfuscationPreset
+	found := false
 	for _, p := range getAWGObfuscationPresets() {
 		if p.ID == req.Preset {
-			preset = &p
+			preset = p
+			found = true
 			break
 		}
 	}
-	if preset == nil {
+	if !found {
 		respondError(w, http.StatusBadRequest, "unknown preset: "+req.Preset)
 		return
+	}
+
+	// Resolve params (generate if random preset)
+	params := preset.Params
+	if preset.Random {
+		params = generateRandomObfuscationParams()
 	}
 
 	confPath := filepath.Join(h.awgDir, name+".conf")
@@ -325,13 +376,13 @@ func (h *AWGHandler) ApplyObfuscation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Apply to server config
-	if err := applyObfuscationToConfig(confPath, preset.Params); err != nil {
+	if err := applyObfuscationToConfig(confPath, params); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update config: %v", err))
 		return
 	}
 
 	// 2. Update all stored client configs
-	h.updateClientConfigsObfuscation(name, preset.Params)
+	h.updateClientConfigsObfuscation(name, params)
 
 	// 3. If interface is running, restart it (AWG params need full restart)
 	wasRunning := false
@@ -360,6 +411,7 @@ func (h *AWGHandler) ApplyObfuscation(w http.ResponseWriter, r *http.Request) {
 		"preset":      preset.ID,
 		"was_running": wasRunning,
 		"restarted":   restarted,
+		"params":      params,
 	}
 	if restartErr != nil {
 		resp["warning"] = "config updated but interface restart failed: " + restartErr.Error()

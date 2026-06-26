@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -230,4 +231,93 @@ func TestAWGDeleteConfig_PathTraversal(t *testing.T) {
 
 func body(s string) io.Reader {
 	return strings.NewReader(s)
+}
+
+// ---------- Obfuscation preset tests ----------
+
+func TestGenerateRandomObfuscationParams(t *testing.T) {
+	params := generateRandomObfuscationParams()
+
+	// Must have all expected keys
+	expectedKeys := []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1"}
+	for _, key := range expectedKeys {
+		if _, ok := params[key]; !ok {
+			t.Errorf("missing key %q in random params", key)
+		}
+	}
+
+	// S3 and S4 must be 0 (no transport overhead)
+	if params["S3"] != "0" {
+		t.Errorf("S3 must be 0, got %s", params["S3"])
+	}
+	if params["S4"] != "0" {
+		t.Errorf("S4 must be 0, got %s", params["S4"])
+	}
+
+	// H1-H4 must be non-zero (always keep active)
+	for _, key := range []string{"H1", "H2", "H3", "H4"} {
+		if params[key] == "0" {
+			t.Errorf("%s must be non-zero in random preset", key)
+		}
+	}
+
+	// Jmax must be > Jmin
+	jmin, _ := strconv.Atoi(params["Jmin"])
+	jmax, _ := strconv.Atoi(params["Jmax"])
+	if jmax <= jmin {
+		t.Errorf("Jmax (%d) must be > Jmin (%d)", jmax, jmin)
+	}
+
+	// Two calls should produce different results (uniqueness)
+	params2 := generateRandomObfuscationParams()
+	allSame := true
+	for _, key := range expectedKeys {
+		if params[key] != params2[key] {
+			allSame = false
+			break
+		}
+	}
+	// Very unlikely all 12 params match by chance
+	if allSame {
+		t.Log("warning: two random generations produced identical params (extremely unlikely)")
+	}
+}
+
+func TestObfuscationPresets_HaveAllParams(t *testing.T) {
+	for _, preset := range getAWGObfuscationPresets() {
+		if preset.Random {
+			continue // random has no fixed params
+		}
+		// Non-plain presets must have all 12 params
+		if preset.ID == "plain" {
+			if len(preset.Params) != 0 {
+				t.Errorf("plain preset should have no params, got %d", len(preset.Params))
+			}
+			continue
+		}
+		// Non-plain presets must have the 12 params we use (I2/I3 omitted = default)
+		presetParamKeys := []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1"}
+		for _, key := range presetParamKeys {
+			if _, ok := preset.Params[key]; !ok {
+				t.Errorf("preset %q missing param %q", preset.ID, key)
+			}
+		}
+		// Non-plain presets must have non-zero H1-H4
+		for _, key := range []string{"H1", "H2", "H3", "H4"} {
+			if preset.Params[key] == "0" {
+				t.Errorf("preset %q has H param = 0 (should always be non-zero)", preset.ID)
+			}
+		}
+	}
+}
+
+func TestObfuscationPresets_S4AlwaysZero(t *testing.T) {
+	for _, preset := range getAWGObfuscationPresets() {
+		if preset.Random || preset.ID == "plain" {
+			continue
+		}
+		if preset.Params["S4"] != "0" {
+			t.Errorf("preset %q has S4 != 0 (S4 adds per-packet overhead)", preset.ID)
+		}
+	}
 }
