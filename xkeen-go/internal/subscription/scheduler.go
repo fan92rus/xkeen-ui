@@ -360,7 +360,7 @@ func (s *Scheduler) checkAndRefresh() {
 	needsUpdate := false
 
 	for _, sub := range cfg.Subscriptions {
-		if !sub.Enabled || sub.Interval <= 0 {
+		if !sub.Enabled || sub.IsBuiltin || sub.Interval <= 0 {
 			continue
 		}
 		nextRefresh := sub.LastFetch.Add(time.Duration(sub.Interval) * time.Minute)
@@ -403,7 +403,7 @@ func (s *Scheduler) RefreshAll() error {
 	)
 
 	for _, sub := range cfg.Subscriptions {
-		if !sub.Enabled {
+		if !sub.Enabled || sub.IsBuiltin {
 			continue
 		}
 

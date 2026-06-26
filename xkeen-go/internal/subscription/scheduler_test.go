@@ -163,6 +163,10 @@ func TestRefreshAll(t *testing.T) {
 			}
 			continue
 		}
+		if sub.IsBuiltin {
+			// Built-in subscriptions (AWG) are skipped in RefreshAll
+			continue
+		}
 		if sub.LastFetch.IsZero() {
 			t.Errorf("subscription %q should have LastFetch set", sub.Name)
 		}

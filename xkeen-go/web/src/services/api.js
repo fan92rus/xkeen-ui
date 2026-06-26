@@ -93,6 +93,10 @@ export async function del(path) {
     return res.json().catch(() => ({}));
 }
 
+export function getCSRFToken() {
+    return document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '';
+}
+
 export class ApiError extends Error {
     constructor(status, message, data) {
         super(message);

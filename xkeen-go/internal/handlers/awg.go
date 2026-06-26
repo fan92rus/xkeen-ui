@@ -95,8 +95,8 @@ func (h *AWGHandler) UpInterface(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Name == "" {
-		respondError(w, http.StatusBadRequest, "name is required")
+	if req.Name == "" || !validateAWGName(req.Name) {
+		respondError(w, http.StatusBadRequest, "invalid config name")
 		return
 	}
 
@@ -160,8 +160,8 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Name == "" {
-		respondError(w, http.StatusBadRequest, "name is required")
+	if req.Name == "" || !validateAWGName(req.Name) {
+		respondError(w, http.StatusBadRequest, "invalid config name")
 		return
 	}
 
@@ -197,12 +197,21 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/awg/config/{name}
 func (h *AWGHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
-	if name == "" {
-		respondError(w, http.StatusBadRequest, "name is required")
+	if name == "" || !validateAWGName(name) {
+		respondError(w, http.StatusBadRequest, "invalid config name")
 		return
 	}
 
 	confPath := filepath.Join(h.awgDir, name+".conf")
+
+	// Prevent path traversal
+	absPath, _ := filepath.Abs(confPath)
+	absDir, _ := filepath.Abs(h.awgDir)
+	if !strings.HasPrefix(absPath, absDir) {
+		respondError(w, http.StatusForbidden, "invalid config name")
+		return
+	}
+
 	if _, err := os.Stat(confPath); os.IsNotExist(err) {
 		respondError(w, http.StatusNotFound, fmt.Sprintf("config %s not found", name))
 		return
@@ -365,7 +374,24 @@ func (h *AWGHandler) getActiveInterfaces() map[string]string {
 	return result
 }
 
+// validateAWGName checks that a config name contains only safe characters.
+func validateAWGName(name string) bool {
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") ||
+		strings.Contains(name, "..") || strings.HasPrefix(name, ".") {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 // ---------- Route registration ----------
+
+
 
 // RegisterAWGRoutes registers AWG management routes.
 func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {
