@@ -49,6 +49,11 @@ func (s *Server) setupRoutes() {
 	// AWG installation routes
 	handlers.RegisterInstallRoutes(apiRouter, s.installHandler)
 
+	// AWG management routes
+	if s.awgHandler != nil {
+		handlers.RegisterAWGRoutes(apiRouter, s.awgHandler)
+	}
+
 	// Metrics routes (optional)
 	if s.metricsHandler != nil {
 		handlers.RegisterMetricsRoutes(apiRouter, s.metricsHandler)

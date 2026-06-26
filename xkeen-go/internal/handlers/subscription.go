@@ -97,18 +97,20 @@ type SubscriptionHandler struct {
 	scheduler   *subscription.Scheduler
 	xrayDir     string // xray config directory for writing generated files
 	mihomoDir   string // mihomo config directory for writing generated files
+	awgDir      string // awg config directory for scanning .conf files
 	currentMode string // "xray" or "mihomo" — set on construction from config
 	restartFn   func() // optional restart function wired from server.go
 }
 
 // NewSubscriptionHandler creates a new SubscriptionHandler.
-func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fetcher, scheduler *subscription.Scheduler, xrayDir, mihomoDir, mode string) *SubscriptionHandler {
+func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fetcher, scheduler *subscription.Scheduler, xrayDir, mihomoDir, awgDir, mode string) *SubscriptionHandler {
 	return &SubscriptionHandler{
 		store:       store,
 		fetcher:     fetcher,
 		scheduler:   scheduler,
 		xrayDir:     xrayDir,
 		mihomoDir:   mihomoDir,
+		awgDir:      awgDir,
 		currentMode: mode,
 	}
 }
@@ -223,6 +225,12 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Handle built-in AWG subscription: scan .conf files instead of HTTP fetch
+	if id == subscription.ReservedAWGSubscriptionID {
+		h.fetchAWG(w, r, sub)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
@@ -268,6 +276,54 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	h.store.SetProxies(merged)
 
 	respondJSON(w, http.StatusOK, &subFetchResponse{Success: true, ProxyCount: len(entries), Total: len(entries), Proxies: entries})
+}
+
+// fetchAWG handles fetching for the built-in AWG subscription — scans .conf files.
+func (h *SubscriptionHandler) fetchAWG(w http.ResponseWriter, r *http.Request, sub *subscription.Subscription) {
+	configs, err := h.store.ScanAWGConfigs(h.awgDir)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan AWG configs: %v", err))
+		return
+	}
+
+	entries := subscription.GenerateAWGProxies(configs)
+
+	// Update subscription metadata
+	sub.LastFetch = time.Now()
+	sub.LastError = ""
+	sub.ProxyCount = len(entries)
+	_ = h.store.UpdateSubscription(sub)
+
+	// Tag entries with subscription ID
+	for _, e := range entries {
+		e.SubscriptionID = subscription.ReservedAWGSubscriptionID
+	}
+
+	// Replace AWG proxies in the pool, keep others
+	existing := h.store.GetProxies()
+	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(entries))
+	for _, p := range existing {
+		if p.SubscriptionID == subscription.ReservedAWGSubscriptionID {
+			continue // remove old AWG proxies
+		}
+		if p.SubscriptionID == "" {
+			continue // remove orphaned proxies
+		}
+		merged = append(merged, p)
+	}
+	merged = append(merged, entries...)
+
+	// Regenerate tags for non-AWG proxies (GenerateTags skips AWG protocol)
+	subscription.GenerateTags(merged)
+
+	h.store.SetProxies(merged)
+
+	respondJSON(w, http.StatusOK, &subFetchResponse{
+		Success:    true,
+		ProxyCount: len(entries),
+		Total:      len(entries),
+		Proxies:    entries,
+	})
 }
 
 // ---------- Proxies ----------

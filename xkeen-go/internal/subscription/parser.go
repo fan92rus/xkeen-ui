@@ -522,9 +522,12 @@ func GenerateTags(entries []*ProxyEntry) {
 		key   string
 	}
 
-	// Group by country
+	// Group by country (skip AWG proxies — their tags are permanent)
 	byCountry := make(map[string][]entryWithKey)
 	for _, entry := range entries {
+		if entry.Protocol == "awg" {
+			continue
+		}
 		cc := strings.ToLower(entry.Country)
 		if cc == "" {
 			cc = "xu"

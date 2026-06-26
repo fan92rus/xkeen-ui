@@ -51,6 +51,9 @@ func NewStore(path string) (*Store, error) {
 	// Load cached proxy data (non-critical)
 	s.loadProxyCache()
 
+	// Ensure built-in subscriptions exist
+	s.initBuiltinSubscriptions()
+
 	return s, nil
 }
 
@@ -96,6 +99,45 @@ func (s *Store) saveConfig(cfg *SubscriptionConfig) error {
 	return nil
 }
 
+// ---------- Built-in subscriptions ----------
+
+// initBuiltinSubscriptions ensures system subscriptions (AWG) exist in the
+// subscription list. Called once after loading/creating the config.
+func (s *Store) initBuiltinSubscriptions() {
+	// Check if AWG subscription already exists
+	for _, sub := range s.config.Subscriptions {
+		if sub.ID == ReservedAWGSubscriptionID {
+			return
+		}
+	}
+
+	// Create built-in AWG subscription
+	s.config.Subscriptions = append(s.config.Subscriptions, Subscription{
+		ID:        ReservedAWGSubscriptionID,
+		Name:      "AWG (AmneziaWG)",
+		URL:       "",
+		Enabled:   true,
+		IsBuiltin: true,
+	})
+	s.saveConfig(s.config)
+}
+
+// IsBuiltinSubscription returns true if the subscription ID is a built-in
+// system subscription that cannot be deleted.
+func (s *Store) IsBuiltinSubscription(id string) bool {
+	if id == ReservedAWGSubscriptionID {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.config.Subscriptions {
+		if sub.ID == id && sub.IsBuiltin {
+			return true
+		}
+	}
+	return false
+}
+
 // ---------- Subscription CRUD ----------
 
 // AddSubscription adds a new subscription. Generates an ID if empty.
@@ -139,11 +181,20 @@ func (s *Store) UpdateSubscription(sub *Subscription) error {
 
 // DeleteSubscription removes a subscription by ID and cleans up its proxies from cache.
 func (s *Store) DeleteSubscription(id string) error {
+	// Cannot delete built-in system subscriptions
+	if id == ReservedAWGSubscriptionID {
+		return fmt.Errorf("cannot delete built-in subscription: %s", id)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for i, existing := range s.config.Subscriptions {
 		if existing.ID == id {
+			if existing.IsBuiltin {
+				return fmt.Errorf("cannot delete built-in subscription: %s", id)
+			}
+
 			s.config.Subscriptions = append(
 				s.config.Subscriptions[:i],
 				s.config.Subscriptions[i+1:]...,

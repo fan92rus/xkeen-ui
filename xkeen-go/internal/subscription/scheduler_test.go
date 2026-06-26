@@ -717,6 +717,10 @@ func TestScheduler_ConcurrentRefresh(t *testing.T) {
 	errCh := make(chan error, 5)
 	cfg := store.GetConfig()
 	for _, sub := range cfg.Subscriptions {
+		// Skip built-in subscriptions (AWG has no URL)
+		if sub.IsBuiltin {
+			continue
+		}
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
@@ -732,9 +736,12 @@ func TestScheduler_ConcurrentRefresh(t *testing.T) {
 		t.Errorf("concurrent RefreshOne error: %v", err)
 	}
 
-	// All subscriptions should have LastFetch set
+	// All non-builtin subscriptions should have LastFetch set
 	cfg = store.GetConfig()
 	for _, sub := range cfg.Subscriptions {
+		if sub.IsBuiltin {
+			continue
+		}
 		if sub.LastFetch.IsZero() {
 			t.Errorf("subscription %q should have LastFetch set", sub.Name)
 		}
@@ -1576,13 +1583,21 @@ func TestRefreshAll_ParallelExecution(t *testing.T) {
 	// Verify all 4 subscriptions were fetched
 	cfg := store.GetConfig()
 	enabledCount := 0
+	builtinCount := 0
 	for _, sub := range cfg.Subscriptions {
+		if sub.IsBuiltin {
+			builtinCount++
+			continue
+		}
 		if sub.Enabled {
 			enabledCount++
 			if sub.LastFetch.IsZero() {
 				t.Errorf("subscription %q should have LastFetch", sub.Name)
 			}
 		}
+	}
+	if builtinCount != 1 {
+		t.Errorf("expected 1 built-in subscription, got %d", builtinCount)
 	}
 	if enabledCount != 4 {
 		t.Errorf("expected 4 enabled subscriptions, got %d", enabledCount)

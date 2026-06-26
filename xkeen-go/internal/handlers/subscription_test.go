@@ -37,7 +37,7 @@ func newTestHandler(t *testing.T) (*SubscriptionHandler, string) {
 	scheduler := subscription.NewScheduler(store, fetcher)
 	t.Cleanup(func() { scheduler.Stop() })
 
-	handler := NewSubscriptionHandler(store, fetcher, scheduler, xrayDir, "", "xray")
+	handler := NewSubscriptionHandler(store, fetcher, scheduler, xrayDir, "", "", "xray")
 	return handler, xrayDir
 }
 
@@ -156,8 +156,13 @@ func TestListSubscriptions_Empty(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected subscriptions array, got %T", result["subscriptions"])
 	}
-	if len(subs) != 0 {
-		t.Fatalf("expected 0 subscriptions, got %d", len(subs))
+	// Built-in AWG subscription is always present
+	if len(subs) != 1 {
+		t.Fatalf("expected 1 subscription (built-in AWG), got %d", len(subs))
+	}
+	awg := subs[0].(map[string]interface{})
+	if awg["id"] != "__awg__" {
+		t.Fatalf("expected built-in AWG subscription, got id=%v", awg["id"])
 	}
 }
 
@@ -821,13 +826,22 @@ func TestListSubscriptions_WithData(t *testing.T) {
 
 	result := parseResponse(t, resp)
 	subs := result["subscriptions"].([]interface{})
-	if len(subs) != 1 {
-		t.Fatalf("expected 1 subscription, got %d", len(subs))
+	// 1 added + 1 built-in AWG = 2
+	if len(subs) != 2 {
+		t.Fatalf("expected 2 subscriptions (added + built-in AWG), got %d", len(subs))
 	}
 
-	sub := subs[0].(map[string]interface{})
-	if sub["name"] != "Test Sub" {
-		t.Fatalf("expected name=Test Sub, got %v", sub["name"])
+	// The added subscription should be present (either index 0 or 1)
+	var found bool
+	for _, raw := range subs {
+		sub := raw.(map[string]interface{})
+		if sub["name"] == "Test Sub" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected to find 'Test Sub' in subscriptions")
 	}
 }
 
@@ -951,7 +965,7 @@ func TestApply_EmptyBody(t *testing.T) {
 }
 
 func TestNewSubscriptionHandler_NilFields(t *testing.T) {
-	h := NewSubscriptionHandler(nil, nil, nil, "/tmp", "", "xray")
+	h := NewSubscriptionHandler(nil, nil, nil, "/tmp", "", "", "xray")
 	if h == nil {
 		t.Fatal("expected non-nil handler")
 	}

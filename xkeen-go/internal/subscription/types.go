@@ -43,6 +43,7 @@ type Subscription struct {
 	LastFetch  time.Time   `json:"last_fetch"`
 	LastError  string      `json:"last_error"`
 	ProxyCount int         `json:"proxy_count"`
+	IsBuiltin  bool        `json:"is_builtin"` // system subscription, cannot be deleted
 }
 
 // ProxyEntry represents a single parsed proxy from a subscription.
@@ -89,6 +90,15 @@ type Profile struct {
 // MaxProfiles limits the number of profiles to prevent config bloat on MIPSLE routers.
 const MaxProfiles = 10
 
+// ReservedAWGSubscriptionID is the ID for the built-in AWG subscription.
+const ReservedAWGSubscriptionID = "__awg__"
+
+// AWGConfig tracks an AWG interface configuration for mark persistence.
+type AWGConfig struct {
+	Name string `json:"name"` // config name (filename without .conf)
+	Mark int    `json:"mark"` // fwmark for routing (100+)
+}
+
 // SubscriptionConfig is the persisted subscription configuration.
 type SubscriptionConfig struct {
 	Subscriptions []Subscription `json:"subscriptions"`
@@ -96,6 +106,9 @@ type SubscriptionConfig struct {
 	GeneratedAt   time.Time      `json:"generated_at"`
 	OutboundsFile string         `json:"outbounds_file"` // path to 04_outbounds.json
 	RoutingFile   string         `json:"routing_file"`   // path to 05_routing.json
+
+	// AWGConfigs tracks AWG interface configurations with persistent marks.
+	AWGConfigs []AWGConfig `json:"awg_configs"`
 
 	// AutoApply configures automatic proxy refresh + apply on a cron schedule.
 	AutoApplyEnabled bool   `json:"auto_apply_enabled"` // enable/disable

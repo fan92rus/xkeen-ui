@@ -44,6 +44,7 @@ type Server struct {
 	metricsHandler      *handlers.MetricsHandler
 	commandRegistry     *handlers.CommandRegistry
 	installHandler      *handlers.InstallHandler
+	awgHandler          *handlers.AWGHandler
 
 	// Shutdown state
 	shutdown    bool
@@ -138,10 +139,13 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler := subscription.NewScheduler(subStore, subFetcher)
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
-	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.Mode)
+	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, cfg.Mode)
 
 	// Wire subscription apply restart to service handler restart
 	s.subscriptionHandler.SetRestartFn(func() { s.serviceHandler.RestartService() })
+
+	// AWG handler
+	s.awgHandler = handlers.NewAWGHandler(subStore, cfg.AWGConfigDir)
 
 	// Helper: build tag→remarks from current proxy cache
 	buildProxyNames := func() map[string]string {

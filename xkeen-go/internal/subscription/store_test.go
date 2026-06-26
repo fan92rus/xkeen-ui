@@ -22,8 +22,9 @@ func TestNewStore_CreatesDefaultConfig(t *testing.T) {
 	}
 
 	cfg := store.GetConfig()
-	if len(cfg.Subscriptions) != 0 {
-		t.Errorf("expected 0 subscriptions, got %d", len(cfg.Subscriptions))
+	// Built-in AWG subscription is auto-created
+	if len(cfg.Subscriptions) != 1 {
+		t.Errorf("expected 1 subscription (built-in AWG), got %d", len(cfg.Subscriptions))
 	}
 	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
 		t.Fatal("expected default profile")
@@ -55,11 +56,20 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 	}
 
 	cfg := store.GetConfig()
-	if len(cfg.Subscriptions) != 1 {
-		t.Fatalf("expected 1 subscription, got %d", len(cfg.Subscriptions))
+	// 1 loaded + 1 built-in AWG = 2
+	if len(cfg.Subscriptions) != 2 {
+		t.Fatalf("expected 2 subscriptions (loaded + built-in AWG), got %d", len(cfg.Subscriptions))
 	}
-	if cfg.Subscriptions[0].ID != "abc" {
-		t.Errorf("expected id 'abc', got %q", cfg.Subscriptions[0].ID)
+	// Check that loaded subscription is present
+	var found bool
+	for _, s := range cfg.Subscriptions {
+		if s.ID == "abc" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected to find subscription with id 'abc'")
 	}
 	// Legacy fields should be migrated into default profile
 	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
@@ -113,11 +123,20 @@ func TestAddSubscription_GeneratesID(t *testing.T) {
 
 	// Verify persisted
 	cfg := store.GetConfig()
-	if len(cfg.Subscriptions) != 1 {
-		t.Fatalf("expected 1 subscription, got %d", len(cfg.Subscriptions))
+	// 1 added + 1 built-in AWG = 2
+	if len(cfg.Subscriptions) != 2 {
+		t.Fatalf("expected 2 subscriptions (added + built-in AWG), got %d", len(cfg.Subscriptions))
 	}
-	if cfg.Subscriptions[0].ID != sub.ID {
-		t.Errorf("persisted ID mismatch: %q vs %q", cfg.Subscriptions[0].ID, sub.ID)
+	// Verify the added subscription is present
+	var found bool
+	for _, s := range cfg.Subscriptions {
+		if s.ID == sub.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("added subscription not found in config")
 	}
 }
 
@@ -405,11 +424,20 @@ func TestPersistence_AcrossStoreInstances(t *testing.T) {
 	// Second instance: load same file
 	store2, _ := NewStore(path)
 	cfg := store2.GetConfig()
-	if len(cfg.Subscriptions) != 1 {
-		t.Fatalf("expected 1 subscription, got %d", len(cfg.Subscriptions))
+	// 1 persisted + 1 built-in AWG = 2
+	if len(cfg.Subscriptions) != 2 {
+		t.Fatalf("expected 2 subscriptions (persisted + built-in AWG), got %d", len(cfg.Subscriptions))
 	}
-	if cfg.Subscriptions[0].Name != "Persist" {
-		t.Errorf("expected 'Persist', got %q", cfg.Subscriptions[0].Name)
+	// Find the persisted subscription
+	var found bool
+	for _, s := range cfg.Subscriptions {
+		if s.Name == "Persist" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected to find subscription with name 'Persist'")
 	}
 	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
 		t.Fatal("expected default profile")
@@ -437,8 +465,9 @@ func TestConcurrentAccess(t *testing.T) {
 	wg.Wait()
 
 	cfg := store.GetConfig()
-	if len(cfg.Subscriptions) != 10 {
-		t.Errorf("expected 10 subscriptions, got %d", len(cfg.Subscriptions))
+	// 10 added + 1 built-in AWG = 11
+	if len(cfg.Subscriptions) != 11 {
+		t.Errorf("expected 11 subscriptions (10 + built-in AWG), got %d", len(cfg.Subscriptions))
 	}
 }
 
@@ -881,8 +910,8 @@ func TestSave_PersistsToDisk(t *testing.T) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(cfg.Subscriptions) != 1 {
-		t.Errorf("expected 1 subscription, got %d", len(cfg.Subscriptions))
+	if len(cfg.Subscriptions) != 2 {
+		t.Errorf("expected 2 subscriptions (added + built-in AWG), got %d", len(cfg.Subscriptions))
 	}
 	if len(cfg.Profiles) == 0 || !cfg.Profiles[0].IsDefault {
 		t.Error("expected default profile")
@@ -1470,8 +1499,9 @@ func TestSave_ConcurrentWithWriter_DoesNotLoseUpdates(t *testing.T) {
 
 	// All 10 subscriptions must be present (if Save held lock, none lost)
 	cfg := store.GetConfig()
-	if len(cfg.Subscriptions) != 10 {
-		t.Errorf("expected 10 subscriptions after concurrent write+save, got %d (possible lost update)", len(cfg.Subscriptions))
+	// 10 added + 1 built-in AWG = 11
+	if len(cfg.Subscriptions) != 11 {
+		t.Errorf("expected 11 subscriptions (10 added + 1 built-in AWG) after concurrent write+save, got %d (possible lost update)", len(cfg.Subscriptions))
 	}
 }
 
