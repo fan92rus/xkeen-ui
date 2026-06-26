@@ -4,7 +4,6 @@ import { useAppStore } from '../stores/app.js';
 import * as sub from '../services/subscription.js';
 import * as metrics from '../services/metrics.js';
 import * as installApi from '../services/install.js';
-import * as xkeen from '../services/xkeen.js';
 
 const app = useAppStore();
 const reloadMetricsState = inject('reloadMetricsState', () => {});
@@ -16,11 +15,6 @@ const autoApplySaving = ref(false);
 const metricsPort = ref(0);
 const metricsLoading = ref(false);
 const metricsSaving = ref(false);
-
-// AWG interface settings
-const awgInterfaces = ref({ lan: '', wan: '' });
-const awgIfaceLoading = ref(false);
-const awgIfaceSaving = ref(false);
 
 async function loadMetricsPort() {
 	metricsLoading.value = true;
@@ -46,34 +40,6 @@ async function saveMetricsPort() {
 		app.showToast(e.message || 'Ошибка сохранения', 'error');
 	} finally {
 		metricsSaving.value = false;
-	}
-}
-
-async function loadAWGInterfaces() {
-	awgIfaceLoading.value = true;
-	try {
-		const d = await xkeen.getAWGInterfaces();
-		awgInterfaces.value = { lan: d.lan_iface || '', wan: d.wan_iface || '' };
-	} catch { /* ignore */ }
-	finally {
-		awgIfaceLoading.value = false;
-	}
-}
-
-async function saveAWGInterfaces() {
-	awgIfaceSaving.value = true;
-	try {
-		await xkeen.updateAWGInterfaces(awgInterfaces.value.lan, awgInterfaces.value.wan);
-		app.showToast(
-			awgInterfaces.value.lan || awgInterfaces.value.wan
-				? 'Интерфейсы AWG сохранены'
-				: 'Интерфейсы AWG: авто-детект',
-			'success',
-		);
-	} catch (e) {
-		app.showToast(e.message || 'Ошибка сохранения', 'error');
-	} finally {
-		awgIfaceSaving.value = false;
 	}
 }
 
@@ -201,7 +167,6 @@ async function setupAWGInit() {
 onMounted(() => {
 	loadAutoApply();
 	loadMetricsPort();
-	loadAWGInterfaces();
 	app.loadXraySettings();
   checkAWG();
 });
@@ -461,34 +426,6 @@ onMounted(() => {
               </button>
             </div>
           </div>
-
-          <!-- Server firewall interfaces -->
-          <div class="s-block" v-if="awg.installed">
-            <div class="s-row">
-              <div class="s-row-main">
-                <div class="s-row-label">Интерфейсы для серверных конфигов</div>
-                <div class="s-row-desc">
-                  LAN и WAN интерфейсы для preset «Полный туннель» (iptables FORWARD/NAT).
-                  Пустые поля = авто-детект (br0 / default route).
-                </div>
-              </div>
-            </div>
-            <div class="s-row" style="gap: 12px; flex-wrap: wrap">
-              <label class="s-inline-field">
-                <span class="s-inline-label">LAN</span>
-                <input v-model="awgInterfaces.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving"
-                       class="s-inline-input">
-              </label>
-              <label class="s-inline-field">
-                <span class="s-inline-label">WAN</span>
-                <input v-model="awgInterfaces.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving"
-                       class="s-inline-input">
-              </label>
-              <button @click="saveAWGInterfaces()" :disabled="awgIfaceSaving" class="btn btn-primary" style="margin-left:auto">
-                {{ awgIfaceSaving ? 'Сохранение...' : 'Сохранить' }}
-              </button>
-            </div>
-          </div>
         </section>
 
       </div>
@@ -606,34 +543,6 @@ onMounted(() => {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--primary-color);
-}
-
-/* ── Inline fields (AWG interfaces) ── */
-.s-inline-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.s-inline-label {
-  font-size: 12px;
-  color: var(--text-gray);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.s-inline-input {
-  width: 100px;
-  padding: 5px 10px;
-  background: var(--background);
-  border: 1px solid var(--stroke);
-  border-radius: 6px;
-  color: var(--primary-text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-}
-.s-inline-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
 }
 .s-row-right {
   display: flex;

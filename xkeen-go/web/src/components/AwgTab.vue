@@ -45,15 +45,6 @@
         <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
       </div>
 
-      <!-- Empty: server -->
-      <div v-else-if="subTab === 'server' && serverIfaces.length === 0" class="awg-state">
-        <div class="awg-state-icon">🖥️</div>
-        <p class="awg-state-title">Нет серверных конфигураций</p>
-        <p class="awg-state-desc">Загрузите серверный .conf (с <code>ListenPort</code> и без <code>Endpoint</code>).<br />
-          Сервер — это входящий VPN для удалённого доступа к домашней сети.</p>
-        <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
-      </div>
-
       <!-- Client cards -->
       <template v-else-if="subTab === 'client'">
         <div v-for="iface in clientIfaces" :key="iface.name" class="awg-card">
@@ -83,8 +74,44 @@
         </div>
       </template>
 
-      <!-- Server cards -->
+      <!-- Server tab: settings + interfaces -->
       <template v-else-if="subTab === 'server'">
+        <!-- Firewall interface settings -->
+        <div class="awg-card awg-settings-card">
+          <div class="awg-card-header">
+            <div class="awg-card-title-group">
+              <span class="awg-iface-icon">⚙</span>
+              <span class="awg-iface-name">Интерфейсы роутера</span>
+            </div>
+          </div>
+          <div class="awg-card-body">
+            <p class="awg-settings-desc">LAN/WAN для preset «Полный туннель» (iptables FORWARD/NAT). Пусто = авто-детект.</p>
+            <div class="awg-iface-row">
+              <label class="awg-iface-field">
+                <span class="awg-iface-field-label">LAN</span>
+                <input v-model="awgIface.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving" />
+              </label>
+              <label class="awg-iface-field">
+                <span class="awg-iface-field-label">WAN</span>
+                <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving" />
+              </label>
+              <button class="btn btn-primary btn-sm" @click="saveIfaceSettings()" :disabled="awgIfaceSaving">
+                {{ awgIfaceSaving ? 'Сохранение…' : 'Сохранить' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty state -->
+        <div v-if="serverIfaces.length === 0" class="awg-state">
+          <div class="awg-state-icon">🖥️</div>
+          <p class="awg-state-title">Нет серверных конфигураций</p>
+          <p class="awg-state-desc">Загрузите серверный .conf (с <code>ListenPort</code> и без <code>Endpoint</code>).<br />
+            Сервер — это входящий VPN для удалённого доступа к домашней сети.</p>
+          <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
+        </div>
+
+        <!-- Server interface cards -->
         <div v-for="iface in serverIfaces" :key="iface.name" class="awg-card awg-card-server">
           <div class="awg-card-header">
             <div class="awg-card-title-group">
@@ -172,6 +199,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import * as awgApi from '../services/awg.js';
+import * as xkeen from '../services/xkeen.js';
 import { useAppStore } from '../stores/app.js';
 import { log } from '../utils/logger.js';
 
@@ -184,6 +212,10 @@ const busy = ref(false);
 
 const fileInput = ref(null);
 const uploading = ref(false);
+
+// Server firewall interface settings (LAN/WAN)
+const awgIface = ref({ lan: '', wan: '' });
+const awgIfaceSaving = ref(false);
 
 const subTab = ref(localStorage.getItem('awg_subtab') || 'client');
 watch(subTab, (v) => localStorage.setItem('awg_subtab', v));
@@ -199,7 +231,10 @@ const peerLoading = reactive({});
 const addPeer = reactive({ show: false, server: '', label: '', loading: false, result: null });
 const copied = ref(false);
 
-onMounted(loadInterfaces);
+onMounted(() => {
+  loadInterfaces();
+  loadIfaceSettings();
+});
 
 // ── Data loading ──
 
@@ -215,6 +250,30 @@ async function loadInterfaces() {
     error.value = 'Не удалось загрузить: ' + (e.message || e);
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadIfaceSettings() {
+  try {
+    const d = await xkeen.getAWGInterfaces();
+    awgIface.value = { lan: d.lan_iface || '', wan: d.wan_iface || '' };
+  } catch { /* ignore */ }
+}
+
+async function saveIfaceSettings() {
+  awgIfaceSaving.value = true;
+  try {
+    await xkeen.updateAWGInterfaces(awgIface.value.lan, awgIface.value.wan);
+    app.showToast(
+      awgIface.value.lan || awgIface.value.wan
+        ? 'Интерфейсы сохранены'
+        : 'Интерфейсы: авто-детект',
+      'success',
+    );
+  } catch (e) {
+    app.showToast(e.message || 'Ошибка сохранения', 'error');
+  } finally {
+    awgIfaceSaving.value = false;
   }
 }
 
@@ -655,6 +714,54 @@ function downloadConfig() {
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-gray);
+}
+
+/* ── Settings card (server firewall interfaces) ── */
+.awg-settings-card {
+  border-left: 3px solid var(--text-gray);
+}
+
+.awg-settings-desc {
+  font-size: var(--text-small);
+  color: var(--help-text);
+  margin: 0 0 10px;
+}
+
+.awg-iface-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.awg-iface-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.awg-iface-field-label {
+  font-size: 10px;
+  color: var(--text-gray);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.awg-iface-field input {
+  width: 120px;
+  padding: 5px 10px;
+  background: var(--background);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  color: var(--primary-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.awg-iface-field input:focus {
+  outline: none;
+  border-color: var(--primary-color);
 }
 
 /* ── Peers ── */
