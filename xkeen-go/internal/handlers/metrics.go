@@ -435,6 +435,12 @@ func (h *MetricsHandler) sendToClients(msg WSMessage) {
 //   - Then every ~2s server sends { "type": "snapshot", "snap": {...} } with live data.
 //   - Pings are sent every 30s: { "type": "ping" }.
 func (h *MetricsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[metrics] WebSocket handler panic recovered: %v", r)
+		}
+	}()
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("MetricsHandler: WebSocket upgrade error: %v", err)
@@ -462,6 +468,11 @@ func (h *MetricsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[metrics] WebSocket read panic recovered: %v", r)
+			}
+		}()
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {

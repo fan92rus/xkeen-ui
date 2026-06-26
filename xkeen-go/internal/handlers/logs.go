@@ -407,6 +407,12 @@ func (h *LogsHandler) parseLogLine(line, file string) LogMessage {
 // WebSocket handles WebSocket connections for real-time logs.
 // GET /ws/logs
 func (h *LogsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[logs] WebSocket handler panic recovered: %v", r)
+		}
+	}()
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -436,6 +442,11 @@ func (h *LogsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[logs] WebSocket read panic recovered: %v", r)
+			}
+		}()
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {

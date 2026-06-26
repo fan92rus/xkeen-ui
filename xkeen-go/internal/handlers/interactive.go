@@ -100,6 +100,12 @@ func (h *InteractiveHandler) isCommandAllowed(cmd string) (CommandConfig, bool) 
 
 // ServeHTTP handles WebSocket connections for interactive command execution.
 func (h *InteractiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[interactive] WebSocket handler panic recovered: %v", r)
+		}
+	}()
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -182,6 +188,11 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[interactive] WebSocket write panic recovered: %v", r)
+			}
+		}()
 		buf := make([]byte, 1024)
 		for {
 			select {
@@ -211,6 +222,11 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[interactive] WebSocket read panic recovered: %v", r)
+			}
+		}()
 		for {
 			select {
 			case <-ctx.Done():
