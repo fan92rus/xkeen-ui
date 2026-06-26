@@ -1,7 +1,7 @@
 // services/install.js — AmneziaWG installation service
 // Matches the backend InstallHandler SSE protocol.
 
-import { logError } from '../utils/logger.js';
+import { log } from '../utils/logger.js';
 import * as api from './api.js';
 
 export async function getAWGStatus() {
