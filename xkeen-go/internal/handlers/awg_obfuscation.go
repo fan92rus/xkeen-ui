@@ -48,7 +48,8 @@ type AWGObfuscationPreset struct {
 //   - Jc/Jmin/Jmax: junk packets BEFORE handshake only (every ~2-3 min) → negligible
 //   - S1/S2/S3:     stolen bytes from handshake messages → negligible
 //   - S4:           stolen bytes from EVERY transport packet → real bandwidth cost
-//   - H1-H4:        junk packet type markers → negligible (always keep non-zero)
+//   - H1-H4:        header obfuscation bits, default 1,2,3,4 — CANNOT be 0
+//                    (Keenetic kernel rejects H=0), negligible cost, can randomize ≥1
 //   - I1:           init packet magic header → negligible (changes fingerprint)
 func getAWGObfuscationPresets() []AWGObfuscationPreset {
 	return []AWGObfuscationPreset{
@@ -109,6 +110,9 @@ func getAWGObfuscationPresets() []AWGObfuscationPreset {
 // generateRandomObfuscationParams creates a unique set of AWG parameters.
 // Each server gets different values, preventing DPI from creating a universal
 // fingerprint for all xkeen-ui deployments.
+//
+// H1-H4 must be >= 1 (Keenetic kernel rejects H=0, handshake fails).
+// Default is 1,2,3,4; we randomize in 1-100 range for per-server uniqueness.
 func generateRandomObfuscationParams() map[string]string {
 	jmin := 30 + rand.IntN(20)        // 30-49
 	jmax := jmin + 20 + rand.IntN(20) // 50-88 (always > jmin)
@@ -120,7 +124,7 @@ func generateRandomObfuscationParams() map[string]string {
 		"S2":   strconv.Itoa(rand.IntN(24)),      // 0-23
 		"S3":   "0",
 		"S4":   "0",
-		"H1":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
+		"H1":   strconv.Itoa(1 + rand.IntN(100)), // 1-100 (0 = handshake rejected)
 		"H2":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
 		"H3":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
 		"H4":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
