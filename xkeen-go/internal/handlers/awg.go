@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -151,6 +152,24 @@ func (h *AWGHandler) UpInterface(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Verify: poll awg show for up to 3s until the interface appears.
+	alive := false
+	for i := 0; i < 6; i++ {
+		active := h.getActiveInterfaces()
+		if addr, ok := active[req.Name]; ok && addr != "" {
+			alive = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if !alive {
+		log.Printf("[awg] awg-quick up %s — interface did not appear within 3s, but may still come up", req.Name)
+		// Don't fail the request — the command returned 0, just log a warning
+	} else {
+		log.Printf("[awg] awg-quick up %s — interface confirmed up", req.Name)
+	}
+
 	respondJSON(w, http.StatusOK, &awgActionResponse{
 		Success: true,
 		Message: fmt.Sprintf("Interface %q is up (mark %d)", req.Name, cfg.Mark),
@@ -185,8 +204,36 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("awg-quick", "down", req.Name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// If interface doesn't exist, that's OK
 		log.Printf("[awg] awg-quick down %s: %v\n%s", req.Name, err, string(output))
+	}
+
+	// Verify: poll awg show for up to 3s until the interface disappears.
+	// This prevents a race where the frontend refreshes the interface list
+	// before the kernel has fully torn down the interface.
+	gone := false
+	for i := 0; i < 6; i++ {
+		active := h.getActiveInterfaces()
+		if _, stillUp := active[req.Name]; !stillUp {
+			gone = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if !gone {
+		// awg-quick down failed or the interface is stubborn — report error
+		msg := fmt.Sprintf("failed to bring interface %q down after 3s", req.Name)
+		if err != nil {
+			msg = fmt.Sprintf("awg-quick down %q failed: %v\n%s", req.Name, err, strings.TrimSpace(string(output)))
+		}
+		respondError(w, http.StatusInternalServerError, msg)
+		return
+	}
+
+	// If the first attempt failed but the interface eventually went down,
+	// that's still a success — log it.
+	if err != nil {
+		log.Printf("[awg] awg-quick down %s eventually succeeded (initial: %v)", req.Name, err)
 	} else {
 		log.Printf("[awg] awg-quick down %s: %s", req.Name, strings.TrimSpace(string(output)))
 	}

@@ -138,6 +138,13 @@ async function startIface(name) {
   try {
     await awgApi.upInterface(name);
     await loadInterfaces();
+    // Retry a few times while waiting for the interface to come up
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const iface = interfaces.value.find(i => i.name === name);
+      if (iface && iface.active) break;
+      await new Promise(r => setTimeout(r, 600));
+      await loadInterfaces();
+    }
   } catch (e) {
     error.value = 'Ошибка запуска: ' + (e.message || e);
   } finally {
@@ -151,6 +158,17 @@ async function stopIface(name) {
   try {
     await awgApi.downInterface(name);
     await loadInterfaces();
+    // Retry a few times if the backend still reports the interface as active
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const iface = interfaces.value.find(i => i.name === name);
+      if (!iface || !iface.active) break;
+      await new Promise(r => setTimeout(r, 600));
+      await loadInterfaces();
+    }
+    const stillActive = interfaces.value.some(i => i.name === name && i.active);
+    if (stillActive) {
+      error.value = 'Интерфейс не остановился. Попробуйте ещё раз.';
+    }
   } catch (e) {
     error.value = 'Ошибка остановки: ' + (e.message || e);
   } finally {
