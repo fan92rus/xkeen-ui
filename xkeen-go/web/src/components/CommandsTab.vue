@@ -176,6 +176,9 @@ function isLoading(command) { return executingCommand.value === command; }
 
 <style scoped>
 .commands-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 16px;
 }
 </style>
