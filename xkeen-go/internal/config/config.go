@@ -133,6 +133,12 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	// Migration: ensure config directories are in allowed_roots.
+	// Users upgrading from a version before these directories existed
+	// may have an old allowed_roots list that omits them.
+	config.AllowedRoots = ensureRoot(config.AllowedRoots, config.AWGConfigDir)
+	config.AllowedRoots = ensureRoot(config.AllowedRoots, config.MihomoConfigDir)
+
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
@@ -221,6 +227,21 @@ func (c *Config) Validate() error {
 }
 
 // IsPathAllowed checks if a given path is within the allowed roots.
+// ensureRoot ensures dir is present in roots. If dir is empty or already
+// present, roots is returned unchanged. Otherwise dir is appended.
+func ensureRoot(roots []string, dir string) []string {
+	if dir == "" {
+		return roots
+	}
+	cleaned := filepath.Clean(dir)
+	for _, r := range roots {
+		if filepath.Clean(r) == cleaned {
+			return roots
+		}
+	}
+	return append(roots, dir)
+}
+
 func (c *Config) IsPathAllowed(path string) bool {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
