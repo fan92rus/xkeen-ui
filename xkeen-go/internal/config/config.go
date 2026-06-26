@@ -32,6 +32,12 @@ type Config struct {
 	// AWGConfigDir is the directory containing AmneziaWG config files.
 	AWGConfigDir string `json:"awg_config_dir"`
 
+	// AWGLanIface is the LAN interface for AWG server firewall rules (empty = auto-detect).
+	AWGLanIface string `json:"awg_lan_iface"`
+
+	// AWGWanIface is the WAN interface for AWG server firewall rules (empty = auto-detect).
+	AWGWanIface string `json:"awg_wan_iface"`
+
 	// MetricsPort is the port for Xray metrics endpoint (0 = disabled).
 	MetricsPort int `json:"metrics_port"`
 

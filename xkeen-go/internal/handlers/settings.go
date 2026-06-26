@@ -357,6 +357,67 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// AWGInterfaceResponse holds AWG LAN/WAN interface settings.
+type AWGInterfaceResponse struct {
+	Ok       string `json:"ok"`
+	LanIface string `json:"lan_iface"`
+	WanIface string `json:"wan_iface"`
+	Error    string `json:"error,omitempty"`
+}
+
+// GetAWGInterfaces returns the configured AWG LAN/WAN interfaces (empty = auto-detect).
+// GET /api/settings/awg-interfaces
+func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
+		Ok:       "ok",
+		LanIface: h.cfg.AWGLanIface,
+		WanIface: h.cfg.AWGWanIface,
+	})
+}
+
+// UpdateAWGInterfaces updates the AWG LAN/WAN interfaces in config.json.
+// PUT /api/settings/awg-interfaces
+func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		LanIface string `json:"lan_iface"`
+		WanIface string `json:"wan_iface"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid request"})
+		return
+	}
+
+	// Basic validation: interface names are alphanumeric + optional digits/hyphens
+	validateIface := func(s string) bool {
+		if s == "" {
+			return true // empty = auto-detect
+		}
+		for _, c := range s {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+				return false
+			}
+		}
+		return len(s) <= 15
+	}
+	if !validateIface(req.LanIface) || !validateIface(req.WanIface) {
+		respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid interface name"})
+		return
+	}
+
+	h.cfg.AWGLanIface = req.LanIface
+	h.cfg.AWGWanIface = req.WanIface
+	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
+		Ok:       "ok",
+		LanIface: req.LanIface,
+		WanIface: req.WanIface,
+	})
+}
+
 // RegisterSettingsRoutes registers settings-related routes.
 func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/xray/settings", handler.GetXraySettings).Methods("GET")
@@ -364,4 +425,6 @@ func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/xray/settings/backups", handler.ListBackupsForLogConfig).Methods("GET")
 	r.HandleFunc("/settings/metrics", handler.GetMetricsPort).Methods("GET")
 	r.HandleFunc("/settings/metrics", handler.UpdateMetricsPort).Methods("PUT")
+	r.HandleFunc("/settings/awg-interfaces", handler.GetAWGInterfaces).Methods("GET")
+	r.HandleFunc("/settings/awg-interfaces", handler.UpdateAWGInterfaces).Methods("PUT")
 }

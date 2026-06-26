@@ -35,3 +35,21 @@ export async function uploadConfig(file) {
     }
     return res.json();
 }
+
+// --- Peer management (server configs only) ---
+
+export async function listPeers(name) {
+    const res = await api.get('/api/awg/peers/' + encodeURIComponent(name));
+    return res;
+}
+
+export async function addPeer(name, label) {
+    return api.post('/api/awg/peers/' + encodeURIComponent(name), { label });
+}
+
+export async function deletePeer(name, key, ip) {
+    let qs = '';
+    if (key) qs = '?key=' + encodeURIComponent(key);
+    else if (ip) qs = '?ip=' + encodeURIComponent(ip);
+    return api.del('/api/awg/peers/' + encodeURIComponent(name) + qs);
+}

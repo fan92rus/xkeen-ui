@@ -145,7 +145,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	s.subscriptionHandler.SetRestartFn(func() { s.serviceHandler.RestartService() })
 
 	// AWG handler
-	s.awgHandler = handlers.NewAWGHandler(subStore, cfg.AWGConfigDir)
+	s.awgHandler = handlers.NewAWGHandler(subStore, cfg.AWGConfigDir, cfg)
 
 	// Helper: build tag→remarks from current proxy cache
 	buildProxyNames := func() map[string]string {

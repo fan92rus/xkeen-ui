@@ -4,12 +4,50 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
 
 // AWGBaseMark is the starting fwmark number for AWG interfaces.
 const AWGBaseMark = 100
+
+// AWGMeta is the sidecar metadata file (.awg-meta) stored alongside each .conf.
+// It allows overriding the auto-detected role and declaring the preset.
+type AWGMeta struct {
+	RoleOverride AWGRole `json:"role_override"` // "auto" (default), "server", "client"
+	Preset       string   `json:"preset"`        // "full-tunnel" (only preset for now)
+}
+
+// defaultAWGMeta returns the default metadata (auto-detect role).
+func defaultAWGMeta() AWGMeta {
+	return AWGMeta{RoleOverride: AWGRoleAuto}
+}
+
+// readAWGMeta reads the sidecar .awg-meta file for a config.
+// Returns default meta if the file doesn't exist.
+func readAWGMeta(awgDir, name string) AWGMeta {
+	metaPath := filepath.Join(awgDir, name+".conf.awg-meta")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return defaultAWGMeta()
+	}
+	var meta AWGMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return defaultAWGMeta()
+	}
+	return meta
+}
+
+// WriteAWGMeta writes the sidecar .awg-meta file for a config.
+func WriteAWGMeta(awgDir, name string, meta AWGMeta) error {
+	metaPath := filepath.Join(awgDir, name+".conf.awg-meta")
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath, data, 0600)
+}
 
 // ScanAWGConfigs scans awgDir for *.conf files and returns the list of
 // discovered config names. Already-tracked configs retain their marks;
@@ -59,14 +97,21 @@ func (s *Store) ScanAWGConfigs(awgDir string) ([]AWGConfig, error) {
 			}
 		}
 
+		// Determine role: sidecar override → auto-detect from conf content
+		role := detectRole(awgDir, name)
+
 		if existing != nil {
-			result = append(result, *existing)
+			result = append(result, AWGConfig{
+				Name: name,
+				Mark: existing.Mark,
+				Role: role,
+			})
 			if existing.Mark >= nextMark {
 				nextMark = existing.Mark + 1
 			}
 		} else {
 			// New config — assign next available mark
-			cfg := AWGConfig{Name: name, Mark: nextMark}
+			cfg := AWGConfig{Name: name, Mark: nextMark, Role: role}
 			result = append(result, cfg)
 			nextMark++
 		}
@@ -79,6 +124,21 @@ func (s *Store) ScanAWGConfigs(awgDir string) ([]AWGConfig, error) {
 	}
 
 	return result, nil
+}
+
+// detectRole determines the AWG role for a config by checking the sidecar
+// .awg-meta override first, then auto-detecting from the .conf content.
+func detectRole(awgDir, name string) AWGRole {
+	meta := readAWGMeta(awgDir, name)
+	if meta.RoleOverride == AWGRoleServer || meta.RoleOverride == AWGRoleClient {
+		return meta.RoleOverride
+	}
+	// Auto-detect from conf content
+	conf, err := ParseAWGConf(filepath.Join(awgDir, name+".conf"))
+	if err != nil {
+		return AWGRoleClient // safe default
+	}
+	return DetectAWGRole(conf)
 }
 
 // GenerateAWGProxies creates ProxyEntry objects from AWG configs.

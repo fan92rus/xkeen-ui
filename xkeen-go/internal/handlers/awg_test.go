@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/fan92rus/xkeen-ui/internal/config"
 	"github.com/fan92rus/xkeen-ui/internal/subscription"
 )
 
@@ -23,12 +24,14 @@ func newTestAWGHandler(t *testing.T) (*AWGHandler, *mux.Router, string) {
 	awgDir := filepath.Join(tmpDir, "awg")
 	os.MkdirAll(awgDir, 0755)
 
+	cfg := &config.Config{AWGConfigDir: awgDir}
+
 	store, err := subscription.NewStore(storePath)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
-	handler := NewAWGHandler(store, awgDir)
+	handler := NewAWGHandler(store, awgDir, cfg)
 	r := mux.NewRouter()
 	RegisterAWGRoutes(r, handler)
 

@@ -38,7 +38,8 @@
           </button>
         </div>
         <p class="awg-hint">
-          Файл должен содержать секции <code>[Interface]</code> и <code>[Peer]</code>
+          Файл должен содержать секции <code>[Interface]</code> и <code>[Peer]</code>.
+          Роль (сервер/клиент) определяется автоматически.
         </p>
       </div>
     </div>
@@ -47,7 +48,11 @@
     <div v-for="iface in interfaces" :key="iface.name" class="awg-card">
       <div class="awg-card-header awg-card-header-row">
         <div class="awg-card-title-row">
+          <span class="awg-role-badge" :class="'awg-role-' + iface.role" :title="iface.role === 'server' ? 'Сервер (входящий VPN)' : 'Клиент (исходящий туннель)'">
+            {{ iface.role === 'server' ? '🖥️' : '🔌' }}
+          </span>
           <h3 class="awg-card-title awg-card-title-iface">{{ iface.name }}</h3>
+          <span class="awg-role-text">{{ iface.role === 'server' ? 'сервер' : 'клиент' }}</span>
           <span v-if="iface.active" class="awg-status awg-status-active">Активен</span>
           <span v-else class="awg-status awg-status-inactive">Остановлен</span>
         </div>
@@ -61,7 +66,8 @@
         </div>
       </div>
       <div class="awg-card-body">
-        <div class="awg-meta-grid">
+        <!-- Client meta -->
+        <div v-if="iface.role !== 'server'" class="awg-meta-grid">
           <div class="awg-meta-item">
             <span class="awg-meta-label">Mark</span>
             <code class="awg-meta-value">fwmark {{ iface.mark }}</code>
@@ -75,8 +81,88 @@
             <code class="awg-meta-value awg-meta-path">{{ iface.conf_path }}</code>
           </div>
         </div>
-        <div v-if="iface.active" class="awg-hint awg-route-hint">
+        <div v-if="iface.role !== 'server' && iface.active" class="awg-hint awg-route-hint">
           Xray → mark {{ iface.mark }} → table {{ iface.mark }} → dev {{ iface.name }}
+        </div>
+
+        <!-- Server meta + peers -->
+        <div v-if="iface.role === 'server'" class="awg-server-body">
+          <div class="awg-meta-grid">
+            <div class="awg-meta-item" v-if="iface.address">
+              <span class="awg-meta-label">Address</span>
+              <code class="awg-meta-value">{{ iface.address }}</code>
+            </div>
+            <div class="awg-meta-item">
+              <span class="awg-meta-label">Конфиг</span>
+              <code class="awg-meta-value awg-meta-path">{{ iface.conf_path }}</code>
+            </div>
+          </div>
+          <div v-if="iface.active" class="awg-hint awg-firewall-hint">
+            🔒 Full-tunnel firewall: INPUT + FORWARD + NAT MASQUERADE (восстанавливается watchdog)
+          </div>
+
+          <!-- Peers section -->
+          <div class="awg-peers-section">
+            <div class="awg-peers-header">
+              <span class="awg-peers-title">Клиенты (peers)</span>
+              <button class="btn btn-primary btn-sm" @click="showAddPeer(iface.name)" :disabled="actionLoading">
+                + Добавить
+              </button>
+            </div>
+
+            <div v-if="peerLoading[iface.name]" class="awg-peers-loading">Загрузка…</div>
+            <div v-else-if="!peers[iface.name] || peers[iface.name].length === 0" class="awg-peers-empty">
+              Нет клиентов. Добавьте, чтобы сгенерировать конфиг.
+            </div>
+            <div v-else class="awg-peer-list">
+              <div v-for="peer in peers[iface.name]" :key="peer.public_key" class="awg-peer-item">
+                <div class="awg-peer-info">
+                  <code class="awg-peer-ip">{{ peer.ip }}</code>
+                  <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
+                  <span v-if="peer.label" class="awg-peer-label">{{ peer.label }}</span>
+                </div>
+                <button class="btn btn-danger btn-sm" @click="removePeer(iface.name, peer)"
+                        :disabled="actionLoading">Удалить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Peer Dialog -->
+    <div v-if="addPeerDialog.visible" class="awg-modal-overlay" @click.self="closeAddPeer">
+      <div class="awg-modal">
+        <div class="awg-modal-header">
+          <h3>Добавить клиента — {{ addPeerDialog.serverName }}</h3>
+          <button class="banner-close" @click="closeAddPeer">✕</button>
+        </div>
+        <div class="awg-modal-body">
+          <div v-if="!addPeerDialog.result">
+            <label class="awg-modal-label">Название (необязательно)</label>
+            <input v-model="addPeerDialog.label" type="text" class="awg-modal-input"
+                   placeholder="например: phone-client" @keyup.enter="doAddPeer" />
+            <div class="awg-modal-actions">
+              <button class="btn" @click="closeAddPeer">Отмена</button>
+              <button class="btn btn-primary" @click="doAddPeer" :disabled="addPeerDialog.loading">
+                {{ addPeerDialog.loading ? 'Генерация…' : 'Сгенерировать' }}
+              </button>
+            </div>
+          </div>
+          <div v-else class="awg-peer-result">
+            <p class="awg-peer-result-info">
+              ✅ Клиент <code>{{ addPeerDialog.result.client_ip }}</code> добавлен.
+              Конфиг ниже для импорта в приложение AmneziaWG:
+            </p>
+            <div class="awg-peer-config-wrapper">
+              <pre class="awg-peer-config">{{ addPeerDialog.result.client_config }}</pre>
+              <button class="awg-copy-btn" @click="copyConfig">{{ copied ? '✓' : '📋' }}</button>
+            </div>
+            <div class="awg-modal-actions">
+              <button class="btn" @click="downloadConfig">⬇ Скачать .conf</button>
+              <button class="btn btn-primary" @click="closeAddPeer">Готово</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -84,8 +170,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import * as awgApi from '../services/awg.js';
+import { log } from '../utils/logger.js';
 
 const interfaces = ref([]);
 const loading = ref(false);
@@ -96,6 +183,20 @@ const fileInput = ref(null);
 const selectedFile = ref(null);
 const uploading = ref(false);
 
+// Peer state
+const peers = reactive({}); // { serverName: [peer, ...] }
+const peerLoading = reactive({});
+
+// Add peer dialog
+const addPeerDialog = reactive({
+  visible: false,
+  serverName: '',
+  label: '',
+  loading: false,
+  result: null,
+});
+const copied = ref(false);
+
 onMounted(() => {
   loadInterfaces();
 });
@@ -105,10 +206,29 @@ async function loadInterfaces() {
   error.value = '';
   try {
     interfaces.value = await awgApi.listInterfaces();
+    // Load peers for all server configs
+    for (const iface of interfaces.value) {
+      if (iface.role === 'server') {
+        loadPeers(iface.name);
+      }
+    }
   } catch (e) {
     error.value = 'Не удалось загрузить интерфейсы: ' + (e.message || e);
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadPeers(serverName) {
+  peerLoading[serverName] = true;
+  try {
+    const res = await awgApi.listPeers(serverName);
+    peers[serverName] = res.peers || [];
+  } catch (e) {
+    log('Failed to load peers for', serverName, e);
+    peers[serverName] = [];
+  } finally {
+    peerLoading[serverName] = false;
   }
 }
 
@@ -138,7 +258,6 @@ async function startIface(name) {
   try {
     await awgApi.upInterface(name);
     await loadInterfaces();
-    // Retry a few times while waiting for the interface to come up
     for (let attempt = 0; attempt < 5; attempt++) {
       const iface = interfaces.value.find(i => i.name === name);
       if (iface && iface.active) break;
@@ -158,7 +277,6 @@ async function stopIface(name) {
   try {
     await awgApi.downInterface(name);
     await loadInterfaces();
-    // Retry a few times if the backend still reports the interface as active
     for (let attempt = 0; attempt < 5; attempt++) {
       const iface = interfaces.value.find(i => i.name === name);
       if (!iface || !iface.active) break;
@@ -188,6 +306,77 @@ async function deleteIface(name) {
   } finally {
     actionLoading.value = false;
   }
+}
+
+// --- Peer management ---
+
+function showAddPeer(serverName) {
+  addPeerDialog.visible = true;
+  addPeerDialog.serverName = serverName;
+  addPeerDialog.label = '';
+  addPeerDialog.loading = false;
+  addPeerDialog.result = null;
+  copied.value = false;
+}
+
+function closeAddPeer() {
+  addPeerDialog.visible = false;
+  addPeerDialog.result = null;
+}
+
+async function doAddPeer() {
+  addPeerDialog.loading = true;
+  try {
+    const res = await awgApi.addPeer(addPeerDialog.serverName, addPeerDialog.label);
+    addPeerDialog.result = res;
+    await loadPeers(addPeerDialog.serverName);
+  } catch (e) {
+    error.value = 'Ошибка добавления клиента: ' + (e.message || e);
+    closeAddPeer();
+  } finally {
+    addPeerDialog.loading = false;
+  }
+}
+
+async function removePeer(serverName, peer) {
+  if (!confirm(`Удалить клиента ${peer.ip}?`)) return;
+  actionLoading.value = true;
+  try {
+    await awgApi.deletePeer(serverName, peer.public_key, peer.ip);
+    await loadPeers(serverName);
+  } catch (e) {
+    error.value = 'Ошибка удаления клиента: ' + (e.message || e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+function shortenKey(key) {
+  if (!key || key.length <= 12) return key;
+  return key.slice(0, 8) + '…' + key.slice(-4);
+}
+
+async function copyConfig() {
+  if (!addPeerDialog.result?.client_config) return;
+  try {
+    await navigator.clipboard.writeText(addPeerDialog.result.client_config);
+    copied.value = true;
+    setTimeout(() => { copied.value = false; }, 2000);
+  } catch {
+    // Fallback: select the pre element
+  }
+}
+
+function downloadConfig() {
+  if (!addPeerDialog.result?.client_config) return;
+  const label = addPeerDialog.label || addPeerDialog.result.client_ip || 'client';
+  const blob = new Blob([addPeerDialog.result.client_config], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${label}.conf`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 </script>
 
@@ -325,6 +514,20 @@ async function deleteIface(name) {
   padding: 14px;
 }
 
+/* ── Role badges ──────────────────────────────────────────────── */
+.awg-role-badge {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.awg-role-text {
+  font-size: var(--text-small);
+  color: var(--text-gray);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 500;
+}
+
 /* ── Status badges ─────────────────────────────────────────────── */
 .awg-status {
   display: inline-flex;
@@ -426,7 +629,8 @@ async function deleteIface(name) {
   color: var(--primary-color);
 }
 
-.awg-route-hint {
+.awg-route-hint,
+.awg-firewall-hint {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--menu-border);
@@ -480,6 +684,206 @@ async function deleteIface(name) {
   white-space: nowrap;
 }
 
+/* ── Server body: peers ──────────────────────────────────────── */
+.awg-server-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.awg-peers-section {
+  border-top: 1px solid var(--menu-border);
+  padding-top: 12px;
+}
+
+.awg-peers-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.awg-peers-title {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+.awg-peers-loading,
+.awg-peers-empty {
+  font-size: var(--text-small);
+  color: var(--help-text);
+  padding: 8px 0;
+}
+
+.awg-peer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.awg-peer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--menu-active-item);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--stroke);
+}
+
+.awg-peer-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.awg-peer-ip {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--primary-text);
+  white-space: nowrap;
+}
+
+.awg-peer-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-gray);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.awg-peer-label {
+  font-size: var(--text-small);
+  color: var(--primary-color);
+  white-space: nowrap;
+}
+
+/* ── Modal (Add Peer) ─────────────────────────────────────────── */
+.awg-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.awg-modal {
+  background: var(--menu-background);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius);
+  box-shadow: var(--box-shadow-2);
+  max-width: 560px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.awg-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--menu-border);
+}
+
+.awg-modal-header h3 {
+  font-size: var(--text-h4);
+  font-weight: 700;
+  color: var(--primary-text);
+  margin: 0;
+}
+
+.awg-modal-body {
+  padding: 16px;
+}
+
+.awg-modal-label {
+  display: block;
+  font-size: var(--text-small);
+  color: var(--help-text);
+  margin-bottom: 6px;
+}
+
+.awg-modal-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--background);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  color: var(--primary-text);
+  font-size: var(--text-body);
+  margin-bottom: 16px;
+}
+
+.awg-modal-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.awg-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.awg-peer-result-info {
+  font-size: var(--text-body);
+  color: var(--primary-text);
+  margin-bottom: 12px;
+}
+
+.awg-peer-result-info code {
+  font-family: var(--font-mono);
+  background: var(--menu-active-item);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.awg-peer-config-wrapper {
+  position: relative;
+  background: var(--background);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.awg-peer-config {
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--primary-text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.awg-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--menu-background);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.awg-copy-btn:hover {
+  border-color: var(--primary-color);
+}
+
 /* ── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .awg-container {
@@ -504,6 +908,11 @@ async function deleteIface(name) {
   .awg-meta-grid {
     flex-direction: column;
     gap: 8px;
+  }
+
+  .awg-peer-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

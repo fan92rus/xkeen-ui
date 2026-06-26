@@ -93,10 +93,26 @@ const MaxProfiles = 10
 // ReservedAWGSubscriptionID is the ID for the built-in AWG subscription.
 const ReservedAWGSubscriptionID = "__awg__"
 
-// AWGConfig tracks an AWG interface configuration for mark persistence.
+// AWGRole classifies an AWG config by its function.
+type AWGRole string
+
+const (
+	// AWGRoleAuto means detect from config content.
+	AWGRoleAuto AWGRole = "auto"
+	// AWGRoleClient is an outbound tunnel (WARP, VPN provider).
+	// Uses fwmark routing for Xray integration.
+	AWGRoleClient AWGRole = "client"
+	// AWGRoleServer is an inbound VPN server (home access).
+	// Uses iptables INPUT/FORWARD/NAT + route for client access.
+	AWGRoleServer AWGRole = "server"
+)
+
+// AWGConfig tracks an AWG interface configuration with mark persistence
+// and role classification.
 type AWGConfig struct {
-	Name string `json:"name"` // config name (filename without .conf)
-	Mark int    `json:"mark"` // fwmark for routing (100+)
+	Name string   `json:"name"` // config name (filename without .conf)
+	Mark int      `json:"mark"` // fwmark for routing (100+)
+	Role AWGRole  `json:"role"` // auto-detected or overridden role
 }
 
 // SubscriptionConfig is the persisted subscription configuration.

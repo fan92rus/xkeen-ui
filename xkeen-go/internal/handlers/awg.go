@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/fan92rus/xkeen-ui/internal/config"
 	"github.com/fan92rus/xkeen-ui/internal/subscription"
 )
 
@@ -21,13 +22,15 @@ import (
 type AWGHandler struct {
 	store   *subscription.Store
 	awgDir  string
+	cfg     *config.Config // for lan/wan interface settings
 }
 
 // NewAWGHandler creates a new AWGHandler.
-func NewAWGHandler(store *subscription.Store, awgDir string) *AWGHandler {
+func NewAWGHandler(store *subscription.Store, awgDir string, cfg *config.Config) *AWGHandler {
 	return &AWGHandler{
 		store:  store,
 		awgDir: awgDir,
+		cfg:    cfg,
 	}
 }
 
@@ -37,6 +40,7 @@ type awgInterface struct {
 	Name     string `json:"name"`
 	ConfPath string `json:"conf_path"`
 	Mark     int    `json:"mark"`
+	Role     string `json:"role"` // "client" or "server"
 	Active   bool   `json:"active"`
 	Address  string `json:"address,omitempty"`
 }
@@ -78,6 +82,7 @@ func (h *AWGHandler) ListInterfaces(w http.ResponseWriter, r *http.Request) {
 			Name:     c.Name,
 			ConfPath: confPath,
 			Mark:     c.Mark,
+			Role:     string(c.Role),
 			Active:   active,
 		}
 		if active {
@@ -127,29 +132,14 @@ func (h *AWGHandler) UpInterface(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[awg] awg-quick up %s: %s", req.Name, strings.TrimSpace(string(output)))
 
-	// Step 2: ip rule + ip route for fwmark routing
-	priority := 1000 + cfg.Mark
-
-	// Add routing rule if not already present
-	checkCmd := exec.Command("ip", "rule", "show")
-	checkOut, _ := checkCmd.Output()
-	if !strings.Contains(string(checkOut), fmt.Sprintf("fwmark %d", cfg.Mark)) {
-		ruleCmd := exec.Command("ip", "rule", "add", "fwmark", fmt.Sprintf("%d", cfg.Mark),
-			"table", fmt.Sprintf("%d", cfg.Mark), "priority", fmt.Sprintf("%d", priority))
-		if out, err := ruleCmd.CombinedOutput(); err != nil {
-			log.Printf("[awg] warning: ip rule add failed: %v\n%s", err, string(out))
-		}
-	}
-
-	// Add routing table entry if not already present
-	routeCmd := exec.Command("ip", "route", "show", "table", fmt.Sprintf("%d", cfg.Mark))
-	routeOut, _ := routeCmd.Output()
-	if !strings.Contains(string(routeOut), "default") {
-		addRoute := exec.Command("ip", "route", "add", "default", "dev", req.Name,
-			"table", fmt.Sprintf("%d", cfg.Mark))
-		if out, err := addRoute.CombinedOutput(); err != nil {
-			log.Printf("[awg] warning: ip route add failed: %v\n%s", err, string(out))
-		}
+	// Step 2: role-based post-up hooks
+	if cfg.Role == subscription.AWGRoleServer {
+		// Server: apply full-tunnel firewall preset (iptables + route)
+		params := h.getServerFirewallParams(req.Name)
+		ApplyFullTunnelFirewall(params)
+	} else {
+		// Client: ip rule + ip route for fwmark routing (Xray integration)
+		h.applyClientFwmarkRouting(req.Name, cfg.Mark)
 	}
 
 	// Verify: poll awg show for up to 3s until the interface appears.
@@ -189,15 +179,17 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove ip rule and ip route first (best-effort)
+	// Role-based pre-down hooks: remove routing/firewall BEFORE awg-quick down
 	cfg, ok := h.store.GetAWGConfig(req.Name)
 	if ok {
-		// Remove routing table entry
-		exec.Command("ip", "route", "del", "default", "dev", req.Name,
-			"table", fmt.Sprintf("%d", cfg.Mark)).Run()
-
-		// Remove routing rule
-		exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", cfg.Mark)).Run()
+		if cfg.Role == subscription.AWGRoleServer {
+			// Server: remove full-tunnel firewall
+			params := h.getServerFirewallParams(req.Name)
+			RemoveFullTunnelFirewall(params)
+		} else {
+			// Client: remove fwmark routing
+			h.removeClientFwmarkRouting(req.Name, cfg.Mark)
+		}
 	}
 
 	// awg-quick down — must use the full config path, same as UpInterface.
@@ -462,4 +454,12 @@ func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {
 	r.HandleFunc("/awg/down", handler.DownInterface).Methods("POST")
 	r.HandleFunc("/awg/config/{name}", handler.DeleteConfig).Methods("DELETE")
 	r.HandleFunc("/awg/upload", handler.UploadConfig).Methods("POST")
+
+	// Peer management (server configs only)
+	r.HandleFunc("/awg/peers/{name}", handler.ListPeers).Methods("GET")
+	r.HandleFunc("/awg/peers/{name}", handler.AddPeer).Methods("POST")
+	r.HandleFunc("/awg/peers/{name}", handler.DeletePeer).Methods("DELETE")
+
+	// Firewall restore (watchdog)
+	r.HandleFunc("/awg/restore-firewall", handler.RestoreFirewall).Methods("POST")
 }

@@ -1,6 +1,6 @@
 // services/xkeen.js - XKeen service control
 
-import { get, post, request } from './api.js';
+import { get, post, request, put } from './api.js';
 
 export async function start() {
     return post('/api/xkeen/start', {});
@@ -41,4 +41,14 @@ export async function getCommands() {
 export async function refreshCommands() {
     const data = await post('/api/xkeen/commands/refresh', {});
     return { commands: data.commands || [], error: data.error || '' };
+}
+
+// --- AWG interface settings ---
+
+export async function getAWGInterfaces() {
+    return get('/api/settings/awg-interfaces');
+}
+
+export async function updateAWGInterfaces(lanIface, wanIface) {
+    return put('/api/settings/awg-interfaces', { lan_iface: lanIface, wan_iface: wanIface });
 }
