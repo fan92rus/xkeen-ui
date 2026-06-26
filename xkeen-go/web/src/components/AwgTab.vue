@@ -139,15 +139,17 @@
               <div v-if="peerLoading[iface.name]" class="awg-peers-status">Загрузка…</div>
               <div v-else-if="!(peers[iface.name] || []).length" class="awg-peers-status">Нет клиентов. Добавьте, чтобы создать конфиг для подключения.</div>
               <div v-else class="awg-peer-list">
-                <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key" class="awg-peer-row">
+                <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key"
+                     class="awg-peer-row" :class="{ 'awg-peer-row-clickable': peer.has_client_config }"
+                     @click="peer.has_client_config && showPeerQR(iface.name, peer)">
                   <div class="awg-peer-info">
                     <span class="awg-peer-name" :class="{ 'awg-peer-name-fallback': !peer.label }">{{ peer.label || 'Без названия' }}</span>
                     <span class="awg-peer-ip">{{ peer.ip }}</span>
                     <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
+                    <span v-if="peer.has_client_config" class="awg-peer-qr-hint" title="Нажмите, чтобы показать QR">📱</span>
                   </div>
                   <div class="awg-peer-actions">
-                    <button v-if="peer.has_client_config" class="btn btn-sm" @click="showPeerQR(iface.name, peer)" :disabled="busy" title="Показать QR-код">📱</button>
-                    <button class="btn btn-danger btn-sm" @click="removePeer(iface.name, peer)" :disabled="busy" title="Удалить">✕</button>
+                    <button class="btn btn-danger btn-sm" @click.stop="removePeer(iface.name, peer)" :disabled="busy" title="Удалить">✕</button>
                   </div>
                 </div>
               </div>
@@ -937,6 +939,22 @@ function downloadConfig() {
   background: var(--menu-active-item);
   border-radius: var(--radius-sm);
   border: 1px solid var(--stroke);
+}
+
+.awg-peer-row-clickable {
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.awg-peer-row-clickable:hover {
+  border-color: var(--primary-color);
+  background: var(--menu-background);
+}
+
+.awg-peer-qr-hint {
+  margin-left: auto;
+  font-size: 14px;
+  opacity: 0.5;
 }
 
 .awg-peer-info {
