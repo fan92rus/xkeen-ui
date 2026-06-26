@@ -129,6 +129,30 @@
             </div>
           </div>
           <div class="awg-card-body">
+            <!-- Obfuscation profile -->
+            <div v-if="obfuscation[iface.name]" class="awg-obfuscation">
+              <div class="awg-obfuscation-head">
+                <span class="awg-obfuscation-title">🛡 Профиль обфускации</span>
+                <span v-if="!obfuscation[iface.name].loading" class="awg-obfuscation-current">Текущий: <strong>{{ obfuscationPresetName(iface.name) }}</strong></span>
+              </div>
+              <div v-if="obfuscation[iface.name].loading" class="awg-peers-status">Загрузка…</div>
+              <div v-else class="awg-obfuscation-presets">
+                <label v-for="p in obfuscation[iface.name].presets" :key="p.id"
+                       class="awg-obfuscation-option"
+                       :class="{ 'awg-obfuscation-active': obfuscation[iface.name].current === p.id }">
+                  <input type="radio" name="obf" :value="p.id"
+                         :checked="obfuscation[iface.name].current === p.id"
+                         :disabled="obfuscation[iface.name].applying"
+                         @change="applyObfuscationPreset(iface.name, p.id)" />
+                  <span class="awg-obfuscation-label">
+                    <span class="awg-obfuscation-name">{{ p.name }}</span>
+                    <span class="awg-obfuscation-desc">{{ p.description }}</span>
+                    <span v-if="p.warning" class="awg-obfuscation-warn">⚠ {{ p.warning }}</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
             <!-- Peers section -->
             <div class="awg-peers">
               <div class="awg-peers-head">
@@ -298,6 +322,9 @@ const qrDataUrl = ref('');
 // Existing peer viewer
 const peerView = reactive({ show: false, server: '', ip: '', loading: false, config: '', error: '' });
 
+// Obfuscation presets (per server interface)
+const obfuscation = reactive({}); // { [name]: { current, presets, loading, applying } }
+
 onMounted(() => {
   loadInterfaces();
   loadIfaceSettings();
@@ -311,7 +338,10 @@ async function loadInterfaces() {
   try {
     interfaces.value = await awgApi.listInterfaces();
     for (const iface of interfaces.value) {
-      if (iface.role === 'server') loadPeers(iface.name);
+      if (iface.role === 'server') {
+        loadPeers(iface.name);
+        loadObfuscation(iface.name);
+      }
     }
   } catch (e) {
     error.value = 'Не удалось загрузить: ' + (e.message || e);
@@ -354,6 +384,52 @@ async function loadPeers(name) {
     peers[name] = [];
   } finally {
     peerLoading[name] = false;
+  }
+}
+
+// ── Obfuscation presets ──
+
+function obfuscationPresetName(name) {
+  const o = obfuscation[name];
+  if (!o || o.loading) return '—';
+  if (o.current === 'custom') return 'Custom (вручную)';
+  if (o.current === 'unknown') return '?';
+  const p = (o.presets || []).find(x => x.id === o.current);
+  return p ? p.name : o.current;
+}
+
+async function loadObfuscation(name) {
+  obfuscation[name] = { current: '', presets: [], loading: true, applying: false };
+  try {
+    const d = await awgApi.getObfuscation(name);
+    obfuscation[name].current = d.current || 'unknown';
+    obfuscation[name].presets = d.presets || [];
+  } catch (e) {
+    log('loadObfuscation failed', name, e);
+  } finally {
+    obfuscation[name].loading = false;
+  }
+}
+
+async function applyObfuscationPreset(name, presetId) {
+  const preset = (obfuscation[name]?.presets || []).find(p => p.id === presetId);
+  const warn = preset?.warning ? `\n\n⚠ ${preset.warning}` : '';
+  const iface = interfaces.value.find(i => i.name === name);
+  const restartMsg = iface?.active ? '\n\nИнтерфейс будет перезапущен — клиенты на несколько секунд отключатся.' : '';
+  if (!confirm(`Применить профиль «${preset?.name || presetId}»?${warn}${restartMsg}`)) return;
+  obfuscation[name].applying = true;
+  try {
+    const res = await awgApi.applyObfuscation(name, presetId);
+    obfuscation[name].current = presetId;
+    if (res.warning) {
+      error.value = res.warning;
+    }
+    // Reload interfaces to reflect restart status
+    await loadInterfaces();
+  } catch (e) {
+    error.value = 'Ошибка применения профиля: ' + (e.message || e);
+  } finally {
+    obfuscation[name].applying = false;
   }
 }
 
@@ -917,6 +993,88 @@ function downloadConfig() {
   font-size: var(--text-body);
   font-weight: 600;
   color: var(--primary-text);
+}
+
+/* ── Obfuscation ── */
+
+.awg-obfuscation {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.awg-obfuscation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.awg-obfuscation-title {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+.awg-obfuscation-current {
+  font-size: var(--text-small);
+  color: var(--help-text);
+}
+
+.awg-obfuscation-current strong {
+  color: var(--primary-text);
+}
+
+.awg-obfuscation-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.awg-obfuscation-option {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.awg-obfuscation-option:hover {
+  border-color: var(--accent);
+}
+
+.awg-obfuscation-option.awg-obfuscation-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.awg-obfuscation-option input[type="radio"] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.awg-obfuscation-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.awg-obfuscation-name {
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+.awg-obfuscation-desc {
+  font-size: 12px;
+  color: var(--help-text);
+}
+
+.awg-obfuscation-warn {
+  font-size: 11px;
+  color: var(--warn, #e8a735);
 }
 
 .awg-peers-status {

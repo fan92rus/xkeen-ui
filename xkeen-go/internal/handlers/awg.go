@@ -477,4 +477,8 @@ func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {
 
 	// Firewall restore (watchdog)
 	r.HandleFunc("/awg/restore-firewall", handler.RestoreFirewall).Methods("POST")
+
+	// Obfuscation presets (server configs)
+	r.HandleFunc("/awg/obfuscation/{name}", handler.GetObfuscation).Methods("GET")
+	r.HandleFunc("/awg/obfuscation/{name}", handler.ApplyObfuscation).Methods("POST")
 }

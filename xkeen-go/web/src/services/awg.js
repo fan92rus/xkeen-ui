@@ -58,3 +58,13 @@ export async function deletePeer(name, peer) {
 export async function getPeerConfig(name, ip) {
     return api.get('/api/awg/peer-config/' + encodeURIComponent(name) + '?ip=' + encodeURIComponent(ip));
 }
+
+// --- Obfuscation presets (server configs) ---
+
+export async function getObfuscation(name) {
+    return api.get('/api/awg/obfuscation/' + encodeURIComponent(name));
+}
+
+export async function applyObfuscation(name, preset) {
+    return api.post('/api/awg/obfuscation/' + encodeURIComponent(name), { preset });
+}
