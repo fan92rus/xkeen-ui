@@ -140,13 +140,13 @@
               <div v-else-if="!(peers[iface.name] || []).length" class="awg-peers-status">Нет клиентов. Добавьте, чтобы создать конфиг для подключения.</div>
               <div v-else class="awg-peer-list">
                 <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key"
-                     class="awg-peer-row" :class="{ 'awg-peer-row-clickable': peer.has_client_config }"
-                     @click="peer.has_client_config && showPeerQR(iface.name, peer)">
+                     class="awg-peer-row awg-peer-row-clickable"
+                     @click="showPeerQR(iface.name, peer)">
                   <div class="awg-peer-info">
                     <span class="awg-peer-name" :class="{ 'awg-peer-name-fallback': !peer.label }">{{ peer.label || 'Без названия' }}</span>
                     <span class="awg-peer-ip">{{ peer.ip }}</span>
                     <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
-                    <span v-if="peer.has_client_config" class="awg-peer-qr-hint" title="Нажмите, чтобы показать QR">📱</span>
+                    <span class="awg-peer-qr-hint" :title="peer.has_client_config ? 'Нажмите, чтобы показать QR' : 'Конфиг не сохранён'">{{ peer.has_client_config ? '📱' : '🔒' }}</span>
                   </div>
                   <div class="awg-peer-actions">
                     <button class="btn btn-danger btn-sm" @click.stop="removePeer(iface.name, peer)" :disabled="busy" title="Удалить">✕</button>
@@ -955,6 +955,7 @@ function downloadConfig() {
   margin-left: auto;
   font-size: 14px;
   opacity: 0.5;
+  flex-shrink: 0;
 }
 
 .awg-peer-info {
