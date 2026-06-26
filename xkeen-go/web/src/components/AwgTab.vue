@@ -129,28 +129,19 @@
             </div>
           </div>
           <div class="awg-card-body">
-            <!-- Obfuscation profile -->
+            <!-- Obfuscation profile (compact) -->
             <div v-if="obfuscation[iface.name]" class="awg-obfuscation">
-              <div class="awg-obfuscation-head">
-                <span class="awg-obfuscation-title">🛡 Профиль обфускации</span>
-                <span v-if="!obfuscation[iface.name].loading" class="awg-obfuscation-current">Текущий: <strong>{{ obfuscationPresetName(iface.name) }}</strong></span>
-              </div>
-              <div v-if="obfuscation[iface.name].loading" class="awg-peers-status">Загрузка…</div>
-              <div v-else class="awg-obfuscation-presets">
-                <label v-for="p in obfuscation[iface.name].presets" :key="p.id"
-                       class="awg-obfuscation-option"
-                       :class="{ 'awg-obfuscation-active': obfuscation[iface.name].current === p.id }">
-                  <input type="radio" name="obf" :value="p.id"
-                         :checked="obfuscation[iface.name].current === p.id"
-                         :disabled="obfuscation[iface.name].applying"
-                         @change="applyObfuscationPreset(iface.name, p.id)" />
-                  <span class="awg-obfuscation-label">
-                    <span class="awg-obfuscation-name">{{ p.name }}</span>
-                    <span class="awg-obfuscation-desc">{{ p.description }}</span>
-                    <span v-if="p.warning" class="awg-obfuscation-warn">⚠ {{ p.warning }}</span>
-                  </span>
-                </label>
-              </div>
+              <span class="awg-obfuscation-label-text">🛡 Обфускация</span>
+              <span v-if="obfuscation[iface.name].loading" class="awg-obfuscation-hint">…</span>
+              <select v-else
+                      :value="obfuscation[iface.name].current"
+                      :disabled="obfuscation[iface.name].applying"
+                      @change="applyObfuscationPreset(iface.name, $event.target.value)"
+                      class="awg-obfuscation-select">
+                <option v-for="p in obfuscation[iface.name].presets" :key="p.id" :value="p.id">{{ p.name }}</option>
+                <option v-if="obfuscation[iface.name].current === 'custom' || obfuscation[iface.name].current === 'unknown'" :value="obfuscation[iface.name].current">{{ obfuscationPresetName(iface.name) }}</option>
+              </select>
+              <span v-if="currentObfWarning(iface.name)" class="awg-obfuscation-hint" :title="currentObfWarning(iface.name)">⚠ {{ currentObfWarning(iface.name) }}</span>
             </div>
 
             <!-- Peers section -->
@@ -396,6 +387,13 @@ function obfuscationPresetName(name) {
   if (o.current === 'unknown') return '?';
   const p = (o.presets || []).find(x => x.id === o.current);
   return p ? p.name : o.current;
+}
+
+function currentObfWarning(name) {
+  const o = obfuscation[name];
+  if (!o || o.loading) return '';
+  const p = (o.presets || []).find(x => x.id === o.current);
+  return p?.warning || '';
 }
 
 async function loadObfuscation(name) {
@@ -995,85 +993,40 @@ function downloadConfig() {
   color: var(--primary-text);
 }
 
-/* ── Obfuscation ── */
+/* ── Obfuscation (compact inline) ── */
 
 .awg-obfuscation {
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.awg-obfuscation-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
-.awg-obfuscation-title {
-  font-size: var(--text-body);
+.awg-obfuscation-label-text {
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--primary-text);
+  white-space: nowrap;
 }
 
-.awg-obfuscation-current {
+.awg-obfuscation-select {
   font-size: var(--text-small);
-  color: var(--help-text);
-}
-
-.awg-obfuscation-current strong {
-  color: var(--primary-text);
-}
-
-.awg-obfuscation-presets {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 8px;
-}
-
-.awg-obfuscation-option {
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
+  padding: 4px 8px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.awg-obfuscation-option:hover {
-  border-color: var(--accent);
-}
-
-.awg-obfuscation-option.awg-obfuscation-active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-.awg-obfuscation-option input[type="radio"] {
-  margin-top: 2px;
-  accent-color: var(--accent);
-}
-
-.awg-obfuscation-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.awg-obfuscation-name {
-  font-size: var(--text-small);
-  font-weight: 600;
+  border-radius: 6px;
+  background: var(--input-bg, var(--bg));
   color: var(--primary-text);
+  cursor: pointer;
 }
 
-.awg-obfuscation-desc {
+.awg-obfuscation-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.awg-obfuscation-hint {
   font-size: 12px;
-  color: var(--help-text);
-}
-
-.awg-obfuscation-warn {
-  font-size: 11px;
   color: var(--warn, #e8a735);
 }
 
