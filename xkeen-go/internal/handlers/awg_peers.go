@@ -172,12 +172,19 @@ func (h *AWGHandler) AddPeer(w http.ResponseWriter, r *http.Request) {
 	// Persist client config for later QR/download
 	h.saveClientConfig(name, ip, clientConf)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	// Sync running interface so new peer can connect immediately
+	synced, syncErr := h.syncInterface(name)
+	resp := map[string]interface{}{
 		"success":       true,
 		"public_key":    pubKey,
 		"client_ip":     ip,
 		"client_config": clientConf,
-	})
+		"synced":        synced,
+	}
+	if syncErr != nil {
+		resp["warning"] = "peer added but interface sync failed — restart the interface to apply: " + syncErr.Error()
+	}
+	respondJSON(w, http.StatusOK, resp)
 }
 
 // GetPeerConfig returns a previously stored client config for QR/download.
@@ -253,10 +260,57 @@ func (h *AWGHandler) DeletePeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[awg] removed peer from %s (key=%s ip=%s)", name, maskKey(pubKey), peerIP)
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+
+	// Sync running interface so deleted peer is disconnected immediately
+	synced, syncErr := h.syncInterface(name)
+	resp := map[string]interface{}{
 		"success": true,
 		"message": "peer removed",
-	})
+		"synced":  synced,
+	}
+	if syncErr != nil {
+		resp["warning"] = "peer removed but interface sync failed — restart the interface to apply: " + syncErr.Error()
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
+// ---------- Live interface sync ----------
+
+// syncInterface applies config changes to a running AWG interface without
+// dropping existing connections. Uses `awg syncconf` which atomically updates
+// the peer list (adds new peers, removes deleted ones) while preserving
+// handshakes/endpoints of unchanged peers.
+//
+// Returns (true, nil) if synced, (false, nil) if interface not running,
+// (false, err) if sync was attempted but failed.
+func (h *AWGHandler) syncInterface(name string) (bool, error) {
+	active := h.getActiveInterfaces()
+	if _, isUp := active[name]; !isUp {
+		return false, nil // interface not running — nothing to sync
+	}
+
+	confPath := filepath.Join(h.awgDir, name+".conf")
+	tmpFile := filepath.Join("/tmp", fmt.Sprintf(".awg-sync-%s", name))
+	defer os.Remove(tmpFile)
+
+	// Step 1: awg-quick strip converts awg-quick format → awg format
+	stripCmd := exec.Command("awg-quick", "strip", confPath)
+	stripped, err := stripCmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("awg-quick strip failed: %w", err)
+	}
+	if err := os.WriteFile(tmpFile, stripped, 0600); err != nil {
+		return false, fmt.Errorf("write temp config: %w", err)
+	}
+
+	// Step 2: awg syncconf applies changes to the running interface
+	syncCmd := exec.Command("awg", "syncconf", name, tmpFile)
+	if output, err := syncCmd.CombinedOutput(); err != nil {
+		return false, fmt.Errorf("awg syncconf failed: %w\n%s", err, output)
+	}
+
+	log.Printf("[awg] synced running interface %s after config change", name)
+	return true, nil
 }
 
 // ---------- Key generation ----------
