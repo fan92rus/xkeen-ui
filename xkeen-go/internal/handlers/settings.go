@@ -357,30 +357,33 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// AWGInterfaceResponse holds AWG LAN/WAN interface settings.
+// AWGInterfaceResponse holds AWG LAN/WAN interface and endpoint settings.
 type AWGInterfaceResponse struct {
 	Ok       string `json:"ok"`
 	LanIface string `json:"lan_iface"`
 	WanIface string `json:"wan_iface"`
+	Endpoint string `json:"endpoint"`
 	Error    string `json:"error,omitempty"`
 }
 
-// GetAWGInterfaces returns the configured AWG LAN/WAN interfaces (empty = auto-detect).
+// GetAWGInterfaces returns the configured AWG LAN/WAN interfaces and endpoint.
 // GET /api/settings/awg-interfaces
 func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
 		Ok:       "ok",
 		LanIface: h.cfg.AWGLanIface,
 		WanIface: h.cfg.AWGWanIface,
+		Endpoint: h.cfg.AWGEndpoint,
 	})
 }
 
-// UpdateAWGInterfaces updates the AWG LAN/WAN interfaces in config.json.
+// UpdateAWGInterfaces updates the AWG LAN/WAN interfaces and endpoint in config.json.
 // PUT /api/settings/awg-interfaces
 func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		LanIface string `json:"lan_iface"`
 		WanIface string `json:"wan_iface"`
+		Endpoint string `json:"endpoint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid request"})
@@ -404,8 +407,24 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Validate endpoint: empty (auto), IP, or domain name
+	if req.Endpoint != "" {
+		if len(req.Endpoint) > 100 {
+			respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "endpoint too long"})
+			return
+		}
+		for _, c := range req.Endpoint {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+				c == '.' || c == '-' || c == ':' || c == '[' || c == ']') {
+				respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid endpoint (use IP or domain)"})
+				return
+			}
+		}
+	}
+
 	h.cfg.AWGLanIface = req.LanIface
 	h.cfg.AWGWanIface = req.WanIface
+	h.cfg.AWGEndpoint = req.Endpoint
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + err.Error()})
 		return
@@ -415,6 +434,7 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		Ok:       "ok",
 		LanIface: req.LanIface,
 		WanIface: req.WanIface,
+		Endpoint: req.Endpoint,
 	})
 }
 

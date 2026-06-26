@@ -49,6 +49,6 @@ export async function getAWGInterfaces() {
     return get('/api/settings/awg-interfaces');
 }
 
-export async function updateAWGInterfaces(lanIface, wanIface) {
-    return put('/api/settings/awg-interfaces', { lan_iface: lanIface, wan_iface: wanIface });
+export async function updateAWGInterfaces(lanIface, wanIface, endpoint) {
+    return put('/api/settings/awg-interfaces', { lan_iface: lanIface, wan_iface: wanIface, endpoint });
 }

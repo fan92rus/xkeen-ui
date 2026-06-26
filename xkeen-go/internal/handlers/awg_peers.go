@@ -551,16 +551,20 @@ func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientI
 		port = 443
 	}
 
-	// Determine endpoint (WAN IP)
-	endpoint := h.detectEndpoint()
-	if endpoint == "" {
-		// Fallback: try to read from WAN interface directly
-		endpoint = h.detectEndpointFromIface()
+	// Determine endpoint host: manual override or auto-detect
+	var endpointHost string
+	if h.cfg.AWGEndpoint != "" {
+		endpointHost = h.cfg.AWGEndpoint // manual override (IP or domain)
+	} else {
+		endpointHost = h.detectEndpoint()
+		if endpointHost == "" {
+			endpointHost = h.detectEndpointFromIface()
+		}
 	}
-	if endpoint == "" {
-		return "", errors.New("cannot detect WAN endpoint — configure client Endpoint manually")
+	if endpointHost == "" {
+		return "", errors.New("cannot detect WAN endpoint — set awg_endpoint in settings or configure client Endpoint manually")
 	}
-	endpoint = fmt.Sprintf("%s:%d", endpoint, port)
+	endpoint := fmt.Sprintf("%s:%d", endpointHost, port)
 
 	// Build client config
 	var sb strings.Builder

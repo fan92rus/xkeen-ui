@@ -85,7 +85,7 @@
             </div>
           </div>
           <div class="awg-card-body">
-            <p class="awg-settings-desc">LAN/WAN для preset «Полный туннель» (iptables FORWARD/NAT). Пусто = авто-детект.</p>
+            <p class="awg-settings-desc">LAN/WAN для preset «Полный туннель» (iptables FORWARD/NAT). Endpoint — внешний адрес для клиентских конфигов. Пусто = авто-детект.</p>
             <div class="awg-iface-row">
               <label class="awg-iface-field">
                 <span class="awg-iface-field-label">LAN</span>
@@ -94,6 +94,10 @@
               <label class="awg-iface-field">
                 <span class="awg-iface-field-label">WAN</span>
                 <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving" />
+              </label>
+              <label class="awg-iface-field awg-iface-field-wide">
+                <span class="awg-iface-field-label">Endpoint (IP или домен)</span>
+                <input v-model="awgIface.endpoint" type="text" placeholder="авто-детект" :disabled="awgIfaceSaving" />
               </label>
               <button class="btn btn-primary btn-sm" @click="saveIfaceSettings()" :disabled="awgIfaceSaving">
                 {{ awgIfaceSaving ? 'Сохранение…' : 'Сохранить' }}
@@ -290,7 +294,7 @@ const fileInput = ref(null);
 const uploading = ref(false);
 
 // Server firewall interface settings (LAN/WAN)
-const awgIface = ref({ lan: '', wan: '' });
+const awgIface = ref({ lan: '', wan: '', endpoint: '' });
 const awgIfaceSaving = ref(false);
 
 const subTab = ref(localStorage.getItem('awg_subtab') || 'client');
@@ -345,14 +349,14 @@ async function loadInterfaces() {
 async function loadIfaceSettings() {
   try {
     const d = await xkeen.getAWGInterfaces();
-    awgIface.value = { lan: d.lan_iface || '', wan: d.wan_iface || '' };
+    awgIface.value = { lan: d.lan_iface || '', wan: d.wan_iface || '', endpoint: d.endpoint || '' };
   } catch { /* ignore */ }
 }
 
 async function saveIfaceSettings() {
   awgIfaceSaving.value = true;
   try {
-    await xkeen.updateAWGInterfaces(awgIface.value.lan, awgIface.value.wan);
+    await xkeen.updateAWGInterfaces(awgIface.value.lan, awgIface.value.wan, awgIface.value.endpoint);
     app.showToast(
       awgIface.value.lan || awgIface.value.wan
         ? 'Интерфейсы сохранены'
@@ -959,6 +963,15 @@ function downloadConfig() {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.awg-iface-field-wide {
+  flex: 1;
+  min-width: 160px;
+}
+
+.awg-iface-field-wide input {
+  width: 100%;
 }
 
 .awg-iface-field-label {

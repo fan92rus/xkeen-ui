@@ -38,6 +38,10 @@ type Config struct {
 	// AWGWanIface is the WAN interface for AWG server firewall rules (empty = auto-detect).
 	AWGWanIface string `json:"awg_wan_iface"`
 
+	// AWGEndpoint overrides the client config endpoint host (empty = auto-detect WAN IP).
+	// Can be an IP address or domain name (e.g. "funnyhome.netcraze.pro").
+	AWGEndpoint string `json:"awg_endpoint"`
+
 	// MetricsPort is the port for Xray metrics endpoint (0 = disabled).
 	MetricsPort int `json:"metrics_port"`
 
