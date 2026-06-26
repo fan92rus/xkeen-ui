@@ -375,11 +375,23 @@ func (h *AWGHandler) UploadConfig(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[awg] uploaded config: %s", name)
 
 	// Auto-scan to add to tracked configs
-	h.store.ScanAWGConfigs(h.awgDir)
+	configs, _ := h.store.ScanAWGConfigs(h.awgDir)
 
-	respondJSON(w, http.StatusCreated, &awgActionResponse{
-		Success: true,
-		Message: fmt.Sprintf("Config %q uploaded", name),
+	// Determine role for response
+	role := "client"
+	confName := strings.TrimSuffix(name, ".conf")
+	for _, c := range configs {
+		if c.Name == confName {
+			role = string(c.Role)
+			break
+		}
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"success": true,
+		"name":    confName,
+		"role":    role,
+		"message": fmt.Sprintf("Config %q uploaded (%s)", confName, role),
 	})
 }
 

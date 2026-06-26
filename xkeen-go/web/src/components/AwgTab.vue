@@ -1,168 +1,168 @@
 <template>
-  <div class="awg-container">
+  <div class="awg-root">
+    <!-- Sticky header: sub-tabs + upload -->
+    <div class="awg-header">
+      <div class="awg-tabs">
+        <button class="awg-tab" :class="{ 'awg-tab-active': subTab === 'client' }" @click="subTab = 'client'">
+          <span class="awg-tab-icon">🔌</span>
+          <span>Клиенты</span>
+          <span v-if="clientIfaces.length" class="awg-tab-badge">{{ clientIfaces.length }}</span>
+        </button>
+        <button class="awg-tab" :class="{ 'awg-tab-active': subTab === 'server' }" @click="subTab = 'server'">
+          <span class="awg-tab-icon">🖥️</span>
+          <span>Серверы</span>
+          <span v-if="serverIfaces.length" class="awg-tab-badge">{{ serverIfaces.length }}</span>
+        </button>
+      </div>
+      <button class="btn btn-sm awg-upload-btn" @click="$refs.fileInput.click()" :disabled="uploading">
+        <span v-if="!uploading">📤 Загрузить .conf</span>
+        <span v-else>Загрузка…</span>
+      </button>
+      <input type="file" accept=".conf" ref="fileInput" @change="onFilePicked" class="awg-file-hidden" />
+    </div>
+
     <!-- Error banner -->
     <div v-if="error" class="awg-banner awg-banner-error">
-      <span class="banner-icon">⚠</span>
+      <span>⚠</span>
       <span>{{ error }}</span>
-      <button class="banner-close" @click="error = ''">✕</button>
+      <button class="awg-banner-close" @click="error = ''">✕</button>
     </div>
 
-    <!-- Loading state -->
-    <div v-if="loading && (interfaces || []).length === 0" class="awg-loading">
-      Загрузка интерфейсов…
-    </div>
-
-    <!-- Empty state -->
-    <div v-else-if="(interfaces || []).length === 0" class="awg-empty">
-      <div class="awg-empty-icon">🔗</div>
-      <p class="awg-empty-title">Нет AWG-конфигураций</p>
-      <p class="awg-empty-desc">Загрузите конфигурацию в формате WireGuard/AmneziaWG (.conf)</p>
-    </div>
-
-    <!-- Upload card -->
-    <div v-if="!loading" class="awg-card">
-      <div class="awg-card-header">
-        <h3 class="awg-card-title">Добавить конфигурацию</h3>
+    <!-- Scrollable content -->
+    <div class="awg-content">
+      <!-- Loading -->
+      <div v-if="loading && interfaces.length === 0" class="awg-state">
+        <div class="awg-state-icon">⏳</div>
+        <p>Загрузка…</p>
       </div>
-      <div class="awg-card-body">
-        <div class="awg-upload-row">
-          <div class="awg-file-input-wrapper">
-            <input type="file" accept=".conf" ref="fileInput" @change="handleFileSelect" class="awg-file-input" id="awg-file" />
-            <label for="awg-file" class="awg-file-label">
-              <span v-if="selectedFile">{{ selectedFile.name }}</span>
-              <span v-else class="awg-file-placeholder">Выберите .conf файл…</span>
-            </label>
-          </div>
-          <button class="btn btn-primary" @click="uploadFile" :disabled="!selectedFile || uploading">
-            {{ uploading ? 'Загрузка…' : 'Загрузить' }}
-          </button>
-        </div>
-        <p class="awg-hint">
-          Файл должен содержать секции <code>[Interface]</code> и <code>[Peer]</code>.
-          Роль (сервер/клиент) определяется автоматически.
-        </p>
+
+      <!-- Empty: client -->
+      <div v-else-if="subTab === 'client' && clientIfaces.length === 0" class="awg-state">
+        <div class="awg-state-icon">🔌</div>
+        <p class="awg-state-title">Нет клиентских конфигураций</p>
+        <p class="awg-state-desc">Загрузите .conf WARP или VPN-провайдера.<br />
+          Клиент — это исходящий туннель с <code>Endpoint</code> в [Peer].</p>
+        <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
       </div>
-    </div>
 
-    <!-- Interface cards -->
-    <div v-for="iface in interfaces" :key="iface.name" class="awg-card">
-      <div class="awg-card-header awg-card-header-row">
-        <div class="awg-card-title-row">
-          <span class="awg-role-badge" :class="'awg-role-' + iface.role" :title="iface.role === 'server' ? 'Сервер (входящий VPN)' : 'Клиент (исходящий туннель)'">
-            {{ iface.role === 'server' ? '🖥️' : '🔌' }}
-          </span>
-          <h3 class="awg-card-title awg-card-title-iface">{{ iface.name }}</h3>
-          <span class="awg-role-text">{{ iface.role === 'server' ? 'сервер' : 'клиент' }}</span>
-          <span v-if="iface.active" class="awg-status awg-status-active">Активен</span>
-          <span v-else class="awg-status awg-status-inactive">Остановлен</span>
-        </div>
-        <div class="awg-card-actions">
-          <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)"
-                  :disabled="actionLoading">Старт</button>
-          <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)"
-                  :disabled="actionLoading">Стоп</button>
-          <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)"
-                  :disabled="actionLoading">Удалить</button>
-        </div>
+      <!-- Empty: server -->
+      <div v-else-if="subTab === 'server' && serverIfaces.length === 0" class="awg-state">
+        <div class="awg-state-icon">🖥️</div>
+        <p class="awg-state-title">Нет серверных конфигураций</p>
+        <p class="awg-state-desc">Загрузите серверный .conf (с <code>ListenPort</code> и без <code>Endpoint</code>).<br />
+          Сервер — это входящий VPN для удалённого доступа к домашней сети.</p>
+        <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
       </div>
-      <div class="awg-card-body">
-        <!-- Client meta -->
-        <div v-if="iface.role !== 'server'" class="awg-meta-grid">
-          <div class="awg-meta-item">
-            <span class="awg-meta-label">Mark</span>
-            <code class="awg-meta-value">fwmark {{ iface.mark }}</code>
+
+      <!-- Client cards -->
+      <template v-else-if="subTab === 'client'">
+        <div v-for="iface in clientIfaces" :key="iface.name" class="awg-card">
+          <div class="awg-card-header">
+            <div class="awg-card-title-group">
+              <span class="awg-iface-icon">🔌</span>
+              <span class="awg-iface-name">{{ iface.name }}</span>
+              <span class="awg-pill" :class="iface.active ? 'awg-pill-on' : 'awg-pill-off'">
+                <span class="awg-pill-dot"></span>{{ iface.active ? 'активен' : 'остановлен' }}
+              </span>
+            </div>
+            <div class="awg-card-actions">
+              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">Старт</button>
+              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">Стоп</button>
+              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">Удалить</button>
+            </div>
           </div>
-          <div class="awg-meta-item" v-if="iface.address">
-            <span class="awg-meta-label">Address</span>
-            <code class="awg-meta-value">{{ iface.address }}</code>
-          </div>
-          <div class="awg-meta-item awg-meta-item-wide">
-            <span class="awg-meta-label">Config</span>
-            <code class="awg-meta-value awg-meta-path">{{ iface.conf_path }}</code>
+          <div class="awg-card-body">
+            <div class="awg-chips">
+              <div class="awg-chip"><span class="awg-chip-label">Mark</span><code>{{ iface.mark }}</code></div>
+              <div class="awg-chip" v-if="iface.address"><span class="awg-chip-label">Address</span><code>{{ iface.address }}</code></div>
+            </div>
+            <div v-if="iface.active" class="awg-route-chain">
+              Xray → mark {{ iface.mark }} → table {{ iface.mark }} → dev {{ iface.name }}
+            </div>
           </div>
         </div>
-        <div v-if="iface.role !== 'server' && iface.active" class="awg-hint awg-route-hint">
-          Xray → mark {{ iface.mark }} → table {{ iface.mark }} → dev {{ iface.name }}
-        </div>
+      </template>
 
-        <!-- Server meta + peers -->
-        <div v-if="iface.role === 'server'" class="awg-server-body">
-          <div class="awg-meta-grid">
-            <div class="awg-meta-item" v-if="iface.address">
-              <span class="awg-meta-label">Address</span>
-              <code class="awg-meta-value">{{ iface.address }}</code>
+      <!-- Server cards -->
+      <template v-else-if="subTab === 'server'">
+        <div v-for="iface in serverIfaces" :key="iface.name" class="awg-card awg-card-server">
+          <div class="awg-card-header">
+            <div class="awg-card-title-group">
+              <span class="awg-iface-icon">🖥️</span>
+              <span class="awg-iface-name">{{ iface.name }}</span>
+              <span class="awg-pill" :class="iface.active ? 'awg-pill-on' : 'awg-pill-off'">
+                <span class="awg-pill-dot"></span>{{ iface.active ? 'активен' : 'остановлен' }}
+              </span>
+              <span v-if="iface.active" class="awg-pill awg-pill-info">🔒 full-tunnel</span>
             </div>
-            <div class="awg-meta-item">
-              <span class="awg-meta-label">Конфиг</span>
-              <code class="awg-meta-value awg-meta-path">{{ iface.conf_path }}</code>
+            <div class="awg-card-actions">
+              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">Старт</button>
+              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">Стоп</button>
+              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">Удалить</button>
             </div>
           </div>
-          <div v-if="iface.active" class="awg-hint awg-firewall-hint">
-            🔒 Full-tunnel firewall: INPUT + FORWARD + NAT MASQUERADE (восстанавливается watchdog)
-          </div>
+          <div class="awg-card-body">
+            <!-- Peers section -->
+            <div class="awg-peers">
+              <div class="awg-peers-head">
+                <span class="awg-peers-title">Клиенты ({{ (peers[iface.name] || []).length }})</span>
+                <button class="btn btn-primary btn-sm" @click="openAddPeer(iface.name)" :disabled="busy">+ Добавить клиента</button>
+              </div>
 
-          <!-- Peers section -->
-          <div class="awg-peers-section">
-            <div class="awg-peers-header">
-              <span class="awg-peers-title">Клиенты (peers)</span>
-              <button class="btn btn-primary btn-sm" @click="showAddPeer(iface.name)" :disabled="actionLoading">
-                + Добавить
-              </button>
-            </div>
-
-            <div v-if="peerLoading[iface.name]" class="awg-peers-loading">Загрузка…</div>
-            <div v-else-if="!peers[iface.name] || peers[iface.name].length === 0" class="awg-peers-empty">
-              Нет клиентов. Добавьте, чтобы сгенерировать конфиг.
-            </div>
-            <div v-else class="awg-peer-list">
-              <div v-for="peer in peers[iface.name]" :key="peer.public_key" class="awg-peer-item">
-                <div class="awg-peer-info">
-                  <code class="awg-peer-ip">{{ peer.ip }}</code>
-                  <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
-                  <span v-if="peer.label" class="awg-peer-label">{{ peer.label }}</span>
+              <div v-if="peerLoading[iface.name]" class="awg-peers-status">Загрузка…</div>
+              <div v-else-if="!(peers[iface.name] || []).length" class="awg-peers-status">Нет клиентов. Добавьте, чтобы создать конфиг для подключения.</div>
+              <div v-else class="awg-peer-list">
+                <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key" class="awg-peer-row">
+                  <div class="awg-peer-info">
+                    <span class="awg-peer-ip">{{ peer.ip }}</span>
+                    <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
+                    <span v-if="peer.label" class="awg-peer-tag">{{ peer.label }}</span>
+                  </div>
+                  <button class="btn btn-danger btn-sm" @click="removePeer(iface.name, peer)" :disabled="busy">✕</button>
                 </div>
-                <button class="btn btn-danger btn-sm" @click="removePeer(iface.name, peer)"
-                        :disabled="actionLoading">Удалить</button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- Add Peer Dialog -->
-    <div v-if="addPeerDialog.visible" class="awg-modal-overlay" @click.self="closeAddPeer">
+    <div v-if="addPeer.show" class="awg-modal-overlay" @click.self="closeAddPeer">
       <div class="awg-modal">
-        <div class="awg-modal-header">
-          <h3>Добавить клиента — {{ addPeerDialog.serverName }}</h3>
-          <button class="banner-close" @click="closeAddPeer">✕</button>
+        <div class="awg-modal-head">
+          <h3>Новый клиент — {{ addPeer.server }}</h3>
+          <button class="awg-banner-close" @click="closeAddPeer">✕</button>
         </div>
         <div class="awg-modal-body">
-          <div v-if="!addPeerDialog.result">
+          <!-- Form -->
+          <template v-if="!addPeer.result">
             <label class="awg-modal-label">Название (необязательно)</label>
-            <input v-model="addPeerDialog.label" type="text" class="awg-modal-input"
-                   placeholder="например: phone-client" @keyup.enter="doAddPeer" />
+            <input v-model="addPeer.label" type="text" class="awg-modal-input" placeholder="например: phone, laptop"
+                   @keyup.enter="doAddPeer" />
+            <p class="awg-modal-hint">Будет сгенерирован ключ, назначен IP и создан готовый клиентский конфиг.</p>
             <div class="awg-modal-actions">
               <button class="btn" @click="closeAddPeer">Отмена</button>
-              <button class="btn btn-primary" @click="doAddPeer" :disabled="addPeerDialog.loading">
-                {{ addPeerDialog.loading ? 'Генерация…' : 'Сгенерировать' }}
+              <button class="btn btn-primary" @click="doAddPeer" :disabled="addPeer.loading">
+                {{ addPeer.loading ? 'Генерация…' : 'Сгенерировать конфиг' }}
               </button>
             </div>
-          </div>
-          <div v-else class="awg-peer-result">
-            <p class="awg-peer-result-info">
-              ✅ Клиент <code>{{ addPeerDialog.result.client_ip }}</code> добавлен.
-              Конфиг ниже для импорта в приложение AmneziaWG:
-            </p>
-            <div class="awg-peer-config-wrapper">
-              <pre class="awg-peer-config">{{ addPeerDialog.result.client_config }}</pre>
-              <button class="awg-copy-btn" @click="copyConfig">{{ copied ? '✓' : '📋' }}</button>
+          </template>
+          <!-- Result -->
+          <template v-else>
+            <div class="awg-result-banner">
+              ✅ Клиент <code>{{ addPeer.result.client_ip }}</code> добавлен в <code>{{ addPeer.server }}</code>
+            </div>
+            <p class="awg-modal-hint">Импортируйте этот конфиг в приложение AmneziaWG:</p>
+            <div class="awg-config-wrap">
+              <pre class="awg-config-text">{{ addPeer.result.client_config }}</pre>
+              <button class="awg-copy-btn" @click="copyConfig" :title="'Копировать'">{{ copied ? '✓' : '📋' }}</button>
             </div>
             <div class="awg-modal-actions">
               <button class="btn" @click="downloadConfig">⬇ Скачать .conf</button>
               <button class="btn btn-primary" @click="closeAddPeer">Готово</button>
             </div>
-          </div>
+          </template>
         </div>
       </div>
     </div>
@@ -170,81 +170,85 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import * as awgApi from '../services/awg.js';
+import { useAppStore } from '../stores/app.js';
 import { log } from '../utils/logger.js';
+
+const app = useAppStore();
 
 const interfaces = ref([]);
 const loading = ref(false);
 const error = ref('');
-const actionLoading = ref(false);
+const busy = ref(false);
 
 const fileInput = ref(null);
-const selectedFile = ref(null);
 const uploading = ref(false);
 
-// Peer state
-const peers = reactive({}); // { serverName: [peer, ...] }
+const subTab = ref(localStorage.getItem('awg_subtab') || 'client');
+watch(subTab, (v) => localStorage.setItem('awg_subtab', v));
+
+const clientIfaces = computed(() => interfaces.value.filter(i => i.role !== 'server'));
+const serverIfaces = computed(() => interfaces.value.filter(i => i.role === 'server'));
+
+// Peers
+const peers = reactive({});
 const peerLoading = reactive({});
 
 // Add peer dialog
-const addPeerDialog = reactive({
-  visible: false,
-  serverName: '',
-  label: '',
-  loading: false,
-  result: null,
-});
+const addPeer = reactive({ show: false, server: '', label: '', loading: false, result: null });
 const copied = ref(false);
 
-onMounted(() => {
-  loadInterfaces();
-});
+onMounted(loadInterfaces);
+
+// ── Data loading ──
 
 async function loadInterfaces() {
   loading.value = true;
   error.value = '';
   try {
     interfaces.value = await awgApi.listInterfaces();
-    // Load peers for all server configs
     for (const iface of interfaces.value) {
-      if (iface.role === 'server') {
-        loadPeers(iface.name);
-      }
+      if (iface.role === 'server') loadPeers(iface.name);
     }
   } catch (e) {
-    error.value = 'Не удалось загрузить интерфейсы: ' + (e.message || e);
+    error.value = 'Не удалось загрузить: ' + (e.message || e);
   } finally {
     loading.value = false;
   }
 }
 
-async function loadPeers(serverName) {
-  peerLoading[serverName] = true;
+async function loadPeers(name) {
+  peerLoading[name] = true;
   try {
-    const res = await awgApi.listPeers(serverName);
-    peers[serverName] = res.peers || [];
+    const res = await awgApi.listPeers(name);
+    peers[name] = res.peers || [];
   } catch (e) {
-    log('Failed to load peers for', serverName, e);
-    peers[serverName] = [];
+    log('loadPeers failed', name, e);
+    peers[name] = [];
   } finally {
-    peerLoading[serverName] = false;
+    peerLoading[name] = false;
   }
 }
 
-function handleFileSelect(e) {
-  selectedFile.value = e.target.files[0] || null;
+// ── Upload ──
+
+function onFilePicked(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) doUpload(file);
 }
 
-async function uploadFile() {
-  if (!selectedFile.value) return;
+async function doUpload(file) {
   uploading.value = true;
   error.value = '';
   try {
-    await awgApi.uploadConfig(selectedFile.value);
-    selectedFile.value = null;
-    if (fileInput.value) fileInput.value.value = '';
+    const res = await awgApi.uploadConfig(file);
     await loadInterfaces();
+    // Auto-switch to the tab where the config landed
+    if (res.role === 'server') subTab.value = 'server';
+    else subTab.value = 'client';
+    app.showToast(`«${res.name || file.name}» загружен (${res.role === 'server' ? 'сервер' : 'клиент'})`, 'success');
   } catch (e) {
     error.value = 'Ошибка загрузки: ' + (e.message || e);
   } finally {
@@ -252,51 +256,47 @@ async function uploadFile() {
   }
 }
 
+// ── Interface lifecycle ──
+
 async function startIface(name) {
-  actionLoading.value = true;
+  busy.value = true;
   error.value = '';
   try {
     await awgApi.upInterface(name);
-    await loadInterfaces();
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const iface = interfaces.value.find(i => i.name === name);
-      if (iface && iface.active) break;
-      await new Promise(r => setTimeout(r, 600));
-      await loadInterfaces();
-    }
+    await pollStatus(name, true);
   } catch (e) {
     error.value = 'Ошибка запуска: ' + (e.message || e);
   } finally {
-    actionLoading.value = false;
+    busy.value = false;
   }
 }
 
 async function stopIface(name) {
-  actionLoading.value = true;
+  busy.value = true;
   error.value = '';
   try {
     await awgApi.downInterface(name);
-    await loadInterfaces();
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const iface = interfaces.value.find(i => i.name === name);
-      if (!iface || !iface.active) break;
-      await new Promise(r => setTimeout(r, 600));
-      await loadInterfaces();
-    }
-    const stillActive = interfaces.value.some(i => i.name === name && i.active);
-    if (stillActive) {
-      error.value = 'Интерфейс не остановился. Попробуйте ещё раз.';
-    }
+    await pollStatus(name, false);
   } catch (e) {
     error.value = 'Ошибка остановки: ' + (e.message || e);
   } finally {
-    actionLoading.value = false;
+    busy.value = false;
+  }
+}
+
+async function pollStatus(name, wantActive) {
+  for (let i = 0; i < 5; i++) {
+    await loadInterfaces();
+    const iface = interfaces.value.find(x => x.name === name);
+    if (iface && iface.active === wantActive) return;
+    await new Promise(r => setTimeout(r, 600));
   }
 }
 
 async function deleteIface(name) {
-  if (!confirm(`Удалить конфигурацию "${name}"? Интерфейс будет остановлен, роутинг очищен.`)) return;
-  actionLoading.value = true;
+  const role = subTab.value === 'server' ? 'сервер' : 'клиент';
+  if (!confirm(`Удалить ${role} «${name}»? Интерфейс будет остановлен, роутинг очищен.`)) return;
+  busy.value = true;
   error.value = '';
   try {
     await awgApi.deleteConfig(name);
@@ -304,52 +304,53 @@ async function deleteIface(name) {
   } catch (e) {
     error.value = 'Ошибка удаления: ' + (e.message || e);
   } finally {
-    actionLoading.value = false;
+    busy.value = false;
   }
 }
 
-// --- Peer management ---
+// ── Peer management ──
 
-function showAddPeer(serverName) {
-  addPeerDialog.visible = true;
-  addPeerDialog.serverName = serverName;
-  addPeerDialog.label = '';
-  addPeerDialog.loading = false;
-  addPeerDialog.result = null;
+function openAddPeer(serverName) {
+  addPeer.show = true;
+  addPeer.server = serverName;
+  addPeer.label = '';
+  addPeer.loading = false;
+  addPeer.result = null;
   copied.value = false;
 }
 
 function closeAddPeer() {
-  addPeerDialog.visible = false;
-  addPeerDialog.result = null;
+  addPeer.show = false;
+  addPeer.result = null;
 }
 
 async function doAddPeer() {
-  addPeerDialog.loading = true;
+  addPeer.loading = true;
   try {
-    const res = await awgApi.addPeer(addPeerDialog.serverName, addPeerDialog.label);
-    addPeerDialog.result = res;
-    await loadPeers(addPeerDialog.serverName);
+    addPeer.result = await awgApi.addPeer(addPeer.server, addPeer.label);
+    await loadPeers(addPeer.server);
   } catch (e) {
-    error.value = 'Ошибка добавления клиента: ' + (e.message || e);
+    error.value = 'Ошибка: ' + (e.message || e);
     closeAddPeer();
   } finally {
-    addPeerDialog.loading = false;
+    addPeer.loading = false;
   }
 }
 
 async function removePeer(serverName, peer) {
   if (!confirm(`Удалить клиента ${peer.ip}?`)) return;
-  actionLoading.value = true;
+  busy.value = true;
   try {
     await awgApi.deletePeer(serverName, peer.public_key, peer.ip);
     await loadPeers(serverName);
   } catch (e) {
-    error.value = 'Ошибка удаления клиента: ' + (e.message || e);
+    error.value = 'Ошибка: ' + (e.message || e);
   } finally {
-    actionLoading.value = false;
+    busy.value = false;
   }
 }
+
+// ── Helpers ──
 
 function shortenKey(key) {
   if (!key || key.length <= 12) return key;
@@ -357,20 +358,18 @@ function shortenKey(key) {
 }
 
 async function copyConfig() {
-  if (!addPeerDialog.result?.client_config) return;
+  if (!addPeer.result?.client_config) return;
   try {
-    await navigator.clipboard.writeText(addPeerDialog.result.client_config);
+    await navigator.clipboard.writeText(addPeer.result.client_config);
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 2000);
-  } catch {
-    // Fallback: select the pre element
-  }
+  } catch { /* ignore */ }
 }
 
 function downloadConfig() {
-  if (!addPeerDialog.result?.client_config) return;
-  const label = addPeerDialog.label || addPeerDialog.result.client_ip || 'client';
-  const blob = new Blob([addPeerDialog.result.client_config], { type: 'text/plain' });
+  if (!addPeer.result?.client_config) return;
+  const label = addPeer.label || addPeer.result.client_ip || 'client';
+  const blob = new Blob([addPeer.result.client_config], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -381,9 +380,85 @@ function downloadConfig() {
 </script>
 
 <style scoped>
-/* ── Container & States ────────────────────────────────────────── */
-.awg-container {
+/* ── Layout ── */
+.awg-root {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Sticky header ── */
+.awg-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--menu-border);
+  background: var(--menu-background);
+  flex-shrink: 0;
+}
+
+.awg-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.awg-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-gray);
+  font-size: var(--text-body);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.awg-tab:hover {
+  background: var(--menu-active-item);
+}
+
+.awg-tab-active {
+  background: var(--menu-active-item);
+  color: var(--primary-text);
+  border-color: var(--stroke);
+  font-weight: 600;
+}
+
+.awg-tab-icon {
+  font-size: 14px;
+}
+
+.awg-tab-badge {
+  background: var(--primary-color);
+  color: var(--menu-background);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.awg-upload-btn {
+  margin-left: auto;
+}
+
+.awg-file-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Content scroll area ── */
+.awg-content {
+  flex: 1;
   overflow-y: auto;
   padding: 16px;
   display: flex;
@@ -391,117 +466,112 @@ function downloadConfig() {
   gap: 12px;
 }
 
-.awg-loading,
-.awg-empty {
+/* ── States ── */
+.awg-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 48px 16px;
-  color: var(--help-text);
   text-align: center;
+  padding: 48px 16px;
+  gap: 8px;
 }
 
-.awg-empty-icon {
-  font-size: 32px;
-  margin-bottom: 12px;
-  opacity: 0.6;
+.awg-state-icon {
+  font-size: 36px;
+  opacity: 0.5;
+  margin-bottom: 8px;
 }
 
-.awg-empty-title {
+.awg-state-title {
   font-size: var(--text-h4);
   font-weight: 600;
   color: var(--text-gray);
-  margin-bottom: 4px;
 }
 
-.awg-empty-desc {
+.awg-state-desc {
   font-size: var(--text-small);
   color: var(--help-text);
-  max-width: 300px;
+  max-width: 340px;
+  line-height: 1.5;
 }
 
-/* ── Error Banner ──────────────────────────────────────────────── */
+.awg-state-desc code {
+  background: var(--menu-active-item);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+
+/* ── Banner ── */
 .awg-banner {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
+  padding: 8px 16px;
   font-size: var(--text-small);
-  line-height: var(--lh-small);
+  flex-shrink: 0;
 }
 
 .awg-banner-error {
   background: var(--status-warning-background);
-  border: 1px solid var(--status-warning-border);
+  border-bottom: 1px solid var(--status-warning-border);
   color: var(--error);
 }
 
-.banner-icon {
-  flex-shrink: 0;
-  font-size: 14px;
-}
-
-.banner-close {
+.awg-banner-close {
   margin-left: auto;
   background: none;
   border: none;
-  color: inherit;
   cursor: pointer;
   font-size: 14px;
-  padding: 2px;
   opacity: 0.6;
-  transition: opacity 0.05s;
+  padding: 2px;
 }
 
-.banner-close:hover {
-  opacity: 1;
-}
+.awg-banner-close:hover { opacity: 1; }
 
-/* ── Card ──────────────────────────────────────────────────────── */
+/* ── Card ── */
 .awg-card {
   background: var(--menu-background);
   border: 1px solid var(--menu-border);
   border-radius: var(--radius);
-  box-shadow: var(--box-shadow-1);
   overflow: hidden;
 }
 
-.awg-card-header {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--menu-border);
-  background: var(--menu-active-item);
+.awg-card-server {
+  border-left: 3px solid var(--primary-color);
 }
 
-.awg-card-header-row {
+.awg-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--menu-border);
+  background: var(--menu-active-item);
+  gap: 8px;
 }
 
-.awg-card-title {
-  font-size: var(--text-h4);
-  font-weight: 700;
-  color: var(--primary-text);
-  margin: 0;
-  line-height: var(--lh-h4);
-}
-
-.awg-card-title-row {
+.awg-card-title-group {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.awg-card-title-iface {
+.awg-iface-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.awg-iface-name {
   font-family: var(--font-mono);
   font-size: var(--text-body);
-  white-space: nowrap;
+  font-weight: 700;
+  color: var(--primary-text);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .awg-card-actions {
@@ -514,22 +584,8 @@ function downloadConfig() {
   padding: 14px;
 }
 
-/* ── Role badges ──────────────────────────────────────────────── */
-.awg-role-badge {
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.awg-role-text {
-  font-size: var(--text-small);
-  color: var(--text-gray);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-weight: 500;
-}
-
-/* ── Status badges ─────────────────────────────────────────────── */
-.awg-status {
+/* ── Status pills ── */
+.awg-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -537,100 +593,62 @@ function downloadConfig() {
   border-radius: var(--radius-sm);
   font-size: var(--text-small);
   font-weight: 500;
-  line-height: var(--lh-small);
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
-.awg-status::before {
-  content: '';
+.awg-pill-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  flex-shrink: 0;
 }
 
-.awg-status-active {
+.awg-pill-on {
   background: var(--status-success-background);
   color: var(--status-success-text);
-  border: 1px solid var(--status-success-border);
 }
 
-.awg-status-active::before {
-  background: var(--status-success-text);
-}
+.awg-pill-on .awg-pill-dot { background: var(--status-success-text); }
 
-.awg-status-inactive {
+.awg-pill-off {
   background: var(--menu-active-item);
   color: var(--text-gray);
-  border: 1px solid var(--stroke);
 }
 
-.awg-status-inactive::before {
-  background: var(--indicator-offline);
-}
+.awg-pill-off .awg-pill-dot { background: var(--indicator-offline); }
 
-/* ── Upload ────────────────────────────────────────────────────── */
-.awg-upload-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.awg-file-input-wrapper {
-  flex: 1;
-  position: relative;
-}
-
-.awg-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.awg-file-label {
-  display: flex;
-  align-items: center;
-  padding: 7px 12px;
-  background: var(--background);
-  border: 1px solid var(--stroke);
-  border-radius: var(--radius);
-  color: var(--primary-text);
-  font-size: var(--text-body);
-  cursor: pointer;
-  transition: border-color 0.05s;
-  min-height: 34px;
-}
-
-.awg-file-label:hover {
-  border-color: var(--primary-color);
-}
-
-.awg-file-placeholder {
-  color: var(--help-text);
-}
-
-.awg-hint {
-  margin-top: 8px;
-  font-size: var(--text-small);
-  color: var(--help-text);
-  line-height: var(--lh-small);
-}
-
-.awg-hint code {
-  background: var(--menu-active-item);
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
+.awg-pill-info {
+  background: var(--status-info-background, var(--menu-active-item));
   color: var(--primary-color);
 }
 
-.awg-route-hint,
-.awg-firewall-hint {
+/* ── Chips (client meta) ── */
+.awg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.awg-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.awg-chip-label {
+  font-size: 10px;
+  color: var(--help-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+.awg-chip code {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--primary-text);
+}
+
+.awg-route-chain {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--menu-border);
@@ -639,68 +657,17 @@ function downloadConfig() {
   color: var(--text-gray);
 }
 
-/* ── Meta Grid ─────────────────────────────────────────────────── */
-.awg-meta-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.awg-meta-item {
+/* ── Peers ── */
+.awg-peers {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 100px;
+  gap: 10px;
 }
 
-.awg-meta-item-wide {
-  flex: 1;
-  min-width: 160px;
-}
-
-.awg-meta-label {
-  font-size: var(--text-small);
-  color: var(--help-text);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 500;
-}
-
-.awg-meta-value {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--primary-text);
-  background: var(--menu-active-item);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  display: inline-block;
-  word-break: break-all;
-}
-
-.awg-meta-path {
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ── Server body: peers ──────────────────────────────────────── */
-.awg-server-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.awg-peers-section {
-  border-top: 1px solid var(--menu-border);
-  padding-top: 12px;
-}
-
-.awg-peers-header {
+.awg-peers-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
 }
 
 .awg-peers-title {
@@ -709,11 +676,10 @@ function downloadConfig() {
   color: var(--primary-text);
 }
 
-.awg-peers-loading,
-.awg-peers-empty {
+.awg-peers-status {
   font-size: var(--text-small);
   color: var(--help-text);
-  padding: 8px 0;
+  padding: 4px 0;
 }
 
 .awg-peer-list {
@@ -722,12 +688,12 @@ function downloadConfig() {
   gap: 6px;
 }
 
-.awg-peer-item {
+.awg-peer-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   background: var(--menu-active-item);
   border-radius: var(--radius-sm);
   border: 1px solid var(--stroke);
@@ -736,7 +702,7 @@ function downloadConfig() {
 .awg-peer-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   flex: 1;
 }
@@ -744,6 +710,7 @@ function downloadConfig() {
 .awg-peer-ip {
   font-family: var(--font-mono);
   font-size: var(--text-small);
+  font-weight: 600;
   color: var(--primary-text);
   white-space: nowrap;
 }
@@ -756,13 +723,13 @@ function downloadConfig() {
   text-overflow: ellipsis;
 }
 
-.awg-peer-label {
+.awg-peer-tag {
   font-size: var(--text-small);
   color: var(--primary-color);
   white-space: nowrap;
 }
 
-/* ── Modal (Add Peer) ─────────────────────────────────────────── */
+/* ── Modal ── */
 .awg-modal-overlay {
   position: fixed;
   inset: 0;
@@ -785,7 +752,7 @@ function downloadConfig() {
   overflow-y: auto;
 }
 
-.awg-modal-header {
+.awg-modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -793,7 +760,7 @@ function downloadConfig() {
   border-bottom: 1px solid var(--menu-border);
 }
 
-.awg-modal-header h3 {
+.awg-modal-head h3 {
   font-size: var(--text-h4);
   font-weight: 700;
   color: var(--primary-text);
@@ -819,12 +786,19 @@ function downloadConfig() {
   border-radius: var(--radius);
   color: var(--primary-text);
   font-size: var(--text-body);
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .awg-modal-input:focus {
   outline: none;
   border-color: var(--primary-color);
+}
+
+.awg-modal-hint {
+  font-size: var(--text-small);
+  color: var(--help-text);
+  margin: 8px 0 12px;
+  line-height: 1.4;
 }
 
 .awg-modal-actions {
@@ -834,20 +808,21 @@ function downloadConfig() {
   margin-top: 12px;
 }
 
-.awg-peer-result-info {
+.awg-result-banner {
+  padding: 10px 14px;
+  background: var(--status-success-background);
+  border-radius: var(--radius);
+  color: var(--status-success-text);
   font-size: var(--text-body);
-  color: var(--primary-text);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
-.awg-peer-result-info code {
+.awg-result-banner code {
   font-family: var(--font-mono);
-  background: var(--menu-active-item);
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
+  font-weight: 600;
 }
 
-.awg-peer-config-wrapper {
+.awg-config-wrap {
   position: relative;
   background: var(--background);
   border: 1px solid var(--stroke);
@@ -855,7 +830,7 @@ function downloadConfig() {
   overflow: hidden;
 }
 
-.awg-peer-config {
+.awg-config-text {
   padding: 12px;
   font-family: var(--font-mono);
   font-size: var(--text-small);
@@ -863,7 +838,7 @@ function downloadConfig() {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
-  max-height: 240px;
+  max-height: 260px;
   overflow-y: auto;
 }
 
@@ -880,39 +855,26 @@ function downloadConfig() {
   line-height: 1;
 }
 
-.awg-copy-btn:hover {
-  border-color: var(--primary-color);
-}
+.awg-copy-btn:hover { border-color: var(--primary-color); }
 
-/* ── Responsive ────────────────────────────────────────────────── */
+/* ── Responsive ── */
 @media (max-width: 600px) {
-  .awg-container {
-    padding: 10px;
-    gap: 8px;
+  .awg-header {
+    flex-wrap: wrap;
+    padding: 8px 10px;
   }
 
-  .awg-card-header-row {
+  .awg-tab { padding: 6px 10px; }
+
+  .awg-content { padding: 10px; }
+
+  .awg-card-header {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .awg-card-actions {
-    width: 100%;
-  }
+  .awg-card-actions { width: 100%; }
 
-  .awg-upload-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .awg-meta-grid {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .awg-peer-item {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .awg-peer-row { flex-direction: column; align-items: flex-start; }
 }
 </style>

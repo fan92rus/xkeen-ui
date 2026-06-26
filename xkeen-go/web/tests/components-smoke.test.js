@@ -245,8 +245,8 @@ describe('Component smoke tests', () => {
     expect(w.exists()).toBe(true);
     // Wait for async loadInterfaces to complete
     await flushPromises();
-    // Should show empty state (mock returns [])
-    expect(w.text()).toContain('Нет AWG-конфигураций');
+    // Should show empty state for default 'client' sub-tab (mock returns [])
+    expect(w.text()).toContain('Нет клиентских конфигураций');
 
     mockList.mockRestore();
   });
