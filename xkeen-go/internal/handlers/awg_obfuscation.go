@@ -49,8 +49,9 @@ func getAWGObfuscationPresets() []AWGObfuscationPreset {
 			Warning:     "+400% мусорных пакетов, высокая нагрузка",
 			Params: map[string]string{
 				"Jc": "4", "Jmin": "40", "Jmax": "70",
-				"S1": "0", "S2": "0",
+				"S1": "0", "S2": "0", "S3": "0", "S4": "0",
 				"H1": "1", "H2": "2", "H3": "3", "H4": "4",
+				"I1": "0",
 			},
 		},
 		{
@@ -60,18 +61,21 @@ func getAWGObfuscationPresets() []AWGObfuscationPreset {
 			Warning:     "~двойной трафик",
 			Params: map[string]string{
 				"Jc": "2", "Jmin": "30", "Jmax": "50",
-				"S1": "0", "S2": "0",
+				"S1": "0", "S2": "0", "S3": "0", "S4": "0",
 				"H1": "1", "H2": "2", "H3": "3", "H4": "4",
+				"I1": "0",
 			},
 		},
 		{
 			ID:          "minimal",
 			Name:        "Minimal AWG",
 			Description: "Минимальная обфускация",
-			Warning:     "~одинарный трафик, без H1-H4 (без size obfuscation)",
+			Warning:     "~одинарный трафик, без size obfuscation",
 			Params: map[string]string{
 				"Jc": "1", "Jmin": "20", "Jmax": "40",
-				"S1": "0", "S2": "0",
+				"S1": "0", "S2": "0", "S3": "0", "S4": "0",
+				"H1": "0", "H2": "0", "H3": "0", "H4": "0",
+				"I1": "0",
 			},
 		},
 		{

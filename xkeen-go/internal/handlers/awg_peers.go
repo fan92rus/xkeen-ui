@@ -554,10 +554,13 @@ func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientI
 	// Determine endpoint (WAN IP)
 	endpoint := h.detectEndpoint()
 	if endpoint == "" {
-		endpoint = fmt.Sprintf("%%s:%d", port) // placeholder
-	} else {
-		endpoint = fmt.Sprintf("%s:%d", endpoint, port)
+		// Fallback: try to read from WAN interface directly
+		endpoint = h.detectEndpointFromIface()
 	}
+	if endpoint == "" {
+		return "", errors.New("cannot detect WAN endpoint — configure client Endpoint manually")
+	}
+	endpoint = fmt.Sprintf("%s:%d", endpoint, port)
 
 	// Build client config
 	var sb strings.Builder
@@ -607,6 +610,25 @@ func (h *AWGHandler) detectEndpoint() string {
 	}
 	// Output: "8.8.8.8 via ... src 146.120.53.90 ..."
 	re := regexp.MustCompile(`src\s+(\d+\.\d+\.\d+\.\d+)`)
+	matches := re.FindStringSubmatch(string(out))
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// detectEndpointFromIface tries to read the WAN IP from the configured WAN interface.
+func (h *AWGHandler) detectEndpointFromIface() string {
+	wanIface := h.cfg.AWGWanIface
+	if wanIface == "" {
+		wanIface = "eth3" // common Keenetic WAN interface
+	}
+	out, err := exec.Command("ip", "-4", "addr", "show", "dev", wanIface).Output()
+	if err != nil {
+		return ""
+	}
+	// Parse: "inet 146.120.53.90/24 brd ..."
+	re := regexp.MustCompile(`inet\s+(\d+\.\d+\.\d+\.\d+)`)
 	matches := re.FindStringSubmatch(string(out))
 	if len(matches) >= 2 {
 		return matches[1]
