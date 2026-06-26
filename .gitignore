@@ -42,6 +42,7 @@ build/
 
 # Frontend build
 xkeen-go/web/node_modules/
+xkeen-go/node_modules/
 xkeen-go/web/static/dist/*.map
 
 # IDE
