@@ -16,6 +16,9 @@ env:
   GO_VERSION: '1.26'
   NODE_VERSION: '20'
 
+permissions:
+  contents: read
+
 jobs:
   go-checks:
     name: Go (vet, test -race, govulncheck)

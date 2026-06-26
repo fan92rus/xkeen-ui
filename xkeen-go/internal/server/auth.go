@@ -125,7 +125,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("session"); err == nil {
 		s.sessions.DestroySession(cookie.Value)
 	}
-	ClearSessionCookie(w)
+	ClearSessionCookie(w, s.cfg.CookieSecure)
 
 	writeJSON(w, http.StatusOK, &messageResponse{OK: true})
 }

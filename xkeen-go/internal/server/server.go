@@ -63,6 +63,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	// Initialize middleware
 	middleware := NewMiddleware(sessions, security)
 	middleware.SetTrustProxyHeaders(cfg.TrustProxyHeaders)
+	middleware.SetCookieSecure(cfg.CookieSecure)
 
 	// Create router
 	router := mux.NewRouter()

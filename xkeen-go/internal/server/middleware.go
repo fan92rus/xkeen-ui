@@ -195,6 +195,7 @@ type Middleware struct {
 	security          SecurityService
 	rateLimit         *RateLimiter
 	trustProxyHeaders bool
+	cookieSecure      bool
 }
 
 // NewMiddleware creates a new Middleware instance.
@@ -210,6 +211,11 @@ func NewMiddleware(sessions SessionManager, security SecurityService) *Middlewar
 // When false (default), only RemoteAddr is used for client IP detection.
 func (m *Middleware) SetTrustProxyHeaders(trust bool) {
 	m.trustProxyHeaders = trust
+}
+
+// SetCookieSecure configures whether the Secure flag is set on cookies.
+func (m *Middleware) SetCookieSecure(secure bool) {
+	m.cookieSecure = secure
 }
 
 // Stop gracefully stops all background goroutines in the middleware.
@@ -242,6 +248,7 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 				Path:     "/",
 				MaxAge:   -1,
 				HttpOnly: true,
+				Secure:   m.cookieSecure,
 				SameSite: http.SameSiteStrictMode,
 			})
 			m.handleAuthFailure(w, r, "Session expired")

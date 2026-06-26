@@ -77,13 +77,14 @@ func (s *Server) SetCSRFTokenCookie(w http.ResponseWriter, token string) {
 }
 
 // ClearSessionCookie clears the session cookie.
-func ClearSessionCookie(w http.ResponseWriter) {
+func ClearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
 	// Also clear CSRF token cookie
@@ -93,6 +94,7 @@ func ClearSessionCookie(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: false,
+		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
 }
