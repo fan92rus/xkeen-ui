@@ -5,14 +5,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/mux"
@@ -152,8 +150,9 @@ func (h *InteractiveHandler) sendError(conn *websocket.Conn, text string) {
 }
 
 // executeInteractive runs the command with PTY and handles stdin/stdout.
-// Goroutines are tracked via WaitGroup and interrupted via context cancellation
-// to prevent goroutine leaks after command completion or shutdown.
+// Goroutines use BLOCKING reads and are cleaned up by closing ptmx/conn at
+// shutdown (see inline comments). This avoids deadline-polling which caused
+// a regression where user input was silently dropped.
 func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config CommandConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), config.Timeout)
 	defer cancel()
@@ -174,7 +173,6 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 		h.sendError(conn, "Failed to start PTY: "+err.Error())
 		return
 	}
-	defer func() { _ = ptmx.Close() }()
 
 	// Set initial PTY size (reasonable default for web UI)
 	_ = pty.Setsize(ptmx, &pty.Winsize{
@@ -182,97 +180,82 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 		Rows: 40,
 	})
 
-	var wg sync.WaitGroup
+	// Cleanup strategy: goroutines use BLOCKING reads (no deadlines). They are
+	// unblocked at shutdown by closing the resource they read from:
+	//   - output goroutine reads from ptmx  → closed after cmd.Wait() → EOF
+	//   - input  goroutine reads from conn  → closed after 'complete' sent
+	// This avoids the deadline-polling pattern that could cause ReadJSON to
+	// return a non-timeout error mid-message (killing the input goroutine and
+	// silently dropping all subsequent user input).
+	var outputWg, inputWg sync.WaitGroup
 
-	// Read from PTY and send to WebSocket
-	wg.Add(1)
+	// Read from PTY and send to WebSocket (output goroutine)
+	outputWg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer outputWg.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[interactive] WebSocket write panic recovered: %v", r)
+				log.Printf("[interactive] output goroutine panic recovered: %v", r)
 			}
 		}()
 		buf := make([]byte, 1024)
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				// Use read deadline so we periodically check ctx cancellation
-				_ = ptmx.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-				n, err := ptmx.Read(buf)
-				if n > 0 {
-					_ = conn.WriteJSON(ServerMessage{
-						Type: "output",
-						Text: string(buf[:n]),
-					})
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				if writeErr := conn.WriteJSON(ServerMessage{
+					Type: "output",
+					Text: string(buf[:n]),
+				}); writeErr != nil {
+					return // client gone
 				}
-				if err != nil {
-					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-						continue // deadline timeout, re-check ctx
-					}
-					return // EOF or real error
-				}
+			}
+			if err != nil {
+				return // EOF (ptmx closed) or error
 			}
 		}
 	}()
 
-	// Read WebSocket messages and write to PTY
-	wg.Add(1)
+	// Read WebSocket messages and write to PTY (input goroutine)
+	inputWg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer inputWg.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[interactive] WebSocket read panic recovered: %v", r)
+				log.Printf("[interactive] input goroutine panic recovered: %v", r)
 			}
 		}()
 		for {
-			select {
-			case <-ctx.Done():
+			var msg ClientMessage
+			if err := conn.ReadJSON(&msg); err != nil {
+				return // connection closed or error
+			}
+			switch msg.Type {
+			case "input":
+				if _, werr := ptmx.Write([]byte(msg.Text)); werr != nil {
+					log.Printf("[interactive] ptmx.Write failed for input %q: %v", msg.Text, werr)
+				} else {
+					log.Printf("[interactive] wrote %d bytes to PTY: %q", len(msg.Text), msg.Text)
+				}
+			case "signal":
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(syscall.SIGTERM)
+				}
 				return
-			default:
-				// Use read deadline so we periodically check ctx cancellation
-				_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-				var msg ClientMessage
-				if err := conn.ReadJSON(&msg); err != nil {
-					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-						continue // deadline timeout, re-check ctx
-					}
-					return // connection closed or real error
-				}
-				switch msg.Type {
-				case "input":
-					_, _ = ptmx.Write([]byte(msg.Text))
-				case "signal":
-					if cmd.Process != nil {
-						_ = cmd.Process.Signal(syscall.SIGTERM)
-					}
-					return
-				}
 			}
 		}
 	}()
 
 	// Wait for command to complete
 	err = cmd.Wait()
+	log.Printf("[interactive] command '%s' finished, cleaning up goroutines", config.Cmd)
 
-	// Cancel context to signal goroutines to stop
+	// Command done. Unblock the output goroutine by closing ptmx (its Read
+	// returns EOF). We do NOT use defer here so the close happens now.
+	_ = ptmx.Close()
+	outputWg.Wait()
+
+	// Cancel the timeout context (no-op if not expired).
 	cancel()
-
-	// Wait for goroutines with timeout
-	wgDone := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(wgDone)
-	}()
-
-	select {
-	case <-wgDone:
-		// Goroutines finished cleanly
-	case <-time.After(3 * time.Second):
-		log.Printf("Interactive: timeout waiting for goroutines to finish for command '%s'", config.Cmd)
-	}
 
 	// Get exit code
 	exitCode := 0
@@ -284,14 +267,20 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 		}
 	}
 
-	// Send completion message (goroutines are done, no race on conn.WriteJSON)
+	// Send completion message. Output goroutine is done (ptmx closed), and we
+	// haven't closed conn yet, so this write succeeds. The input goroutine may
+	// still be blocked on conn.ReadJSON — that's fine, it's reading, not writing.
 	_ = conn.WriteJSON(ServerMessage{
 		Type:     "complete",
 		Success:  exitCode == 0,
 		ExitCode: exitCode,
 	})
 
-	log.Printf("Interactive command '%s' completed with exit code %d", config.Cmd, exitCode)
+	// Now close conn to unblock the input goroutine's ReadJSON (returns error).
+	conn.Close()
+	inputWg.Wait()
+
+	log.Printf("[interactive] command '%s' completed with exit code %d", config.Cmd, exitCode)
 }
 
 // RegisterInteractiveWSRoute registers the WebSocket route for interactive commands.
