@@ -180,8 +180,20 @@
             <div class="awg-result-banner">
               ✅ Клиент <code>{{ addPeer.result.client_ip }}</code> добавлен в <code>{{ addPeer.server }}</code>
             </div>
-            <p class="awg-modal-hint">Импортируйте этот конфиг в приложение AmneziaWG:</p>
-            <div class="awg-config-wrap">
+            <!-- View toggle -->
+            <div class="awg-config-toggle">
+              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
+                      @click="configView = 'qr'">📱 QR-код</button>
+              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
+                      @click="configView = 'text'">📄 Текст</button>
+            </div>
+            <!-- QR view -->
+            <div v-if="configView === 'qr'" class="awg-qr-wrap">
+              <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR-код конфига" class="awg-qr-img" />
+              <p v-else class="awg-peers-status">QR-код недоступен</p>
+            </div>
+            <!-- Text view -->
+            <div v-else class="awg-config-wrap">
               <pre class="awg-config-text">{{ addPeer.result.client_config }}</pre>
               <button class="awg-copy-btn" @click="copyConfig" :title="'Копировать'">{{ copied ? '✓' : '📋' }}</button>
             </div>
@@ -202,6 +214,7 @@ import * as awgApi from '../services/awg.js';
 import * as xkeen from '../services/xkeen.js';
 import { useAppStore } from '../stores/app.js';
 import { log } from '../utils/logger.js';
+import QRCode from 'qrcode';
 
 const app = useAppStore();
 
@@ -230,6 +243,10 @@ const peerLoading = reactive({});
 // Add peer dialog
 const addPeer = reactive({ show: false, server: '', label: '', loading: false, result: null });
 const copied = ref(false);
+
+// QR code state
+const configView = ref('qr'); // 'qr' | 'text'
+const qrDataUrl = ref('');
 
 onMounted(() => {
   loadInterfaces();
@@ -376,11 +393,14 @@ function openAddPeer(serverName) {
   addPeer.loading = false;
   addPeer.result = null;
   copied.value = false;
+  qrDataUrl.value = '';
+  configView.value = 'qr';
 }
 
 function closeAddPeer() {
   addPeer.show = false;
   addPeer.result = null;
+  qrDataUrl.value = '';
 }
 
 async function doAddPeer() {
@@ -388,6 +408,19 @@ async function doAddPeer() {
   try {
     addPeer.result = await awgApi.addPeer(addPeer.server, addPeer.label);
     await loadPeers(addPeer.server);
+    // Generate QR code from the client config
+    try {
+      qrDataUrl.value = await QRCode.toDataURL(addPeer.result.client_config, {
+        width: 280,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+    } catch (e) {
+      log('QR generation failed', e);
+      qrDataUrl.value = '';
+      configView.value = 'text';
+    }
   } catch (e) {
     error.value = 'Ошибка: ' + (e.message || e);
     closeAddPeer();
@@ -963,6 +996,58 @@ function downloadConfig() {
 }
 
 .awg-copy-btn:hover { border-color: var(--primary-color); }
+
+/* ── Config view toggle ── */
+.awg-config-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: var(--background);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+
+.awg-toggle-btn {
+  flex: 1;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--text-gray);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.awg-toggle-btn:hover {
+  color: var(--primary-text);
+}
+
+.awg-toggle-active {
+  background: var(--menu-background);
+  color: var(--primary-text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ── QR code ── */
+.awg-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+}
+
+.awg-qr-img {
+  width: 280px;
+  height: 280px;
+  display: block;
+}
 
 /* ── Responsive ── */
 @media (max-width: 600px) {
