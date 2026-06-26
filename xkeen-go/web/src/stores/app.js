@@ -143,7 +143,11 @@ export const useAppStore = defineStore('app', () => {
 
 	function sendInput() {
 		if (canSendInput() && inputValue.value) {
-			interactiveSession.value.send(inputValue.value + '\n');
+			// Send '\r' (carriage return) for Enter, not '\n'. Real terminals send
+		// 0x0D on Enter; the PTY line-discipline (ICRNL) converts it to '\n' in
+		// canonical mode, and raw-mode TUI apps (like xkeen's full-screen menu)
+		// expect '\r' directly. '\n' is silently ignored by raw-mode apps.
+		interactiveSession.value.send(inputValue.value + '\r');
 			inputValue.value = '';
 		}
 	}
