@@ -73,10 +73,49 @@ const sections = [
   { id: 'metrics', icon: '📊', label: 'Метрики' },
 ];
 
+const awg = ref({ installed: false, installing: false, error: '', progress: '' });
+
+async function checkAWG() {
+  try {
+    const s = await installApi.getAWGStatus();
+    awg.value.installed = s.installed;
+  } catch (e) { /* not available */ }
+}
+
+async function installAWG() {
+  if (awg.value.installed) { return; }
+  awg.value.installing = true;
+  awg.value.error = '';
+  awg.value.progress = '';
+  try {
+    await installApi.installAWG({
+      onProgress: (data) => {
+        awg.value.progress = data.status || '';
+      },
+      onComplete: () => {
+        awg.value.installed = true;
+        awg.value.installing = false;
+        awg.value.progress = '';
+        app.showToast('AmneziaWG успешно установлен!', 'success');
+      },
+      onError: (err) => {
+        awg.value.installing = false;
+        awg.value.error = err.error || err.message || 'Ошибка установки';
+        awg.value.progress = '';
+      },
+    });
+  } catch (e) {
+    awg.value.installing = false;
+    awg.value.error = e.message || 'Ошибка установки';
+    awg.value.progress = '';
+  }
+}
+
 onMounted(() => {
 	loadAutoApply();
 	loadMetricsPort();
 	app.loadXraySettings();
+  checkAWG();
 });
 </script>
 
@@ -280,6 +319,29 @@ onMounted(() => {
               <button @click="saveMetricsPort()" :disabled="metricsSaving" class="btn btn-primary">
                 {{ metricsSaving ? 'Сохранение...' : 'Сохранить' }}
               </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- AWG -->
+        <section :id="sections[6].id" class="s-section">
+          <h2 class="s-title">🔗 AmneziaWG</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">amneziawg-go + amneziawg-tools</div>
+                <div class="s-row-desc">Userspace AWG для Keenetic. Поддерживает WARP и другие AWG-конфиги.</div>
+              </div>
+              <div v-if="awg.installed" class="badge badge-success">Установлен</div>
+              <div v-else class="badge badge-muted">Не установлен</div>
+            </div>
+            <div v-if="awg.progress" class="s-callout s-callout-info">{{ awg.progress }}</div>
+            <div v-if="awg.error" class="s-callout s-callout-err">{{ awg.error }}</div>
+            <div class="s-row s-row-actions">
+              <button v-if="!awg.installed && !awg.installing" @click="installAWG()" class="btn btn-primary">
+                Установить AmneziaWG
+              </button>
+              <button v-if="awg.installing" disabled class="btn btn-primary">Установка...</button>
             </div>
           </div>
         </section>

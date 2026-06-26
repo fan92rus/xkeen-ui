@@ -43,6 +43,7 @@ type Server struct {
 	subscriptionHandler *handlers.SubscriptionHandler
 	metricsHandler      *handlers.MetricsHandler
 	commandRegistry     *handlers.CommandRegistry
+	installHandler      *handlers.InstallHandler
 
 	// Shutdown state
 	shutdown    bool
@@ -125,6 +126,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	s.interactiveHandler = handlers.NewInteractiveHandler(&handlers.InteractiveConfig{
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	}, s.commandRegistry)
+	s.installHandler = handlers.NewInstallHandler()
 
 	// Subscription handler
 	subStorePath := filepath.Join(filepath.Dir(configPath), "subscriptions.json")
