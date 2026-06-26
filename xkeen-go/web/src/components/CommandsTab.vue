@@ -173,3 +173,9 @@ function isLoading(command) { return executingCommand.value === command; }
     </template>
   </div>
 </template>
+
+<style scoped>
+.commands-toolbar {
+  margin-bottom: 16px;
+}
+</style>
