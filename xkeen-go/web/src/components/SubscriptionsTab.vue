@@ -373,7 +373,7 @@ onMounted(async () => {
     <!-- LEFT: subscriptions + profiles + filters -->
     <div class="sub-left">
       <!-- Subscription cards -->
-      <div v-for="s in subs" :key="s.id" class="sub-card" :class="{ editing: editId === s.id }">
+      <div v-for="s in subs" :key="s.id" class="sub-card" :class="{ editing: editId === s.id, builtin: s.is_builtin }">
         <div v-if="editId !== s.id" class="sub-row">
           <span class="dot" :class="s.enabled ? 'on' : 'off'"></span>
           <span class="name">{{ s.name || 'Без названия' }}</span>
@@ -382,8 +382,8 @@ onMounted(async () => {
           <span class="err" v-if="s.last_error" :title="s.last_error">!</span>
           <span class="acts">
             <button @click="fetchOne(s.id)" :disabled="busy" title="Обновить">&#x21bb;</button>
-            <button @click="editStart(s)" title="Редактировать">&#x270e;</button>
-            <button @click="remove(s.id)" class="danger" title="Удалить">&#x2715;</button>
+            <button v-if="!s.is_builtin" @click="editStart(s)" title="Редактировать">&#x270e;</button>
+            <button v-if="!s.is_builtin" @click="remove(s.id)" class="danger" title="Удалить">&#x2715;</button>
           </span>
         </div>
         <div v-else class="sub-edit">

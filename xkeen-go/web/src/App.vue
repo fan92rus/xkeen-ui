@@ -9,6 +9,7 @@ import LogsTab from './components/LogsTab.vue';
 import SettingsTab from './components/SettingsTab.vue';
 const CommandsTab = defineAsyncComponent(() => import('./components/CommandsTab.vue'));
 const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vue'));
+const AwgTab = defineAsyncComponent(() => import('./components/AwgTab.vue'));
 
 const app = useAppStore();
 
@@ -22,6 +23,7 @@ const tabs = computed(() => {
     const list = [
         { id: 'editor', label: 'Редактор' },
         { id: 'subscriptions', label: 'Подписки' },
+        { id: 'awg', label: 'AWG' },
         { id: 'logs', label: 'Логи' },
         { id: 'settings', label: 'Настройки' },
         { id: 'commands', label: 'Команды' },
@@ -46,6 +48,7 @@ const icons = {
     settings: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
     commands: 'M4 17l6-6-6-6M12 19h8',
     metrics: 'M18 20V10M12 20V4M6 20v-6',
+    awg: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
     play: 'M6 3l14 9-14 9V3z',
     stop: 'M3.6 3.6h16.8v16.8H3.6z',
     restart: 'M21 12a9 9 0 1 1-6.219-8.56M21 3v6h-6',
@@ -161,6 +164,7 @@ onUnmounted(() => {
       <EditorTab v-if="app.activeTab === 'editor'" ref="editorRef" class="tab-content" />
       <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content" />
       <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
+      <AwgTab v-if="app.activeTab === 'awg'" class="tab-content" />
       <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />
       <CommandsTab v-if="app.activeTab === 'commands'" class="tab-content" />
       <MetricsTab v-if="app.activeTab === 'metrics'" :active="app.activeTab === 'metrics'" class="tab-content" />
