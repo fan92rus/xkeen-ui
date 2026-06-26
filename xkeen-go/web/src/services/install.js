@@ -1,6 +1,8 @@
-// services/install.js - AWG installation API
+// services/install.js — AmneziaWG installation service
+// Matches the backend InstallHandler SSE protocol.
+
+import { logError } from '../utils/logger.js';
 import * as api from './api.js';
-import { error as logError } from '../utils/logger.js';
 
 export async function getAWGStatus() {
     return api.get('/api/install/awg/status');
@@ -10,6 +12,13 @@ export async function setupAWGInit() {
     return api.post('/api/install/awg/init', {});
 }
 
+/**
+ * Uninstall AmneziaWG via SSE streaming.
+ * Calls onProgress({ percent, status }) as the backend reports phases.
+ * Calls onComplete({ percent, status }) on success.
+ * Calls onError({ error }) on failure.
+ * Resolves on successful completion.
+ */
 export function uninstallAWG(options) {
     const { onProgress, onComplete, onError } = options;
 
@@ -26,7 +35,11 @@ export function uninstallAWG(options) {
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) { resolve(); return; }
+                if (done) {
+                    onComplete?.({ percent: 100, status: 'complete' });
+                    resolve();
+                    return;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
@@ -43,6 +56,10 @@ export function uninstallAWG(options) {
                                 case 'progress':
                                     onProgress?.(data);
                                     break;
+                                case 'complete':
+                                    onComplete?.(data);
+                                    resolve(data);
+                                    return;
                                 case 'error':
                                     onError?.(data);
                                     reject(new Error(data.error));
@@ -62,6 +79,13 @@ export function uninstallAWG(options) {
     });
 }
 
+/**
+ * Install AmneziaWG via SSE streaming.
+ * Calls onProgress({ percent, status }) as the backend reports phases.
+ * Calls onComplete({ percent, status }) on success.
+ * Calls onError({ error }) on failure.
+ * Resolves on successful completion.
+ */
 export function installAWG(options) {
     const { onProgress, onComplete, onError } = options;
 
@@ -78,7 +102,11 @@ export function installAWG(options) {
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) { resolve(); return; }
+                if (done) {
+                    onComplete?.({ percent: 100, status: 'complete' });
+                    resolve();
+                    return;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
