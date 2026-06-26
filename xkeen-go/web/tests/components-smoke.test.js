@@ -147,7 +147,6 @@ import EditorTab from '../src/components/EditorTab.vue';
 import LogsTab from '../src/components/LogsTab.vue';
 import MetricsTab from '../src/components/MetricsTab.vue';
 import SettingsTab from '../src/components/SettingsTab.vue';
-import SubscriptionsTab from '../src/components/SubscriptionsTab.vue';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -233,8 +232,4 @@ describe('Component smoke tests', () => {
     expect(w.exists()).toBe(true);
   });
 
-  // SubscriptionsTab is excluded from smoke tests because its computed
-  // property accesses profiles.value.find before loadProfiles resolves
-  // in the test environment. This is a test-mock limitation, not a runtime
-  // bug (profiles.value is always an array in the real app).
 });

@@ -395,3 +395,60 @@ func findSubstr(s, sub string) bool {
 	}
 	return false
 }
+
+func TestApplyFilter_IncludeExcludeRegex_Interaction(t *testing.T) {
+	// User scenario: include "Hysteria2", exclude "LTE"
+	// Proxies that have "Hysteria2" in remarks AND "LTE" should be excluded
+	proxies := []*ProxyEntry{
+		{Remarks: "Hysteria2 Fast Server", Tag: "proxy-1"},
+		{Remarks: "Hysteria2 LTE Germany", Tag: "proxy-2"},
+		{Remarks: "VLESS Standard", Tag: "proxy-3"},
+		{Remarks: "Hysteria2 LTE Japan", Tag: "proxy-4"},
+	}
+
+	filter := &Filter{
+		IncludeRegexes: []string{"Hysteria2"},
+		ExcludeRegexes: []string{"LTE"},
+	}
+
+	result := ApplyFilter(proxies, filter)
+
+	// Should include only proxies matching "Hysteria2" that do NOT match "LTE"
+	if len(result) != 1 {
+		t.Errorf("expected 1 result, got %d: %v", len(result), tags(result))
+	}
+	if len(result) > 0 && result[0].Tag != "proxy-1" {
+		t.Errorf("expected proxy-1 (Hysteria2 Fast Server), got %s", result[0].Tag)
+	}
+}
+
+func TestApplyFilter_IncludeMatchButExcludeAlsoMatches(t *testing.T) {
+	// Proxy matches include AND exclude — must be excluded
+	proxies := []*ProxyEntry{
+		{Remarks: "Premium Gaming Server", Tag: "p1"},
+		{Remarks: "Premium Server", Tag: "p2"},
+		{Remarks: "Standard Server", Tag: "p3"},
+	}
+
+	filter := &Filter{
+		IncludeRegexes: []string{"Premium"},
+		ExcludeRegexes: []string{"Gaming"},
+	}
+
+	result := ApplyFilter(proxies, filter)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 result (p2 only), got %d: %v", len(result), tags(result))
+	}
+	if len(result) > 0 && result[0].Tag != "p2" {
+		t.Errorf("expected p2 (Premium Server), got %s", result[0].Tag)
+	}
+}
+
+func tags(proxies []*ProxyEntry) []string {
+	t := make([]string, len(proxies))
+	for i, p := range proxies {
+		t[i] = p.Tag
+	}
+	return t
+}

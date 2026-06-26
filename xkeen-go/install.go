@@ -160,7 +160,7 @@ func install() error {
 	cronDir := "/opt/etc/cron.d"
 	cronFile := filepath.Join(cronDir, "xkeen-ui-watchdog")
 	cronContent := fmt.Sprintf(
-		"* * * * * root %%s check || %%s start >> %%s 2>&1\n",
+		"* * * * * root %s check || %s start >> %s 2>&1\n",
 		installSymlink, installSymlink, installLogFile,
 	)
 	if err := os.MkdirAll(cronDir, 0755); err != nil {
