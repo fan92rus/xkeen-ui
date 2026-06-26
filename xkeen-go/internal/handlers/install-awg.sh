@@ -11,8 +11,8 @@
 #   DONE               — success (exit 0)
 
 PROJECT="ShidlaSGC%2Fkeenetic-entware-awg-go"
-REF="master"
-PREFIX="01__Entware_AWG-Go_Install"
+REF="main"
+PREFIX="blob/01__Entware_AWG-Go_Install"
 
 # ── Architecture detection ──
 ARCH=$(uname -m)
