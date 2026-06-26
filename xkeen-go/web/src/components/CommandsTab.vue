@@ -131,6 +131,17 @@ function scrollToBottom() {
     });
 }
 
+// Set native title tooltip ONLY when the description text is truncated (ellipsis).
+// Avoids showing tooltips for short descriptions that fit.
+function onDescHover(e) {
+  const el = e.target;
+  if (el.scrollWidth > el.clientWidth) {
+    el.title = el.textContent;
+  } else {
+    el.removeAttribute('title');
+  }
+}
+
 function isLoading(command) { return executingCommand.value === command; }
 </script>
 
@@ -158,7 +169,7 @@ function isLoading(command) { return executingCommand.value === command; }
           <div v-for="cmd in category.commands" :key="cmd.name" class="command-item">
             <div class="command-info">
               <span class="command-name">{{ cmd.name }}</span>
-              <span class="command-desc">{{ cmd.description }}</span>
+              <span class="command-desc" @mouseenter="onDescHover">{{ cmd.description }}</span>
             </div>
             <button class="btn"
                     :class="isDangerous(cmd.name) ? 'btn-danger' : 'btn-primary'"
