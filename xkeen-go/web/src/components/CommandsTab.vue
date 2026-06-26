@@ -2,7 +2,7 @@
 import { ref, nextTick, onMounted } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { InteractiveSession } from '../services/interactive.js';
-import { getCommands } from '../services/xkeen.js';
+import { getCommands, refreshCommands } from '../services/xkeen.js';
 import { groupCommandsByCategory } from '../utils/commands-grouping.js';
 
 const app = useAppStore();
@@ -13,6 +13,7 @@ const executingCommand = ref('');
 // reflects the actually-available, actually-allowed commands.
 const categories = ref([]);
 const loading = ref(true);
+const refreshing = ref(false);
 const loadError = ref('');
 
 // Flat lookup of { name → { name, description, dangerous } } for the confirm
@@ -43,6 +44,27 @@ async function loadCommandPalette() {
         loadError.value = err?.message || 'причина неизвестна';
     } finally {
         loading.value = false;
+    }
+}
+
+async function refreshCommandPalette() {
+    refreshing.value = true;
+    loadError.value = '';
+    try {
+        const { commands, error } = await refreshCommands();
+        categories.value = groupCommandsByCategory(commands);
+        const idx = {};
+        for (const cat of categories.value) {
+            for (const c of cat.commands) idx[c.name] = c;
+        }
+        commandIndex.value = idx;
+        if (!commands.length && error) {
+            loadError.value = error;
+        }
+    } catch (err) {
+        loadError.value = err?.message || 'причина неизвестна';
+    } finally {
+        refreshing.value = false;
     }
 }
 
@@ -121,7 +143,15 @@ function isLoading(command) { return executingCommand.value === command; }
     <div v-else-if="categories.length === 0" class="commands-empty">
       Команды недоступны. Убедитесь, что XKeen установлен.
     </div>
-    <div v-else class="commands-grid">
+    <template v-else>
+      <!-- Toolbar with refresh -->
+      <div class="commands-toolbar">
+        <span class="commands-count">{{ categories.flatMap(c => c.commands).length }} команд</span>
+        <button class="btn btn-sm" @click="refreshCommandPalette" :disabled="refreshing" style="margin-left:auto">
+          {{ refreshing ? 'Обновление…' : '🔄 Обновить' }}
+        </button>
+      </div>
+      <div class="commands-grid">
       <div v-for="category in categories" :key="category.name" class="command-category-block">
         <h3 class="category-title">{{ category.name }}</h3>
         <div class="category-commands-list">
@@ -140,5 +170,6 @@ function isLoading(command) { return executingCommand.value === command; }
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>

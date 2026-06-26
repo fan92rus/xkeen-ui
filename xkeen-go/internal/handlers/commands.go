@@ -86,4 +86,22 @@ func (h *CommandsHandler) GetCommands(w http.ResponseWriter, r *http.Request) {
 // RegisterCommandsRoutes registers command-related routes.
 func RegisterCommandsRoutes(r *mux.Router, handler *CommandsHandler) {
 	r.HandleFunc("/xkeen/commands", handler.GetCommands).Methods("GET")
+	r.HandleFunc("/xkeen/commands/refresh", handler.RefreshCommands).Methods("POST")
+}
+
+// RefreshCommands force-reloads the command list from xkeen.
+// POST /api/xkeen/commands/refresh
+func (h *CommandsHandler) RefreshCommands(w http.ResponseWriter, r *http.Request) {
+	h.registry.Refresh()
+	all := h.registry.All()
+	commands := make([]CommandInfo, 0, len(all))
+	for _, config := range all {
+		commands = append(commands, CommandInfo{
+			Cmd:         config.Cmd,
+			Description: config.Description,
+			Category:    config.Category,
+			Dangerous:   config.Dangerous,
+		})
+	}
+	respondJSON(w, http.StatusOK, CommandsListResponse{Commands: commands})
 }

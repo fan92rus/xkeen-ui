@@ -1,6 +1,6 @@
 // services/xkeen.js - XKeen service control
 
-import { get, post } from './api.js';
+import { get, post, request } from './api.js';
 
 export async function start() {
     return post('/api/xkeen/start', {});
@@ -35,5 +35,10 @@ export async function getStatus() {
  */
 export async function getCommands() {
     const data = await get('/api/xkeen/commands');
+    return { commands: data.commands || [], error: data.error || '' };
+}
+
+export async function refreshCommands() {
+    const data = await post('/api/xkeen/commands/refresh', {});
     return { commands: data.commands || [], error: data.error || '' };
 }
