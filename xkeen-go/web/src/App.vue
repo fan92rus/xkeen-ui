@@ -4,6 +4,7 @@ import { onMounted, onUnmounted, ref, computed, provide, watch } from 'vue';
 import { useAppStore } from './stores/app.js';
 import { renderAnsi } from './utils/ansi-format.js';
 import { getAWGStatus } from './services/install.js';
+import { getMetricsPort } from './services/metrics.js';
 const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
@@ -21,20 +22,31 @@ watch(() => app.activeTab, (tab) => {
 });
 
 const awgInstalled = ref(false);
+const metricsEnabled = ref(true);
 
 onMounted(async () => {
     try {
         const status = await getAWGStatus();
         awgInstalled.value = status.installed;
     } catch (e) {
-        // If status check fails, assume not installed
         awgInstalled.value = false;
     }
-    // If AWG is not installed but user was on the AWG tab, redirect
-    if (!awgInstalled.value && app.activeTab === 'awg') {
+    try {
+        const m = await getMetricsPort();
+        metricsEnabled.value = m.enabled;
+    } catch (e) {
+        metricsEnabled.value = true; // assume enabled on error to avoid hiding
+    }
+    redirectInvalidTab();
+});
+
+function redirectInvalidTab() {
+    // If current tab is no longer available, redirect to first valid tab
+    const validIds = tabs.value.map(t => t.id);
+    if (!validIds.includes(app.activeTab)) {
         app.activeTab = tabs.value[0]?.id || 'editor';
     }
-});
+}
 
 const tabs = computed(() => {
     const list = [
@@ -43,8 +55,10 @@ const tabs = computed(() => {
         { id: 'logs', label: 'Логи' },
         { id: 'settings', label: 'Настройки' },
         { id: 'commands', label: 'Команды' },
-        { id: 'metrics', label: 'Монитор' },
     ];
+    if (metricsEnabled.value) {
+        list.push({ id: 'metrics', label: 'Монитор' });
+    }
     if (awgInstalled.value) {
         // Insert AWG tab after subscriptions
         list.splice(2, 0, { id: 'awg', label: 'AWG' });
