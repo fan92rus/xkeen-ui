@@ -66,11 +66,15 @@ for pkg in amneziawg-go amneziawg-tools; do
 
   echo "INSTALLING:${FILE}"
 
-  if ! opkg install --force-depends "/tmp/${FILE}"; then
-    echo "ERROR:opkg install failed for ${FILE}"
+  OPKG_OUTPUT=$(mktemp /tmp/opkg_XXXX.log)
+  if ! opkg install --force-depends --force-overwrite "/tmp/${FILE}" >"$OPKG_OUTPUT" 2>&1; then
+    ERROR_MSG=$(head -c 500 "$OPKG_OUTPUT" | tr '\n' ' ')
+    rm -f "$OPKG_OUTPUT"
+    echo "ERROR:opkg install failed for ${FILE}: ${ERROR_MSG}"
     rm -f "/tmp/${FILE}"
     exit 1
   fi
+  rm -f "$OPKG_OUTPUT"
 
   rm -f "/tmp/${FILE}"
   echo "OK:${FILE}"
