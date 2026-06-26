@@ -45,7 +45,8 @@ fi
 echo "FOUND:$(echo "$FILES" | tr '\n' ' ')"
 
 # ── Download and install each package ──
-for pkg in amneziawg-go amneziawg-tools; do
+# Install amneziawg-tools first (amneziawg-go depends on it)
+for pkg in amneziawg-tools amneziawg-go; do
   FILE=$(echo "$FILES" | grep "^${pkg}_")
   if [ -z "$FILE" ]; then
     echo "ERROR:Package $pkg not found in repo for $ARCH"
@@ -66,15 +67,15 @@ for pkg in amneziawg-go amneziawg-tools; do
 
   echo "INSTALLING:${FILE}"
 
-  OPKG_OUTPUT=$(mktemp /tmp/opkg_XXXX.log)
-  if ! opkg install --force-depends --force-overwrite "/tmp/${FILE}" >"$OPKG_OUTPUT" 2>&1; then
-    ERROR_MSG=$(head -c 500 "$OPKG_OUTPUT" | tr '\n' ' ')
-    rm -f "$OPKG_OUTPUT"
+  OPKG_LOG=/tmp/awg_opkg.log
+  if ! opkg install --force-depends --force-overwrite "/tmp/${FILE}" >"$OPKG_LOG" 2>&1; then
+    ERROR_MSG=$(head -c 500 "$OPKG_LOG" | tr '\n' ' ' 2>/dev/null)
+    rm -f "$OPKG_LOG"
     echo "ERROR:opkg install failed for ${FILE}: ${ERROR_MSG}"
     rm -f "/tmp/${FILE}"
     exit 1
   fi
-  rm -f "$OPKG_OUTPUT"
+  rm -f "$OPKG_LOG"
 
   rm -f "/tmp/${FILE}"
   echo "OK:${FILE}"
