@@ -3,6 +3,7 @@ import { ref, onMounted, inject } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import * as sub from '../services/subscription.js';
 import * as metrics from '../services/metrics.js';
+import * as installApi from '../services/install.js';
 
 const app = useAppStore();
 const reloadMetricsState = inject('reloadMetricsState', () => {});
