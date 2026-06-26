@@ -200,8 +200,11 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 		exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", cfg.Mark)).Run()
 	}
 
-	// awg-quick down
-	cmd := exec.Command("awg-quick", "down", req.Name)
+	// awg-quick down — must use the full config path, same as UpInterface.
+	// 'awg-quick down <name>' looks for the config in its default directory
+	// (/opt/etc/amnezia/amneziawg/), but we store configs in h.awgDir.
+	confPath := filepath.Join(h.awgDir, req.Name+".conf")
+	cmd := exec.Command("awg-quick", "down", confPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("[awg] awg-quick down %s: %v\n%s", req.Name, err, string(output))
