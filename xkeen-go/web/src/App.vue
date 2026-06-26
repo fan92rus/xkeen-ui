@@ -3,6 +3,7 @@ import { defineAsyncComponent } from 'vue';
 import { onMounted, onUnmounted, ref, computed, provide, watch } from 'vue';
 import { useAppStore } from './stores/app.js';
 import { renderAnsi } from './utils/ansi-format.js';
+import { getAWGStatus } from './services/install.js';
 const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
@@ -19,16 +20,35 @@ watch(() => app.activeTab, (tab) => {
     location.hash = tab;
 });
 
+const awgInstalled = ref(false);
+
+onMounted(async () => {
+    try {
+        const status = await getAWGStatus();
+        awgInstalled.value = status.installed;
+    } catch (e) {
+        // If status check fails, assume not installed
+        awgInstalled.value = false;
+    }
+    // If AWG is not installed but user was on the AWG tab, redirect
+    if (!awgInstalled.value && app.activeTab === 'awg') {
+        app.activeTab = tabs.value[0]?.id || 'editor';
+    }
+});
+
 const tabs = computed(() => {
     const list = [
         { id: 'editor', label: 'Редактор' },
         { id: 'subscriptions', label: 'Подписки' },
-        { id: 'awg', label: 'AWG' },
         { id: 'logs', label: 'Логи' },
         { id: 'settings', label: 'Настройки' },
         { id: 'commands', label: 'Команды' },
         { id: 'metrics', label: 'Монитор' },
     ];
+    if (awgInstalled.value) {
+        // Insert AWG tab after subscriptions
+        list.splice(2, 0, { id: 'awg', label: 'AWG' });
+    }
     return list;
 });
 
