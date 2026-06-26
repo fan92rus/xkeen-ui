@@ -75,7 +75,7 @@ const sections = [
   { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
 ];
 
-const awg = ref({ installed: false, hasInitScript: false, interfaces: '', installing: false, initSaving: false, error: '', progress: '' });
+const awg = ref({ installed: false, hasInitScript: false, interfaces: '', installing: false, uninstalling: false, initSaving: false, error: '', progress: '' });
 
 async function checkAWG() {
   try {
@@ -112,6 +112,37 @@ async function installAWG() {
   } catch (e) {
     awg.value.installing = false;
     awg.value.error = e.message || 'Ошибка установки';
+    awg.value.progress = '';
+  }
+}
+
+async function uninstallAWG() {
+  if (!awg.value.installed) { return; }
+  if (!confirm('Удалить AmneziaWG? Будут остановлены все интерфейсы, удалены пакеты и init-скрипт.')) return;
+  awg.value.uninstalling = true;
+  awg.value.error = '';
+  awg.value.progress = '';
+  try {
+    await installApi.uninstallAWG({
+      onProgress: (data) => {
+        awg.value.progress = data.status || '';
+      },
+      onComplete: () => {
+        awg.value.installed = false;
+        awg.value.uninstalling = false;
+        awg.value.progress = '';
+        app.showToast('AmneziaWG удалён', 'success');
+        checkAWG();
+      },
+      onError: (err) => {
+        awg.value.uninstalling = false;
+        awg.value.error = err.error || err.message || 'Ошибка удаления';
+        awg.value.progress = '';
+      },
+    });
+  } catch (e) {
+    awg.value.uninstalling = false;
+    awg.value.error = e.message || 'Ошибка удаления';
     awg.value.progress = '';
   }
 }
@@ -366,6 +397,10 @@ onMounted(() => {
                 Установить AmneziaWG
               </button>
               <button v-if="awg.installing" disabled class="btn btn-primary">Установка...</button>
+              <button v-if="awg.installed && !awg.uninstalling" @click="uninstallAWG()" class="btn btn-danger" style="margin-left:auto">
+                Удалить AWG
+              </button>
+              <button v-if="awg.uninstalling" disabled class="btn btn-danger">Удаление...</button>
             </div>
           </div>
 
