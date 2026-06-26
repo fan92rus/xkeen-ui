@@ -119,7 +119,11 @@ onUnmounted(() => {
             <select class="file-select" :value="app.currentFile?.path || ''"
                     @change="app.loadFile($event.target.value)">
               <option value="" disabled>Выберите файл…</option>
-              <option v-for="f in app.files" :key="f.path" :value="f.path">{{ f.name }}</option>
+              <template v-for="g in app.fileGroups" :key="g.section">
+                <optgroup v-if="g.files.length" :label="g.label">
+                  <option v-for="f in g.files" :key="f.path" :value="f.path">{{ f.name }}</option>
+                </optgroup>
+              </template>
             </select>
           </template>
           <template v-else>

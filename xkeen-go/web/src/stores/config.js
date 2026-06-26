@@ -9,6 +9,7 @@ import { useAppStore } from './app.js';
 export const useConfigStore = defineStore('config', () => {
 	// ── State ──
 	const files = ref([]);
+	const fileGroups = ref([]);
 	const currentFile = ref(null);
 	const isValidJson = ref(true);
 	const lastSavedContent = ref('');
@@ -23,6 +24,24 @@ export const useConfigStore = defineStore('config', () => {
 		try {
 			const data = await configService.listFiles(mode);
 			files.value = data;
+		} catch { app.showToast('Не удалось загрузить файлы', 'error'); }
+	}
+
+	async function loadGroupedFiles() {
+		const app = useAppStore();
+		try {
+			const groups = await configService.listFilesGrouped();
+			fileGroups.value = groups;
+			// Build flat files list for backward compat
+			const all = [];
+			for (const g of groups) {
+				for (const f of g.files) {
+					f._section = g.section;
+					f._label = g.label;
+					all.push(f);
+				}
+			}
+			files.value = all;
 		} catch { app.showToast('Не удалось загрузить файлы', 'error'); }
 	}
 
@@ -127,9 +146,9 @@ export const useConfigStore = defineStore('config', () => {
 	function closeDiffModal() { diffModal.show = false; diffModal.diffContent = ''; }
 
 	return {
-		files, currentFile, isValidJson, lastSavedContent, editorLoadContent,
+		files, fileGroups, currentFile, isValidJson, lastSavedContent, editorLoadContent,
 		backupsModal, diffModal,
-		loadFiles, loadFile, saveFile,
+		loadFiles, loadGroupedFiles, loadFile, saveFile,
 		showBackups, closeBackupsModal, selectBackup, copyBackupContent, loadBackupToEditor,
 		openDiffModal, closeDiffModal,
 	};

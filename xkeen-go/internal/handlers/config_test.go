@@ -50,6 +50,7 @@ func setupConfigTest(t *testing.T) (*ConfigHandler, string, string) {
 		backupDir,
 		configDir,
 		mihomoDir,
+		filepath.Join(tmpDir, "awg"),
 		configPath,
 		"xray",
 	)

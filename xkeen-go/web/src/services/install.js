@@ -6,6 +6,10 @@ export async function getAWGStatus() {
     return api.get('/api/install/awg/status');
 }
 
+export async function setupAWGInit() {
+    return api.post('/api/install/awg/init', {});
+}
+
 export function installAWG(options) {
     const { onProgress, onComplete, onError } = options;
 

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -21,6 +22,9 @@ import (
 
 //go:embed install-awg.sh
 var installAWGScript string
+
+//go:embed install-awg-init.sh
+var installAWGInitScript string
 
 // InstallHandler handles AWG installation.
 type InstallHandler struct {
@@ -35,10 +39,12 @@ func NewInstallHandler() *InstallHandler {
 
 // AWGStatusResponse is the response for AWG status check.
 type AWGStatusResponse struct {
-	Installed    bool   `json:"installed"`
-	GoVersion    string `json:"amneziawg_go_version,omitempty"`
-	ToolsVersion string `json:"amneziawg_tools_version,omitempty"`
-	Error        string `json:"error,omitempty"`
+	Installed     bool   `json:"installed"`
+	HasInitScript bool   `json:"has_init_script"`
+	GoVersion     string `json:"amneziawg_go_version,omitempty"`
+	ToolsVersion  string `json:"amneziawg_tools_version,omitempty"`
+	Interfaces    string `json:"interfaces,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 // Status checks if AWG is installed.
@@ -67,7 +73,51 @@ func (h *InstallHandler) Status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Check init script
+	_, err := os.Stat("/opt/etc/init.d/awg")
+	resp.HasInitScript = err == nil
+
+	// Check interfaces
+	if data, err := exec.Command("/opt/etc/init.d/awg", "status").Output(); err == nil {
+		resp.Interfaces = strings.TrimSpace(string(data))
+	}
+
 	respondJSON(w, http.StatusOK, resp)
+}
+
+// InitScriptResponse is the response for init script operations.
+type InitScriptResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// SetupInitScript creates or updates the AWG init script.
+// POST /api/install/awg/init
+func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, r *http.Request) {
+	targetPath := "/opt/etc/init.d/awg"
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		respondJSON(w, http.StatusInternalServerError, InitScriptResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to create init.d dir: %v", err),
+		})
+		return
+	}
+
+	if err := os.WriteFile(targetPath, []byte(installAWGInitScript), 0755); err != nil {
+		respondJSON(w, http.StatusInternalServerError, InitScriptResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to write init script: %v", err),
+		})
+		return
+	}
+
+	log.Printf("[install] AWG init script written to %s", targetPath)
+	respondJSON(w, http.StatusOK, InitScriptResponse{
+		Success: true,
+		Message: "init script updated",
+	})
 }
 
 // AWGInstallProgress is sent as SSE events during installation.
@@ -82,6 +132,7 @@ func RegisterInstallRoutes(apiRouter *mux.Router, h *InstallHandler) {
 	sub := apiRouter.PathPrefix("/install").Subrouter()
 	sub.HandleFunc("/awg/status", h.Status).Methods("GET")
 	sub.HandleFunc("/awg/install", h.Install).Methods("POST")
+	sub.HandleFunc("/awg/init", h.SetupInitScript).Methods("POST")
 }
 
 // Install downloads and installs amneziawg-go and amneziawg-tools.
@@ -119,19 +170,19 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	// Write script to temp
-	scriptPath := "/tmp/install-awg.sh"
-	if err := os.WriteFile(scriptPath, []byte(installAWGScript), 0755); err != nil {
+	// Write install script to temp
+	installScriptPath := "/tmp/install-awg.sh"
+	if err := os.WriteFile(installScriptPath, []byte(installAWGScript), 0755); err != nil {
 		sendEvent("error", AWGInstallProgress{Percent: 0, Status: "failed",
 			Error: fmt.Sprintf("cannot write script: %v", err)})
 		return
 	}
-	defer os.Remove(scriptPath)
+	defer os.Remove(installScriptPath)
 
 	sendEvent("progress", AWGInstallProgress{Percent: 5, Status: "starting installation..."})
 
-	// Execute script, pipe stdout line by line
-	cmd := exec.CommandContext(r.Context(), "sh", scriptPath)
+	// Execute install script, pipe stdout line by line
+	cmd := exec.CommandContext(r.Context(), "sh", installScriptPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		sendEvent("error", AWGInstallProgress{Percent: 0, Status: "failed",
@@ -145,7 +196,7 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// S Event  DETECT → 10%  LISTING → 20%  DOWNLOAD → 40%  INSTALLING → 70%  OK/DONE/ERROR
+	// SSE events: DETECT→10 LISTING→20 FOUND→25 DOWNLOAD→45 INSTALLING→70 OK DONE→100
 	progressMap := map[string]int{
 		"DETECT":     10,
 		"LISTING":    20,
@@ -209,6 +260,17 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 
 waitExit:
 	cmd.Wait()
+
+	if cmd.ProcessState.ExitCode() == 0 {
+		// Auto-create init script after successful install
+		targetPath := "/opt/etc/init.d/awg"
+		os.MkdirAll(filepath.Dir(targetPath), 0755)
+		if werr := os.WriteFile(targetPath, []byte(installAWGInitScript), 0755); werr == nil {
+			log.Printf("[install] AWG init script auto-created at %s", targetPath)
+		} else {
+			log.Printf("[install] Warning: failed to create init script: %v", werr)
+		}
+	}
 
 	log.Printf("[install] AmneziaWG installation finished (exit code: %d)", cmd.ProcessState.ExitCode())
 }

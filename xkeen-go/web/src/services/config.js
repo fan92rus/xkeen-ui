@@ -7,6 +7,11 @@ export async function listFiles(mode = 'xray') {
     return data.files || [];
 }
 
+export async function listFilesGrouped() {
+    const data = await get('/api/config/files/grouped');
+    return data.groups || [];
+}
+
 export async function getFile(path) {
     return get(`/api/config/file?path=${encodeURIComponent(path)}`);
 }

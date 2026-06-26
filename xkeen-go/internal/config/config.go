@@ -29,6 +29,9 @@ type Config struct {
 	// MihomoBinary is the path or name of the mihomo binary.
 	MihomoBinary string `json:"mihomo_binary"`
 
+	// AWGConfigDir is the directory containing AmneziaWG config files.
+	AWGConfigDir string `json:"awg_config_dir"`
+
 	// MetricsPort is the port for Xray metrics endpoint (0 = disabled).
 	MetricsPort int `json:"metrics_port"`
 
@@ -89,10 +92,12 @@ func DefaultConfig() *Config {
 		XkeenBinary:     "xkeen",
 		MihomoConfigDir: "/opt/etc/mihomo",
 		MihomoBinary:    "mihomo",
+		AWGConfigDir:    "/opt/etc/awg",
 		AllowedRoots: []string{
 			"/opt/etc/xray",
 			"/opt/etc/xkeen",
 			"/opt/etc/mihomo",
+			"/opt/etc/awg",
 			"/opt/var/log",
 		},
 		SessionSecret:     "",

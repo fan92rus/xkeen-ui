@@ -170,7 +170,7 @@ export const useAppStore = defineStore('app', () => {
 	// ── Init ──
 	async function init() {
 		await checkModeAvailability();
-		configStore.loadFiles(currentMode.value);
+		configStore.loadGroupedFiles();
 		serviceStore.loadXraySettings();
 		updateStore.checkUpdate();
 		statusService.connectStatusStream((status) => { serviceStore.serviceStatus = status; });
@@ -197,6 +197,7 @@ export const useAppStore = defineStore('app', () => {
 		cancelConfirm, executeConfirm,
 		// Delegated actions from sub-stores
 		loadFiles: configStore.loadFiles,
+		loadGroupedFiles: configStore.loadGroupedFiles,
 		loadFile: configStore.loadFile,
 		saveFile: configStore.saveFile,
 		showBackups: configStore.showBackups,

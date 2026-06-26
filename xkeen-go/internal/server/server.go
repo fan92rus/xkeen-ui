@@ -83,7 +83,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	}
 
 	// Initialize handlers from handlers package
-	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.MihomoConfigDir, configPath, cfg.Mode)
+	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, configPath, cfg.Mode)
 	s.serviceHandler = handlers.NewServiceHandler()
 	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
 		func(port int) *handlers.MetricsHandler {

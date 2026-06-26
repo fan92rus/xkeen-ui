@@ -24,12 +24,13 @@ type ConfigHandler struct {
 	defaultPath     string
 	xrayConfigDir   string
 	mihomoConfigDir string
+	awgConfigDir    string
 	configPath      string
 	currentMode     string // "xray" or "mihomo"
 }
 
 // NewConfigHandler creates a new ConfigHandler.
-func NewConfigHandler(allowedRoots []string, backupDir, xrayConfigDir, mihomoConfigDir, configPath, initialMode string) *ConfigHandler {
+func NewConfigHandler(allowedRoots []string, backupDir, xrayConfigDir, mihomoConfigDir, awgConfigDir, configPath, initialMode string) *ConfigHandler {
 	validator, err := utils.NewPathValidator(allowedRoots)
 	if err != nil {
 		log.Printf("Warning: failed to create path validator: %v", err)
@@ -40,6 +41,7 @@ func NewConfigHandler(allowedRoots []string, backupDir, xrayConfigDir, mihomoCon
 		defaultPath:     xrayConfigDir,
 		xrayConfigDir:   xrayConfigDir,
 		mihomoConfigDir: mihomoConfigDir,
+		awgConfigDir:    awgConfigDir,
 		configPath:      configPath,
 		currentMode:     initialMode,
 	}
@@ -76,6 +78,11 @@ func isYAMLFile(name string) bool {
 func isJSONFile(name string) bool {
 	lower := strings.ToLower(name)
 	return strings.HasSuffix(lower, ".json") || strings.HasSuffix(lower, ".jsonc")
+}
+
+// isConfFile checks if a file is a config file (AWG/WireGuard format).
+func isConfFile(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".conf")
 }
 
 // ListFilesResponse is the response for the ListFiles endpoint.
@@ -163,9 +170,12 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 	// Determine default path based on mode
 	if queryPath == "" {
-		if mode == "mihomo" {
+		switch mode {
+		case "mihomo":
 			queryPath = h.mihomoConfigDir
-		} else {
+		case "awg":
+			queryPath = h.awgConfigDir
+		default:
 			queryPath = h.xrayConfigDir
 		}
 	}
@@ -188,7 +198,16 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Filter files based on mode - show all config files
+	files := h.filterFiles(entries, cleanPath, mode)
+
+	respondJSON(w, http.StatusOK, ListFilesResponse{
+		Path:  cleanPath,
+		Files: files,
+	})
+}
+
+// filterFiles filters directory entries based on mode/file type.
+func (h *ConfigHandler) filterFiles(entries []os.DirEntry, cleanPath, mode string) []FileInfo {
 	files := []FileInfo{}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -208,35 +227,82 @@ func (h *ConfigHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// For files, include based on mode
-		if mode == "mihomo" {
-			if isYAMLFile(name) {
-				files = append(files, FileInfo{
-					Name:     name,
-					Path:     filepath.Join(cleanPath, name),
-					Size:     info.Size(),
-					Modified: info.ModTime().Unix(),
-					IsDir:    false,
-				})
-			}
-		} else {
-			// Xray mode - show JSON/JSONC files
-			if isJSONFile(name) {
-				files = append(files, FileInfo{
-					Name:     name,
-					Path:     filepath.Join(cleanPath, name),
-					Size:     info.Size(),
-					Modified: info.ModTime().Unix(),
-					IsDir:    false,
-				})
-			}
+		// Include based on file type and mode
+		include := false
+		switch mode {
+		case "mihomo":
+			include = isYAMLFile(name)
+		case "awg":
+			include = isConfFile(name)
+		default:
+			include = isJSONFile(name)
+		}
+
+		if include {
+			files = append(files, FileInfo{
+				Name:     name,
+				Path:     filepath.Join(cleanPath, name),
+				Size:     info.Size(),
+				Modified: info.ModTime().Unix(),
+				IsDir:    false,
+			})
 		}
 	}
+	return files
+}
 
-	respondJSON(w, http.StatusOK, ListFilesResponse{
-		Path:  cleanPath,
-		Files: files,
-	})
+// GroupedFile represents a group of files from one directory.
+type GroupedFile struct {
+	Section string     `json:"section"`
+	Label   string     `json:"label"`
+	Path    string     `json:"path"`
+	Files   []FileInfo `json:"files"`
+}
+
+// ListFilesGroupedResponse is the response for the ListFilesGrouped endpoint.
+type ListFilesGroupedResponse struct {
+	Groups []GroupedFile `json:"groups"`
+}
+
+// ListFilesGrouped returns files grouped by config directory (xray, mihomo, awg).
+// GET /api/config/files/grouped
+func (h *ConfigHandler) ListFilesGrouped(w http.ResponseWriter, r *http.Request) {
+	groups := []GroupedFile{}
+
+	// Xray files
+	if h.dirExists(h.xrayConfigDir) {
+		entries, _ := os.ReadDir(h.xrayConfigDir)
+		groups = append(groups, GroupedFile{
+			Section: "xray",
+			Label:   "Xray",
+			Path:    h.xrayConfigDir,
+			Files:   h.filterFiles(entries, h.xrayConfigDir, "xray"),
+		})
+	}
+
+	// Mihomo files
+	if h.dirExists(h.mihomoConfigDir) {
+		entries, _ := os.ReadDir(h.mihomoConfigDir)
+		groups = append(groups, GroupedFile{
+			Section: "mihomo",
+			Label:   "Mihomo",
+			Path:    h.mihomoConfigDir,
+			Files:   h.filterFiles(entries, h.mihomoConfigDir, "mihomo"),
+		})
+	}
+
+	// AWG files
+	if h.dirExists(h.awgConfigDir) {
+		entries, _ := os.ReadDir(h.awgConfigDir)
+		groups = append(groups, GroupedFile{
+			Section: "awg",
+			Label:   "AmneziaWG",
+			Path:    h.awgConfigDir,
+			Files:   h.filterFiles(entries, h.awgConfigDir, "awg"),
+		})
+	}
+
+	respondJSON(w, http.StatusOK, ListFilesGroupedResponse{Groups: groups})
 }
 
 // GetMode returns current mode and availability.
@@ -369,10 +435,14 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 
 	// Validate based on file type
 	var isValid bool
-	if isYAMLFile(cleanPath) {
+	switch {
+	case isYAMLFile(cleanPath):
 		// YAML files - basic validation (non-empty)
 		isValid = len(strings.TrimSpace(string(data))) > 0
-	} else {
+	case isConfFile(cleanPath):
+		// AWG/WireGuard conf files - always valid (plain text)
+		isValid = true
+	default:
 		// JSON/JSONC files - validate JSON
 		jsonData, err := utils.JSONCtoJSON(data)
 		if err != nil {
@@ -434,13 +504,20 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate based on file type
-	if isYAMLFile(cleanPath) {
+	switch {
+	case isYAMLFile(cleanPath):
 		// YAML files - basic validation (non-empty)
 		if strings.TrimSpace(req.Content) == "" {
 			respondError(w, http.StatusBadRequest, "YAML content cannot be empty")
 			return
 		}
-	} else {
+	case isConfFile(cleanPath):
+		// AWG/WireGuard conf files - any text is valid
+		if len(req.Content) == 0 {
+			respondError(w, http.StatusBadRequest, "content cannot be empty")
+			return
+		}
+	default:
 		// JSON/JSONC files - validate JSON
 		jsonData, err := utils.JSONCtoJSON([]byte(req.Content))
 		if err != nil {
@@ -887,6 +964,7 @@ func RegisterConfigRoutes(r *mux.Router, handler *ConfigHandler) {
 	r.HandleFunc("/config/mode", handler.GetMode).Methods("GET")
 	r.HandleFunc("/config/mode", handler.SetMode).Methods("POST")
 	r.HandleFunc("/config/files", handler.ListFiles).Methods("GET")
+	r.HandleFunc("/config/files/grouped", handler.ListFilesGrouped).Methods("GET")
 	r.HandleFunc("/config/file", handler.ReadFile).Methods("GET")
 	r.HandleFunc("/config/file", handler.WriteFile).Methods("POST")
 	r.HandleFunc("/config/file", handler.DeleteFile).Methods("DELETE")

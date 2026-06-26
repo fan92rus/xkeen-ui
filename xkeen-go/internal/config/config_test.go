@@ -50,8 +50,11 @@ func TestDefaultConfig_ReturnsValidConfig(t *testing.T) {
 	if cfg.MihomoBinary != "mihomo" {
 		t.Errorf("MihomoBinary = %q, want %q", cfg.MihomoBinary, "mihomo")
 	}
-	if len(cfg.AllowedRoots) != 4 {
-		t.Fatalf("len(AllowedRoots) = %d, want 4", len(cfg.AllowedRoots))
+	if cfg.AWGConfigDir != "/opt/etc/awg" {
+		t.Errorf("AWGConfigDir = %q, want %q", cfg.AWGConfigDir, "/opt/etc/awg")
+	}
+	if len(cfg.AllowedRoots) != 5 {
+		t.Fatalf("len(AllowedRoots) = %d, want 5", len(cfg.AllowedRoots))
 	}
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")

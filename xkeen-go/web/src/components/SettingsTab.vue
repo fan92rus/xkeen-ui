@@ -73,12 +73,14 @@ const sections = [
   { id: 'metrics', icon: '📊', label: 'Метрики' },
 ];
 
-const awg = ref({ installed: false, installing: false, error: '', progress: '' });
+const awg = ref({ installed: false, hasInitScript: false, interfaces: '', installing: false, initSaving: false, error: '', progress: '' });
 
 async function checkAWG() {
   try {
     const s = await installApi.getAWGStatus();
     awg.value.installed = s.installed;
+    awg.value.hasInitScript = s.has_init_script;
+    awg.value.interfaces = s.interfaces || '';
   } catch (e) { /* not available */ }
 }
 
@@ -97,6 +99,7 @@ async function installAWG() {
         awg.value.installing = false;
         awg.value.progress = '';
         app.showToast('AmneziaWG успешно установлен!', 'success');
+        checkAWG();
       },
       onError: (err) => {
         awg.value.installing = false;
@@ -108,6 +111,23 @@ async function installAWG() {
     awg.value.installing = false;
     awg.value.error = e.message || 'Ошибка установки';
     awg.value.progress = '';
+  }
+}
+
+async function setupAWGInit() {
+  awg.value.initSaving = true;
+  try {
+    const r = await installApi.setupAWGInit();
+    if (r.success) {
+      app.showToast('Init-скрипт AWG создан', 'success');
+      checkAWG();
+    } else {
+      app.showToast(r.message || 'Ошибка создания init-скрипта', 'error');
+    }
+  } catch (e) {
+    app.showToast(e.message || 'Ошибка', 'error');
+  } finally {
+    awg.value.initSaving = false;
   }
 }
 
@@ -326,6 +346,8 @@ onMounted(() => {
         <!-- AWG -->
         <section :id="sections[6].id" class="s-section">
           <h2 class="s-title">🔗 AmneziaWG</h2>
+
+          <!-- Install -->
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -342,6 +364,29 @@ onMounted(() => {
                 Установить AmneziaWG
               </button>
               <button v-if="awg.installing" disabled class="btn btn-primary">Установка...</button>
+            </div>
+          </div>
+
+          <!-- Init script -->
+          <div class="s-block" v-if="awg.installed">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Init-скрипт</div>
+                <div class="s-row-desc">Автозапуск AWG при загрузке роутера</div>
+              </div>
+              <div v-if="awg.hasInitScript" class="badge badge-success">Создан</div>
+              <div v-else class="badge badge-muted">Не создан</div>
+            </div>
+            <div v-if="awg.interfaces" class="s-callout s-callout-info">
+              <pre style="margin:0;font-size:12px">{{ awg.interfaces }}</pre>
+            </div>
+            <div class="s-row s-row-actions">
+              <button v-if="!awg.hasInitScript" @click="setupAWGInit()" :disabled="awg.initSaving" class="btn btn-primary">
+                {{ awg.initSaving ? 'Создание...' : 'Создать init-скрипт' }}
+              </button>
+              <button v-if="awg.hasInitScript" @click="setupAWGInit()" :disabled="awg.initSaving" class="btn">
+                {{ awg.initSaving ? 'Обновление...' : 'Обновить init-скрипт' }}
+              </button>
             </div>
           </div>
         </section>
