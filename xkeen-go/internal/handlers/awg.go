@@ -472,6 +472,9 @@ func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {
 	r.HandleFunc("/awg/peers/{name}", handler.AddPeer).Methods("POST")
 	r.HandleFunc("/awg/peers/{name}", handler.DeletePeer).Methods("DELETE")
 
+	// Peer client config (stored for QR/download)
+	r.HandleFunc("/awg/peer-config/{name}", handler.GetPeerConfig).Methods("GET")
+
 	// Firewall restore (watchdog)
 	r.HandleFunc("/awg/restore-firewall", handler.RestoreFirewall).Methods("POST")
 }

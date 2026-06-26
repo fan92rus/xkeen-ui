@@ -23,10 +23,11 @@ import (
 
 // awgPeer represents a single [Peer] section in a server config.
 type awgPeer struct {
-	PublicKey  string `json:"public_key"`
-	AllowedIPs string `json:"allowed_ips"`
-	Label      string `json:"label,omitempty"` // from comment "# peer: <label>"
-	IP         string `json:"ip"`              // extracted from AllowedIPs (without /32)
+	PublicKey       string `json:"public_key"`
+	AllowedIPs      string `json:"allowed_ips"`
+	Label           string `json:"label,omitempty"`            // from comment "# peer: <label>"
+	IP              string `json:"ip"`                         // extracted from AllowedIPs (without /32)
+	HasClientConfig bool   `json:"has_client_config"`         // stored client .conf available for QR/download
 }
 
 // awgServerInfo holds parsed info about a server config.
@@ -58,6 +59,14 @@ func (h *AWGHandler) ListPeers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	peers := extractPeers(conf)
+	// Mark peers that have a stored client config
+	for i := range peers {
+		if peers[i].IP != "" {
+			if _, err := os.Stat(h.clientConfigPath(name, peers[i].IP)); err == nil {
+				peers[i].HasClientConfig = true
+			}
+		}
+	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"name":          name,
 		"listen_port":   conf.GetListenPort(),
@@ -154,11 +163,42 @@ func (h *AWGHandler) AddPeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist client config for later QR/download
+	h.saveClientConfig(name, ip, clientConf)
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success":       true,
 		"public_key":    pubKey,
 		"client_ip":     ip,
 		"client_config": clientConf,
+	})
+}
+
+// GetPeerConfig returns a previously stored client config for QR/download.
+// GET /api/awg/peer-config/{name}?ip=<ip>
+func (h *AWGHandler) GetPeerConfig(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if !validateAWGName(name) {
+		respondError(w, http.StatusBadRequest, "invalid config name")
+		return
+	}
+	peerIP := strings.TrimSpace(r.URL.Query().Get("ip"))
+	if peerIP == "" {
+		respondError(w, http.StatusBadRequest, "provide ?ip=<ip>")
+		return
+	}
+
+	clientConfPath := h.clientConfigPath(name, peerIP)
+	data, err := os.ReadFile(clientConfPath)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "client config not saved (private key was shown only at creation)")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success":       true,
+		"client_config": string(data),
 	})
 }
 
@@ -183,6 +223,11 @@ func (h *AWGHandler) DeletePeer(w http.ResponseWriter, r *http.Request) {
 	if err := removePeerFromFile(confPath, pubKey, peerIP); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to remove peer: %v", err))
 		return
+	}
+
+	// Also clean up any stored client config
+	if peerIP != "" {
+		h.removeClientConfig(name, peerIP)
 	}
 
 	log.Printf("[awg] removed peer from %s (key=%s ip=%s)", name, maskKey(pubKey), peerIP)
@@ -362,6 +407,34 @@ func removePeerFromFile(path, pubKey, peerIP string) error {
 	output := strings.Join(result, "\n")
 	output = strings.TrimRight(output, "\n") + "\n"
 	return os.WriteFile(path, []byte(output), 0600)
+}
+
+// clientConfigPath returns the path to a stored client config.
+// Stored in <awgDir>/clients/<server>-<ip>.conf
+func (h *AWGHandler) clientConfigPath(server, ip string) string {
+	safeIP := strings.ReplaceAll(ip, "/", "_")
+	return filepath.Join(h.awgDir, "clients", fmt.Sprintf("%s-%s.conf", server, safeIP))
+}
+
+// saveClientConfig persists a generated client config for later QR/download.
+func (h *AWGHandler) saveClientConfig(server, ip, config string) {
+	clientConfPath := h.clientConfigPath(server, ip)
+	clientsDir := filepath.Dir(clientConfPath)
+	if err := os.MkdirAll(clientsDir, 0755); err != nil {
+		log.Printf("[awg] warning: failed to create clients dir: %v", err)
+		return
+	}
+	if err := os.WriteFile(clientConfPath, []byte(config), 0600); err != nil {
+		log.Printf("[awg] warning: failed to save client config: %v", err)
+	}
+}
+
+// removeClientConfig deletes a stored client config when a peer is removed.
+func (h *AWGHandler) removeClientConfig(server, ip string) {
+	clientConfPath := h.clientConfigPath(server, ip)
+	if err := os.Remove(clientConfPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("[awg] warning: failed to remove client config: %v", err)
+	}
 }
 
 // ---------- Client config generation ----------

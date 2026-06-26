@@ -145,7 +145,10 @@
                     <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
                     <span v-if="peer.label" class="awg-peer-tag">{{ peer.label }}</span>
                   </div>
-                  <button class="btn btn-danger btn-sm" @click="removePeer(iface.name, peer)" :disabled="busy">✕</button>
+                  <div class="awg-peer-actions">
+                    <button v-if="peer.has_client_config" class="btn btn-sm" @click="showPeerQR(iface.name, peer)" :disabled="busy" title="Показать QR-код">📱</button>
+                    <button class="btn btn-danger btn-sm" @click="removePeer(iface.name, peer)" :disabled="busy" title="Удалить">✕</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -205,6 +208,48 @@
         </div>
       </div>
     </div>
+
+    <!-- Existing Peer Viewer (QR/download) -->
+    <div v-if="peerView.show" class="awg-modal-overlay" @click.self="closePeerView">
+      <div class="awg-modal">
+        <div class="awg-modal-head">
+          <h3>📱 Клиент {{ peerView.ip }}</h3>
+          <button class="awg-banner-close" @click="closePeerView">✕</button>
+        </div>
+        <div class="awg-modal-body">
+          <div v-if="peerView.loading" class="awg-peers-status">Загрузка…</div>
+          <template v-else-if="peerView.error">
+            <div class="awg-result-banner awg-result-error">⚠ {{ peerView.error }}</div>
+            <div class="awg-modal-actions">
+              <button class="btn btn-primary" @click="closePeerView">Закрыть</button>
+            </div>
+          </template>
+          <template v-else>
+            <!-- View toggle -->
+            <div class="awg-config-toggle">
+              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
+                      @click="configView = 'qr'">📱 QR-код</button>
+              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
+                      @click="configView = 'text'">📄 Текст</button>
+            </div>
+            <!-- QR view -->
+            <div v-if="configView === 'qr'" class="awg-qr-wrap">
+              <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR-код конфига" class="awg-qr-img" />
+              <p v-else class="awg-peers-status">QR-код недоступен</p>
+            </div>
+            <!-- Text view -->
+            <div v-else class="awg-config-wrap">
+              <pre class="awg-config-text">{{ peerView.config }}</pre>
+              <button class="awg-copy-btn" @click="copyConfig" :title="'Копировать'">{{ copied ? '✓' : '📋' }}</button>
+            </div>
+            <div class="awg-modal-actions">
+              <button class="btn" @click="downloadPeerConfig">⬇ Скачать .conf</button>
+              <button class="btn btn-primary" @click="closePeerView">Закрыть</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -247,6 +292,9 @@ const copied = ref(false);
 // QR code state
 const configView = ref('qr'); // 'qr' | 'text'
 const qrDataUrl = ref('');
+
+// Existing peer viewer
+const peerView = reactive({ show: false, server: '', ip: '', loading: false, config: '', error: '' });
 
 onMounted(() => {
   loadInterfaces();
@@ -449,10 +497,62 @@ function shortenKey(key) {
   return key.slice(0, 8) + '…' + key.slice(-4);
 }
 
-async function copyConfig() {
-  if (!addPeer.result?.client_config) return;
+// ── Existing peer viewer (QR/download for stored client configs) ──
+
+async function showPeerQR(serverName, peer) {
+  peerView.show = true;
+  peerView.server = serverName;
+  peerView.ip = peer.ip;
+  peerView.loading = true;
+  peerView.config = '';
+  peerView.error = '';
+  configView.value = 'qr';
+  qrDataUrl.value = '';
+  copied.value = false;
   try {
-    await navigator.clipboard.writeText(addPeer.result.client_config);
+    const res = await awgApi.getPeerConfig(serverName, peer.ip);
+    peerView.config = res.client_config || '';
+    try {
+      qrDataUrl.value = await QRCode.toDataURL(peerView.config, {
+        width: 280,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+    } catch (e) {
+      log('QR generation failed', e);
+      configView.value = 'text';
+    }
+  } catch (e) {
+    peerView.error = e.message || 'Конфиг не найден (приватный ключ не сохранён)';
+    configView.value = 'text';
+  } finally {
+    peerView.loading = false;
+  }
+}
+
+function closePeerView() {
+  peerView.show = false;
+  peerView.config = '';
+  qrDataUrl.value = '';
+}
+
+function downloadPeerConfig() {
+  if (!peerView.config) return;
+  const blob = new Blob([peerView.config], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${peerView.server}-${peerView.ip}.conf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyConfig() {
+  const text = peerView.show ? peerView.config : addPeer.result?.client_config;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 2000);
   } catch { /* ignore */ }
@@ -847,6 +947,12 @@ function downloadConfig() {
   flex: 1;
 }
 
+.awg-peer-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .awg-peer-ip {
   font-family: var(--font-mono);
   font-size: var(--text-small);
@@ -960,6 +1066,11 @@ function downloadConfig() {
 .awg-result-banner code {
   font-family: var(--font-mono);
   font-weight: 600;
+}
+
+.awg-result-error {
+  background: var(--status-warning-background);
+  color: var(--error);
 }
 
 .awg-config-wrap {

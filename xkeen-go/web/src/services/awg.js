@@ -53,3 +53,7 @@ export async function deletePeer(name, key, ip) {
     else if (ip) qs = '?ip=' + encodeURIComponent(ip);
     return api.del('/api/awg/peers/' + encodeURIComponent(name) + qs);
 }
+
+export async function getPeerConfig(name, ip) {
+    return api.get('/api/awg/peer-config/' + encodeURIComponent(name) + '?ip=' + encodeURIComponent(ip));
+}
