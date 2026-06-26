@@ -71,6 +71,7 @@ const sections = [
   { id: 'security', icon: '🔒', label: 'Безопасность' },
   { id: 'autoapply', icon: '📅', label: 'Подписки' },
   { id: 'metrics', icon: '📊', label: 'Метрики' },
+  { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
 ];
 
 const awg = ref({ installed: false, hasInitScript: false, interfaces: '', installing: false, initSaving: false, error: '', progress: '' });
