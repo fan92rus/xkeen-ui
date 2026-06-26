@@ -436,7 +436,7 @@ onMounted(() => {
 <style scoped>
 .s {
   height: 100%;
-  overflow-y: auto;
+  display: flex;
 }
 
 /* ── Layout: sidebar nav + content ── */
@@ -444,17 +444,15 @@ onMounted(() => {
   display: flex;
   max-width: 960px;
   margin: 0 auto;
+  width: 100%;
   min-height: 100%;
 }
 
-/* ── Sidebar nav ── */
+/* ── Sidebar nav — never scrolls ── */
 .s-nav {
   width: 180px;
   flex-shrink: 0;
   padding: 14px 0 14px 14px;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -480,11 +478,12 @@ onMounted(() => {
   text-align: center;
 }
 
-/* ── Content ── */
+/* ── Content — this scrolls ── */
 .s-content {
   flex: 1;
   padding: 14px 24px 40px;
   min-width: 0;
+  overflow-y: auto;
 }
 
 /* ── Section ── */
@@ -746,16 +745,16 @@ onMounted(() => {
 
 /* ── Responsive ── */
 @media (max-width: 700px) {
-  .s-layout { flex-direction: column; }
+  .s { height: auto; display: block; }
+  .s-layout { flex-direction: column; min-height: auto; }
   .s-nav {
     width: auto;
-    position: static;
     flex-direction: row;
     flex-wrap: wrap;
     padding: 10px 14px;
     gap: 4px;
   }
-  .s-content { padding: 10px 14px 40px; }
+  .s-content { padding: 10px 14px 40px; overflow-y: visible; }
   .s-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .pw-grid { flex-direction: column; }
 }
