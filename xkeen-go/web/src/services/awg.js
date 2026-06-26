@@ -47,8 +47,12 @@ export async function addPeer(name, label) {
     return api.post('/api/awg/peers/' + encodeURIComponent(name), { label });
 }
 
-export async function deletePeer(name, key, ip) {
-    return api.del('/api/awg/peers/' + encodeURIComponent(name), { key: key || '', ip: ip || '' });
+export async function deletePeer(name, peer) {
+    return api.del('/api/awg/peers/' + encodeURIComponent(name), {
+        key: peer.public_key || '',
+        ip: peer.ip || '',
+        index: peer.index !== undefined ? peer.index : -1,
+    });
 }
 
 export async function getPeerConfig(name, ip) {

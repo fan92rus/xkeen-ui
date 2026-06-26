@@ -28,6 +28,7 @@ type awgPeer struct {
 	Label           string `json:"label,omitempty"`            // from comment "# peer: <label>"
 	IP              string `json:"ip"`                         // extracted from AllowedIPs (without /32)
 	HasClientConfig bool   `json:"has_client_config"`         // stored client .conf available for QR/download
+	Index           int    `json:"index"`                      // 0-based position among [Peer] sections
 }
 
 // awgServerInfo holds parsed info about a server config.
@@ -78,10 +79,11 @@ func (h *AWGHandler) ListPeers(w http.ResponseWriter, r *http.Request) {
 // extractPeers converts parsed [Peer] sections into awgPeer objects.
 func extractPeers(conf *subscription.AWGConf) []awgPeer {
 	var peers []awgPeer
-	for _, p := range conf.Peers {
+	for idx, p := range conf.Peers {
 		peer := awgPeer{
 			PublicKey:  p.Values["PublicKey"],
 			AllowedIPs: p.Values["AllowedIPs"],
+			Index:      idx,
 		}
 		// Extract label from preceding comment "# peer: <label>"
 		if strings.HasPrefix(p.Comment, "peer:") {
@@ -219,25 +221,28 @@ func (h *AWGHandler) DeletePeer(w http.ResponseWriter, r *http.Request) {
 	pubKey := r.URL.Query().Get("key")
 	peerIP := r.URL.Query().Get("ip")
 
-	// Also accept key/ip from JSON body (more reliable than query params on DELETE)
+	// Also accept key/ip/index from JSON body (more reliable than query params on DELETE)
+	peerIndex := -1
 	if pubKey == "" && peerIP == "" {
 		var body struct {
-			Key string `json:"key"`
-			IP  string `json:"ip"`
+			Key   string `json:"key"`
+			IP    string `json:"ip"`
+			Index int    `json:"index"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 			pubKey = body.Key
 			peerIP = body.IP
+			peerIndex = body.Index
 		}
 	}
 
-	if pubKey == "" && peerIP == "" {
-		respondError(w, http.StatusBadRequest, "provide key or ip (query param or JSON body)")
+	if pubKey == "" && peerIP == "" && peerIndex < 0 {
+		respondError(w, http.StatusBadRequest, "provide key, ip, or index (query param or JSON body)")
 		return
 	}
 
 	confPath := filepath.Join(h.awgDir, name+".conf")
-	if err := removePeerFromFile(confPath, pubKey, peerIP); err != nil {
+	if err := removePeerFromFile(confPath, pubKey, peerIP, peerIndex); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to remove peer: %v", err))
 		return
 	}
@@ -363,7 +368,7 @@ func appendToFile(path, content string) error {
 }
 
 // removePeerFromFile removes a [Peer] section matching the given public key or IP.
-func removePeerFromFile(path, pubKey, peerIP string) error {
+func removePeerFromFile(path, pubKey, peerIP string, peerIndex int) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -372,6 +377,7 @@ func removePeerFromFile(path, pubKey, peerIP string) error {
 	lines := strings.Split(string(content), "\n")
 	var result []string
 	inPeerSection := false
+	peerCount := 0 // how many [Peer] headers we've seen
 	skipCurrent := false
 	peerMatchKey := strings.TrimSpace(pubKey)
 	peerMatchIP := strings.TrimSpace(peerIP)
@@ -384,16 +390,19 @@ func removePeerFromFile(path, pubKey, peerIP string) error {
 
 		// Track section boundaries
 		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			// Leaving a peer section
-			if inPeerSection && skipCurrent {
-				// Already skipped, nothing to do
-			}
 			inPeerSection = trimmed == "[Peer]"
 			skipCurrent = false
+			// Index-based matching: skip the nth peer
+			if inPeerSection && peerIndex >= 0 {
+				if peerCount == peerIndex {
+					skipCurrent = true
+				}
+				peerCount++
+			}
 		}
 
 		if inPeerSection {
-			// Check if this peer matches
+			// Check if this peer matches by key
 			if peerMatchKey != "" && strings.HasPrefix(trimmed, "PublicKey") {
 				val := strings.TrimSpace(strings.TrimPrefix(trimmed, "PublicKey"))
 				val = strings.TrimPrefix(val, "=")
@@ -403,6 +412,7 @@ func removePeerFromFile(path, pubKey, peerIP string) error {
 					continue
 				}
 			}
+			// Check if this peer matches by IP
 			if peerMatchIP != "" && strings.HasPrefix(trimmed, "AllowedIPs") {
 				val := strings.TrimSpace(strings.TrimPrefix(trimmed, "AllowedIPs"))
 				val = strings.TrimPrefix(val, "=")
@@ -415,6 +425,11 @@ func removePeerFromFile(path, pubKey, peerIP string) error {
 			if skipCurrent {
 				continue
 			}
+		}
+
+		// Also skip comment lines directly above a skipped peer (# peer: ...)
+		if skipCurrent && strings.HasPrefix(trimmed, "#") {
+			continue
 		}
 
 		result = append(result, line)

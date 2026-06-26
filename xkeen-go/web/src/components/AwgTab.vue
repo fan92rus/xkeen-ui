@@ -480,10 +480,11 @@ async function doAddPeer() {
 }
 
 async function removePeer(serverName, peer) {
-  if (!confirm(`Удалить клиента ${peer.ip}?`)) return;
+  const label = peer.label || peer.ip || 'без названия';
+  if (!confirm(`Удалить клиента «${label}»?`)) return;
   busy.value = true;
   try {
-    await awgApi.deletePeer(serverName, peer.public_key, peer.ip);
+    await awgApi.deletePeer(serverName, peer);
     await loadPeers(serverName);
   } catch (e) {
     error.value = 'Ошибка: ' + (e.message || e);
