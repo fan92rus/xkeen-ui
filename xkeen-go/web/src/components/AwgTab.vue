@@ -30,13 +30,13 @@
     </div>
 
     <!-- Interface list -->
-    <div class="card" v-if="interfaces.length === 0 && !loading">
+    <div class="card" v-if="interfaces && interfaces.length === 0 && !loading">
       <div class="card-body">
         <p class="text-muted">Нет AWG-конфигураций. Загрузите .conf файл выше.</p>
       </div>
     </div>
 
-    <div v-for="iface in interfaces" :key="iface.name" class="card" style="margin-bottom:12px">
+    <div v-for="iface in (interfaces || [])" :key="iface.name" class="card" style="margin-bottom:12px">
       <div class="card-body">
         <div class="awg-iface-header">
           <div>

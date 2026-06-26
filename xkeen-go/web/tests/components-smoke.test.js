@@ -88,6 +88,14 @@ vi.mock('../services/xkeen.js', () => ({
   getCommands: vi.fn(() => Promise.resolve({ commands: [], error: '' })),
 }));
 
+vi.mock('../services/awg.js', () => ({
+  listInterfaces: vi.fn(() => Promise.resolve([])),
+  upInterface: vi.fn(() => Promise.resolve({ ok: true })),
+  downInterface: vi.fn(() => Promise.resolve({ ok: true })),
+  deleteConfig: vi.fn(() => Promise.resolve({ ok: true })),
+  uploadConfig: vi.fn(() => Promise.resolve({ ok: true })),
+}));
+
 vi.mock('../services/interactive.js', () => ({
   InteractiveSession: class {
     constructor() { this.connected = false; }
@@ -147,6 +155,7 @@ import EditorTab from '../src/components/EditorTab.vue';
 import LogsTab from '../src/components/LogsTab.vue';
 import MetricsTab from '../src/components/MetricsTab.vue';
 import SettingsTab from '../src/components/SettingsTab.vue';
+import AwgTab from '../src/components/AwgTab.vue';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -230,6 +239,16 @@ describe('Component smoke tests', () => {
     const w = mountWithPinia(MetricsTab);
     await flushPromises();
     expect(w.exists()).toBe(true);
+  });
+
+  it('AwgTab mounts without errors', async () => {
+    let w;
+    expect(() => {
+      w = mountWithPinia(AwgTab);
+    }).not.toThrow();
+    await flushPromises();
+    expect(w.exists()).toBe(true);
+    expect(w.text()).toContain('AmneziaWG');
   });
 
 });

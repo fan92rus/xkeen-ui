@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -116,7 +117,11 @@ func (h *AWGHandler) UpInterface(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("awg-quick", "up", confPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("awg-quick up failed: %v\n%s", err, string(output)))
+		if errors.Is(err, exec.ErrNotFound) {
+			respondError(w, http.StatusInternalServerError, "awg-quick binary not found — install AWG tools via Settings → AWG Install first")
+		} else {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("awg-quick up failed: %v\n%s", err, string(output)))
+		}
 		return
 	}
 	log.Printf("[awg] awg-quick up %s: %s", req.Name, strings.TrimSpace(string(output)))
@@ -344,6 +349,12 @@ func (h *AWGHandler) getActiveInterfaces() map[string]string {
 	cmd := exec.Command("awg", "show")
 	output, err := cmd.Output()
 	if err != nil {
+		// awg not installed or not available — log once and return empty
+		if errors.Is(err, exec.ErrNotFound) {
+			log.Println("[awg] awg binary not found, skipping interface detection")
+		} else {
+			log.Printf("[awg] awg show failed: %v", err)
+		}
 		return result
 	}
 
