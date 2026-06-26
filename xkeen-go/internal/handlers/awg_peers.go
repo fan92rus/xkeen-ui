@@ -218,8 +218,21 @@ func (h *AWGHandler) DeletePeer(w http.ResponseWriter, r *http.Request) {
 
 	pubKey := r.URL.Query().Get("key")
 	peerIP := r.URL.Query().Get("ip")
+
+	// Also accept key/ip from JSON body (more reliable than query params on DELETE)
 	if pubKey == "" && peerIP == "" {
-		respondError(w, http.StatusBadRequest, "provide ?key=<pubkey> or ?ip=<ip>")
+		var body struct {
+			Key string `json:"key"`
+			IP  string `json:"ip"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			pubKey = body.Key
+			peerIP = body.IP
+		}
+	}
+
+	if pubKey == "" && peerIP == "" {
+		respondError(w, http.StatusBadRequest, "provide key or ip (query param or JSON body)")
 		return
 	}
 

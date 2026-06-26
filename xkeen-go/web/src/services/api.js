@@ -86,10 +86,12 @@ export async function put(path, data) {
     return res.json();
 }
 
-export async function del(path) {
-    const res = await request(path, {
-        method: 'DELETE'
-    });
+export async function del(path, data) {
+    const options = { method: 'DELETE' };
+    if (data !== undefined) {
+        options.body = JSON.stringify(data);
+    }
+    const res = await request(path, options);
     return res.json().catch(() => ({}));
 }
 

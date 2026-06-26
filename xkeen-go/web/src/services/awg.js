@@ -48,10 +48,7 @@ export async function addPeer(name, label) {
 }
 
 export async function deletePeer(name, key, ip) {
-    let qs = '';
-    if (key) qs = '?key=' + encodeURIComponent(key);
-    else if (ip) qs = '?ip=' + encodeURIComponent(ip);
-    return api.del('/api/awg/peers/' + encodeURIComponent(name) + qs);
+    return api.del('/api/awg/peers/' + encodeURIComponent(name), { key: key || '', ip: ip || '' });
 }
 
 export async function getPeerConfig(name, ip) {
