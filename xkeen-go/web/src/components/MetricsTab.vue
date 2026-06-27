@@ -5,6 +5,7 @@ import { computeTagRates, computeChartData, totalOutboundRates } from '../utils/
 import { fmtBytes, fmtRate, fmtRateShort, fmtDelay, fmtTime, fmtTimeShort, fmtDuration, percentile } from '../utils/metrics-format.js';
 import { useMetricsWS } from '../composables/useMetricsWS.js';
 import { useMetricsChart } from '../composables/useMetricsChart.js';
+import { useI18nStore } from '../stores/i18n.js';
 
 const props = defineProps({ active: Boolean });
 
@@ -13,6 +14,7 @@ const { wsStatus, wsError, history, latestSnap, connect, disconnect } = useMetri
 
 // ── Chart composable ──
 const { chartCanvas, CHART_H, initCharts, destroyCharts, updateCharts } = useMetricsChart();
+const i18n = useI18nStore();
 
 // ── Local state ──
 const showInactive = ref(false);
@@ -163,7 +165,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 			<div class="metrics-status">
 				<span class="status-indicator" :class="wsStatus"></span>
 				<span class="status-text">
-					{{ wsStatus === 'connected' ? 'Подключено' : wsStatus === 'connecting' ? 'Подключение…' : 'Отключено' }}
+					{{ i18n.t(wsStatus === 'connected' ? 'metrics.connected' : wsStatus === 'connecting' ? 'metrics.connecting' : 'metrics.disconnected') }}
 				</span>
 				<span v-if="wsError" class="status-error">{{ wsError }}</span>
 			</div>
@@ -174,7 +176,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 			<span v-if="sessionUptime" class="session-uptime">⏱ {{ sessionUptime }}</span>
 			<div class="metrics-controls">
 				<label class="toggle-label">
-					<input type="checkbox" v-model="showInactive"> Неактивные
+					<input type="checkbox" v-model="showInactive"> {{ i18n.t('metrics.inactive') }}
 				</label>
 			</div>
 		</div>
@@ -182,13 +184,13 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 		<!-- Unavailable -->
 		<div v-if="latestSnap && !latestSnap.available" class="metrics-unavailable">
 			<span class="unavail-icon">⚠</span>
-			<p>Метрики Xray недоступны</p>
-			<p class="unavail-hint">Убедитесь что Xray запущен и порт метрик настроен в Настройках</p>
+			<p>{{ i18n.t('metrics.unavailable') }}</p>
+			<p class="unavail-hint">{{ i18n.t('metrics.unavailable_hint') }}</p>
 		</div>
 		<div v-else-if="!latestSnap && history.length === 0" class="metrics-unavailable">
 			<span class="unavail-icon">📊</span>
-			<p>Ожидание данных…</p>
-			<p class="unavail-hint" v-if="wsStatus !== 'connected'">WebSocket не подключён</p>
+			<p>{{ i18n.t('metrics.waiting') }}</p>
+			<p class="unavail-hint" v-if="wsStatus !== 'connected'">{{ i18n.t('metrics.ws_not_connected') }}</p>
 		</div>
 
 		<!-- Content -->
@@ -201,7 +203,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 			<!-- Speed stats -->
 			<div v-if="speedStats" class="stats-row">
 				<div class="stat-card">
-					<div class="stat-label">Пик</div>
+					<div class="stat-label">{{ i18n.t('metrics.peak') }}</div>
 					<div class="stat-values">
 						<span class="stat-dl">↓ {{ fmtRate(speedStats.peak.dl) }}</span>
 						<span class="stat-ul">↑ {{ fmtRate(speedStats.peak.ul) }}</span>
@@ -227,9 +229,9 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 			<div class="bottom-section">
 				<!-- Rates tables -->
 				<div class="rates-column">
-					<h3 class="rates-title">Входящий</h3>
+					<h3 class="rates-title">{{ i18n.t('metrics.inbound') }}</h3>
 					<table class="rates-table">
-						<thead><tr><th>Тег</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
+						<thead><tr><th>{{ i18n.t('metrics.inbound_tag') }}</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
 						<tbody>
 							<tr v-for="(r, i) in tagRates.inbound" :key="r.tag">
 								<td class="tag-cell">{{ displayName(r.tag) }}</td>
@@ -241,9 +243,9 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 							<tr v-if="!tagRates.inbound.length"><td colspan="5" class="empty-cell">—</td></tr>
 						</tbody>
 					</table>
-					<h3 class="rates-title" style="margin-top:10px">Исходящий</h3>
+					<h3 class="rates-title" style="margin-top:10px">{{ i18n.t('metrics.outbound') }}</h3>
 					<table class="rates-table">
-						<thead><tr><th>Тег</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
+						<thead><tr><th>{{ i18n.t('metrics.outbound_tag') }}</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
 						<tbody>
 							<tr v-for="(r, i) in tagRates.outbound" :key="r.tag">
 								<td class="tag-cell">{{ displayName(r.tag) }}</td>
@@ -255,7 +257,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 							<tr v-if="!tagRates.outbound.length"><td colspan="5" class="empty-cell">—</td></tr>
 						</tbody>
 					</table>
-					<h3 class="rates-title" style="margin-top:10px">Доля трафика</h3>
+					<h3 class="rates-title" style="margin-top:10px">{{ i18n.t('metrics.traffic_share') }}</h3>
 					<div class="share-bars">
 						<div v-for="s in proxyShare" :key="s.tag" class="share-row">
 							<span class="share-tag">{{ displayName(s.tag) }}</span>
@@ -270,7 +272,7 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 				<div v-if="observatory.length > 0" class="obs-section">
 					<h3 class="section-title">Observatory</h3>
 					<table class="obs-table">
-						<thead><tr><th>Тег</th><th>Статус</th><th>Задержка</th><th>Проверка</th></tr></thead>
+						<thead><tr><th>{{ i18n.t('metrics.proxy_tag') }}</th><th>{{ i18n.t('metrics.proxy_status') }}</th><th>{{ i18n.t('metrics.proxy_latency') }}</th><th>{{ i18n.t('metrics.proxy_check') }}</th></tr></thead>
 						<tbody>
 							<tr v-for="e in observatory" :key="e.tag"
 								v-show="showInactive || e.alive"

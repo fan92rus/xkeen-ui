@@ -65,17 +65,17 @@ describe('CommandsTab', () => {
     mockGetCommands.mockReturnValue(new Promise(() => {}));
     const w = mountCommands();
     await flushPromises();
-    expect(w.text()).toContain('Загрузка списка команд');
+    expect(w.text()).toContain('Loading commands…');
   });
 
   it('renders the fetched commands grouped by category', async () => {
     const w = mountCommands();
     await flushPromises();
     const text = w.text();
-    // Categories from the backend.
-    expect(text).toContain('Управление прокси-клиентом');
-    expect(text).toContain('Информация');
-    expect(text).toContain('Установка');
+    // Categories from the backend (translated via i18n).
+    expect(text).toContain('Proxy client management');
+    expect(text).toContain('Information');
+    expect(text).toContain('Install');
     // Real commands.
     expect(text).toContain('-start');
     expect(text).toContain('-status');
@@ -109,7 +109,7 @@ describe('CommandsTab', () => {
     mockGetCommands.mockRejectedValue(new Error('network down'));
     const w = mountCommands();
     await flushPromises();
-    expect(w.text()).toContain('Не удалось загрузить список команд');
+    expect(w.text()).toContain('Command execution error:');
     expect(w.text()).toContain('network down');
   });
 
@@ -119,7 +119,7 @@ describe('CommandsTab', () => {
     mockGetCommands.mockResolvedValue(apiResponse([], 'XKeen не установлен'));
     const w = mountCommands();
     await flushPromises();
-    expect(w.text()).toContain('Не удалось загрузить список команд');
+    expect(w.text()).toContain('Command execution error:');
     expect(w.text()).toContain('XKeen не установлен');
     expect(w.findAll('.command-item')).toHaveLength(0);
   });

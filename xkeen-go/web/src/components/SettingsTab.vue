@@ -1,11 +1,13 @@
 <script setup>
 import { ref, onMounted, inject } from 'vue';
 import { useAppStore } from '../stores/app.js';
+import { useI18nStore } from '../stores/i18n.js';
 import * as sub from '../services/subscription.js';
 import * as metrics from '../services/metrics.js';
 import * as installApi from '../services/install.js';
 
 const app = useAppStore();
+const i18n = useI18nStore();
 const reloadMetricsState = inject('reloadMetricsState', () => {});
 
 const autoApply = ref({ enabled: false, cron: '0 */6 * * *', next_run: '' });
@@ -32,12 +34,12 @@ async function saveMetricsPort() {
 	try {
 		await metrics.updateMetricsPort(metricsPort.value);
 		app.showToast(
-			metricsPort.value > 0 ? `Метрики включены: порт ${metricsPort.value}` : 'Метрики отключены',
+			metricsPort.value > 0 ? i18n.t('settings.metrics_on', { port: metricsPort.value }) : i18n.t('settings.metrics_off'),
 			'success',
 		);
 		reloadMetricsState();
 	} catch (e) {
-		app.showToast(e.message || 'Ошибка сохранения', 'error');
+		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
 	} finally {
 		metricsSaving.value = false;
 	}
@@ -55,9 +57,9 @@ async function saveAutoApply() {
   try {
     const d = await sub.updateAutoApply({ enabled: autoApply.value.enabled, cron: autoApply.value.cron });
     autoApply.value.next_run = d.next_run || '';
-    app.showToast(autoApply.value.enabled ? `Автообновление: ${autoApply.value.cron}` : 'Автообновление отключено', 'success');
+    app.showToast(autoApply.value.enabled ? i18n.t('settings.auto_update_on', { cron: autoApply.value.cron }) : i18n.t('settings.auto_update_off'), 'success');
   } catch (e) {
-    app.showToast(e.message || 'Ошибка', 'error');
+    app.showToast(e.message || i18n.t('settings.error_generic'), 'error');
   } finally {
     autoApplySaving.value = false;
   }
@@ -66,13 +68,14 @@ async function saveAutoApply() {
 import { fmtTime as fmtNextRun } from '../utils/format.js';
 
 const sections = [
-  { id: 'mode', icon: '⚡', label: 'Режим' },
-  { id: 'logging', icon: '📋', label: 'Логирование' },
-  { id: 'updates', icon: '🔄', label: 'Обновления' },
-  { id: 'security', icon: '🔒', label: 'Безопасность' },
-  { id: 'autoapply', icon: '📅', label: 'Подписки' },
-  { id: 'metrics', icon: '📊', label: 'Метрики' },
+  { id: 'mode', icon: '⚡', label: i18n.t('settings.mode_section') },
+  { id: 'logging', icon: '📋', label: i18n.t('settings.logs_section') },
+  { id: 'updates', icon: '🔄', label: i18n.t('settings.update_section') },
+  { id: 'security', icon: '🔒', label: i18n.t('settings.security_section') },
+  { id: 'autoapply', icon: '📅', label: i18n.t('settings.subs_section') },
+  { id: 'metrics', icon: '📊', label: i18n.t('settings.metrics_section') },
   { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
+  { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
 ];
 
 const awg = ref({ installed: false, hasInitScript: false, interfaces: '', installing: false, uninstalling: false, initSaving: false, error: '', progress: '' });
@@ -100,25 +103,25 @@ async function installAWG() {
         awg.value.installed = true;
         awg.value.installing = false;
         awg.value.progress = '';
-        app.showToast('AmneziaWG успешно установлен!', 'success');
+        app.showToast(i18n.t('settings.awg_install_ok'), 'success');
         checkAWG();
       },
       onError: (err) => {
         awg.value.installing = false;
-        awg.value.error = err.error || err.message || 'Ошибка установки';
+        awg.value.error = err.error || err.message || i18n.t('settings.awg_install_error');
         awg.value.progress = '';
       },
     });
   } catch (e) {
     awg.value.installing = false;
-    awg.value.error = e.message || 'Ошибка установки';
+    awg.value.error = e.message || i18n.t('settings.awg_install_error');
     awg.value.progress = '';
   }
 }
 
 async function uninstallAWG() {
   if (!awg.value.installed) { return; }
-  if (!confirm('Удалить AmneziaWG? Будут остановлены все интерфейсы, удалены пакеты и init-скрипт.')) return;
+  if (!confirm(i18n.t('settings.awg_uninstall_confirm'))) return;
   awg.value.uninstalling = true;
   awg.value.error = '';
   awg.value.progress = '';
@@ -131,18 +134,18 @@ async function uninstallAWG() {
         awg.value.installed = false;
         awg.value.uninstalling = false;
         awg.value.progress = '';
-        app.showToast('AmneziaWG удалён', 'success');
+        app.showToast(i18n.t('settings.awg_uninstalled_ok'), 'success');
         checkAWG();
       },
       onError: (err) => {
         awg.value.uninstalling = false;
-        awg.value.error = err.error || err.message || 'Ошибка удаления';
+        awg.value.error = err.error || err.message || i18n.t('settings.awg_uninstall_error');
         awg.value.progress = '';
       },
     });
   } catch (e) {
     awg.value.uninstalling = false;
-    awg.value.error = e.message || 'Ошибка удаления';
+    awg.value.error = e.message || i18n.t('settings.awg_uninstall_error');
     awg.value.progress = '';
   }
 }
@@ -152,13 +155,13 @@ async function setupAWGInit() {
   try {
     const r = await installApi.setupAWGInit();
     if (r.success) {
-      app.showToast('Init-скрипт AWG создан', 'success');
+      app.showToast(i18n.t('settings.awg_init_created_ok'), 'success');
       checkAWG();
     } else {
-      app.showToast(r.message || 'Ошибка создания init-скрипта', 'error');
+      app.showToast(r.message || i18n.t('settings.awg_init_error'), 'error');
     }
   } catch (e) {
-    app.showToast(e.message || 'Ошибка', 'error');
+    app.showToast(e.message || i18n.t('settings.error_generic'), 'error');
   } finally {
     awg.value.initSaving = false;
   }
@@ -188,12 +191,12 @@ onMounted(() => {
 
         <!-- Mode -->
         <section :id="sections[0].id" class="s-section">
-          <h2 class="s-title">{{ sections[0].icon }} Режим</h2>
+          <h2 class="s-title">{{ sections[0].icon }} {{ sections[0].label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Ядро</div>
-                <div class="s-row-desc">Активное ядро для обработки трафика</div>
+                <div class="s-row-label">{{ i18n.t('settings.mode_label') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.mode_desc') }}</div>
               </div>
               <div class="mode-selector">
                 <button @click="app.switchMode('xray')"
@@ -211,7 +214,7 @@ onMounted(() => {
             <div class="s-row" v-show="!app.mihomoAvailable">
               <div class="s-row-main">
                 <div class="s-row-label s-muted">Mihomo</div>
-                <div class="s-row-desc s-warn">Директория конфигураций не найдена</div>
+                <div class="s-row-desc s-warn">{{ i18n.t('settings.mode_no_config') }}</div>
               </div>
             </div>
           </div>
@@ -219,11 +222,11 @@ onMounted(() => {
 
         <!-- Logging -->
         <section :id="sections[1].id" class="s-section">
-          <h2 class="s-title">📋 Логирование</h2>
+          <h2 class="s-title">{{ sections[1].icon }} {{ sections[1].label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Уровень логов</div>
+                <div class="s-row-label">{{ i18n.t('settings.log_level') }}</div>
                 <div class="s-row-desc">
                   Access: <code>{{ app.xraySettings.accessLog }}</code> · Error: <code>{{ app.xraySettings.errorLog }}</code>
                 </div>
@@ -237,11 +240,11 @@ onMounted(() => {
 
         <!-- Updates -->
         <section :id="sections[2].id" class="s-section">
-          <h2 class="s-title">🔄 Обновления</h2>
+          <h2 class="s-title">{{ sections[2].icon }} {{ sections[2].label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Текущая версия</div>
+                <div class="s-row-label">{{ i18n.t('settings.current_version') }}</div>
               </div>
               <div class="s-row-right">
                 <span class="ver-badge">{{ app.currentVersion }}</span>
@@ -250,21 +253,21 @@ onMounted(() => {
             </div>
             <div class="s-row" v-show="app.updateInfo.latest_version">
               <div class="s-row-main">
-                <div class="s-row-label">Последняя версия</div>
+                <div class="s-row-label">{{ i18n.t('settings.latest_version') }}</div>
               </div>
               <div class="s-row-right">
                 <span class="ver-badge">{{ app.updateInfo.latest_version }}</span>
-                <a v-show="app.updateInfo.release_url" :href="app.updateInfo.release_url" target="_blank" class="s-link">примечания</a>
+                <a v-show="app.updateInfo.release_url" :href="app.updateInfo.release_url" target="_blank" class="s-link">{{ i18n.t('settings.release_notes') }}</a>
               </div>
             </div>
             <div v-if="app.updateInfo.update_available" class="s-callout s-callout-info">
-              Доступна новая{{ app.updateInfo.is_prerelease ? ' dev' : '' }} версия!
+              {{ i18n.t('settings.update_available', { dev: app.updateInfo.is_prerelease ? ' dev' : '' }) }}
             </div>
-            <p v-else-if="app.updateInfo.latest_version" class="s-ok">✓ Установлена последняя версия</p>
+            <p v-else-if="app.updateInfo.latest_version" class="s-ok">{{ i18n.t('settings.up_to_date') }}</p>
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Dev-канал</div>
-                <div class="s-row-desc">Development-сборки с последними функциями, могут быть нестабильны</div>
+                <div class="s-row-label">{{ i18n.t('settings.dev_channel') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.dev_channel_desc') }}</div>
               </div>
               <label class="toggle">
                 <input type="checkbox" v-model="app.checkDevUpdates">
@@ -273,10 +276,10 @@ onMounted(() => {
             </div>
             <div class="s-row s-row-actions">
               <button @click="app.checkUpdate()" :disabled="app.updateChecking || app.updating" class="btn">
-                {{ app.updateChecking ? 'Проверка...' : 'Проверить обновления' }}
+                {{ app.updateChecking ? i18n.t('settings.checking') : i18n.t('settings.check_btn') }}
               </button>
               <button v-if="app.updateInfo.update_available" @click="app.startUpdate()" :disabled="app.updating" class="btn btn-primary">
-                {{ app.updating ? 'Обновление...' : 'Обновить' }}
+                {{ app.updating ? i18n.t('settings.updating') : i18n.t('settings.update_btn') }}
               </button>
             </div>
             <div v-show="app.updating" class="s-progress">
@@ -288,35 +291,35 @@ onMounted(() => {
 
         <!-- Security -->
         <section :id="sections[3].id" class="s-section">
-          <h2 class="s-title">🔒 Безопасность</h2>
+          <h2 class="s-title">{{ sections[3].icon }} {{ sections[3].label }}</h2>
           <div class="s-block">
             <div class="pw-grid">
               <input type="password" v-model="app.passwordChange.currentPassword"
-                     placeholder="Текущий пароль" autocomplete="current-password" class="s-input">
+                     :placeholder="i18n.t('settings.current_pwd')" autocomplete="current-password" class="s-input">
               <input type="password" v-model="app.passwordChange.newPassword"
-                     placeholder="Новый пароль (мин. 8 символов)" autocomplete="new-password" class="s-input">
+                     :placeholder="i18n.t('settings.new_pwd')" autocomplete="new-password" class="s-input">
               <input type="password" v-model="app.passwordChange.confirmPassword"
-                     placeholder="Подтверждение пароля" autocomplete="new-password" class="s-input">
+                     :placeholder="i18n.t('settings.confirm_pwd')" autocomplete="new-password" class="s-input">
             </div>
             <div v-show="app.passwordChange.error" class="s-callout s-callout-err">{{ app.passwordChange.error }}</div>
-            <div v-show="app.passwordChange.success" class="s-callout s-callout-ok">Пароль успешно изменён!</div>
+            <div v-show="app.passwordChange.success" class="s-callout s-callout-ok">{{ i18n.t('settings.pwd_changed') }}</div>
             <div class="s-row s-row-actions">
               <button @click="app.changePassword()" :disabled="app.passwordChange.loading" class="btn btn-primary">
-                {{ app.passwordChange.loading ? 'Изменение...' : 'Изменить пароль' }}
+                {{ app.passwordChange.loading ? i18n.t('settings.changing') : i18n.t('settings.change_btn') }}
               </button>
-              <button @click="app.clearPasswordForm()" :disabled="app.passwordChange.loading" class="btn">Очистить</button>
+              <button @click="app.clearPasswordForm()" :disabled="app.passwordChange.loading" class="btn">{{ i18n.t('settings.clear') }}</button>
             </div>
           </div>
         </section>
 
         <!-- Auto-Apply -->
         <section :id="sections[4].id" class="s-section">
-          <h2 class="s-title">📅 Автообновление подписки</h2>
+          <h2 class="s-title">{{ sections[4].icon }} {{ sections[4].label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Автоматическое обновление</div>
-                <div class="s-row-desc">Обновить прокси → фильтровать → записать конфиги → перезапустить</div>
+                <div class="s-row-label">{{ i18n.t('settings.auto_update_enable') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.auto_update_desc') }}</div>
               </div>
               <label class="toggle">
                 <input type="checkbox" v-model="autoApply.enabled">
@@ -325,7 +328,7 @@ onMounted(() => {
             </div>
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Расписание</div>
+                <div class="s-row-label">{{ i18n.t('settings.auto_update_schedule') }}</div>
                 <div class="s-row-desc s-cron-hint">
                   <code>0 */6 * * *</code> каждые 6ч &nbsp;·&nbsp;
                   <code>0 0 * * *</code> ежедневно &nbsp;·&nbsp;
@@ -336,11 +339,11 @@ onMounted(() => {
                      :disabled="!autoApply.enabled" class="s-input s-input-mono">
             </div>
             <div v-if="autoApply.enabled && autoApply.next_run" class="s-callout s-callout-info">
-              Следующий запуск: {{ fmtNextRun(autoApply.next_run) }}
+              {{ i18n.t('settings.next_run', { time: fmtNextRun(autoApply.next_run) }) }}
             </div>
             <div class="s-row s-row-actions">
               <button @click="saveAutoApply()" :disabled="autoApplySaving" class="btn btn-primary">
-                {{ autoApplySaving ? 'Сохранение...' : 'Сохранить' }}
+                {{ autoApplySaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
               </button>
             </div>
           </div>
@@ -348,12 +351,12 @@ onMounted(() => {
 
         <!-- Metrics -->
         <section :id="sections[5].id" class="s-section">
-          <h2 class="s-title">📊 Метрики Xray</h2>
+          <h2 class="s-title">{{ sections[5].icon }} {{ sections[5].label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Сбор метрик</div>
-                <div class="s-row-desc">Трафик и состояние прокси во вкладке «Монитор»</div>
+                <div class="s-row-label">{{ i18n.t('settings.metrics_enable') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.metrics_desc') }}</div>
               </div>
               <label class="toggle">
                 <input type="checkbox" :checked="metricsPort > 0" @change="$event.target.checked ? metricsPort = 11111 : metricsPort = 0">
@@ -362,15 +365,15 @@ onMounted(() => {
             </div>
             <div class="s-row" v-if="metricsPort > 0">
               <div class="s-row-main">
-                <div class="s-row-label">Порт</div>
-                <div class="s-row-desc">Слушает <code>127.0.0.1:{{ metricsPort }}</code>. Перезапустите Xray для применения.</div>
+                <div class="s-row-label">{{ i18n.t('settings.metrics_port') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.metrics_listen') }} <code>127.0.0.1:{{ metricsPort }}</code>{{ i18n.t('settings.metrics_restart_hint') }}</div>
               </div>
               <input type="number" v-model.number="metricsPort" min="1" max="65535"
                      :disabled="metricsSaving" class="s-input s-input-port">
             </div>
             <div class="s-row s-row-actions">
               <button @click="saveMetricsPort()" :disabled="metricsSaving" class="btn btn-primary">
-                {{ metricsSaving ? 'Сохранение...' : 'Сохранить' }}
+                {{ metricsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }} }}
               </button>
             </div>
           </div>
@@ -378,29 +381,29 @@ onMounted(() => {
 
         <!-- AWG -->
         <section :id="sections[6].id" class="s-section">
-          <h2 class="s-title">🔗 AmneziaWG</h2>
+          <h2 class="s-title">{{ sections[6].icon }} {{ sections[6].label }}</h2>
 
           <!-- Install -->
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label">amneziawg-go + amneziawg-tools</div>
-                <div class="s-row-desc">Userspace AWG для Keenetic. Поддерживает WARP и другие AWG-конфиги.</div>
+                <div class="s-row-desc">{{ i18n.t('settings.awg_desc') }}</div>
               </div>
-              <div v-if="awg.installed" class="badge badge-success">Установлен</div>
-              <div v-else class="badge badge-muted">Не установлен</div>
+              <div v-if="awg.installed" class="badge badge-success">{{ i18n.t('settings.awg_installed') }}</div>
+              <div v-else class="badge badge-muted">{{ i18n.t('settings.awg_not_installed') }}</div>
             </div>
             <div v-if="awg.progress" class="s-callout s-callout-info">{{ awg.progress }}</div>
             <div v-if="awg.error" class="s-callout s-callout-err">{{ awg.error }}</div>
             <div class="s-row s-row-actions">
               <button v-if="!awg.installed && !awg.installing" @click="installAWG()" class="btn btn-primary">
-                Установить AmneziaWG
+                {{ i18n.t('settings.awg_install_btn') }}
               </button>
-              <button v-if="awg.installing" disabled class="btn btn-primary">Установка...</button>
+              <button v-if="awg.installing" disabled class="btn btn-primary">{{ i18n.t('settings.awg_installing') }}</button>
               <button v-if="awg.installed && !awg.uninstalling" @click="uninstallAWG()" class="btn btn-danger" style="margin-left:auto">
-                Удалить AWG
+                {{ i18n.t('settings.awg_uninstall_btn') }}
               </button>
-              <button v-if="awg.uninstalling" disabled class="btn btn-danger">Удаление...</button>
+              <button v-if="awg.uninstalling" disabled class="btn btn-danger">{{ i18n.t('settings.awg_uninstalling') }}</button>
             </div>
           </div>
 
@@ -408,22 +411,38 @@ onMounted(() => {
           <div class="s-block" v-if="awg.installed">
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Init-скрипт</div>
-                <div class="s-row-desc">Автозапуск AWG при загрузке роутера</div>
+                <div class="s-row-label">{{ i18n.t('settings.awg_init_title') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.awg_init_desc') }}</div>
               </div>
-              <div v-if="awg.hasInitScript" class="badge badge-success">Создан</div>
-              <div v-else class="badge badge-muted">Не создан</div>
+              <div v-if="awg.hasInitScript" class="badge badge-success">{{ i18n.t('settings.awg_init_created') }}</div>
+              <div v-else class="badge badge-muted">{{ i18n.t('settings.awg_init_not_created') }}</div>
             </div>
             <div v-if="awg.interfaces" class="s-callout s-callout-info">
               <pre style="margin:0;font-size:12px">{{ awg.interfaces }}</pre>
             </div>
             <div class="s-row s-row-actions">
               <button v-if="!awg.hasInitScript" @click="setupAWGInit()" :disabled="awg.initSaving" class="btn btn-primary">
-                {{ awg.initSaving ? 'Создание...' : 'Создать init-скрипт' }}
+                {{ awg.initSaving ? i18n.t('settings.awg_init_creating') : i18n.t('settings.awg_create_init') }}
               </button>
               <button v-if="awg.hasInitScript" @click="setupAWGInit()" :disabled="awg.initSaving" class="btn">
-                {{ awg.initSaving ? 'Обновление...' : 'Обновить init-скрипт' }}
+                {{ awg.initSaving ? i18n.t('settings.awg_init_updating') : i18n.t('settings.awg_update_init') }}
               </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Language -->
+        <section :id="sections[7].id" class="s-section">
+          <h2 class="s-title">{{ sections[7].icon }} {{ sections[7].label }}</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.lang_label') }}</div>
+              </div>
+              <select :value="i18n.lang" @change="i18n.setLang($event.target.value)" class="s-select">
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
             </div>
           </div>
         </section>

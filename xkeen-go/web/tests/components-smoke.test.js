@@ -191,22 +191,23 @@ describe('Component smoke tests', () => {
 
     expect(w.exists()).toBe(true);
 
-    // All 7 sections must render — this catches the sections[6] bug.
+    // All 8 sections must render (7 original + 1 language).
     const sections = w.findAll('.s-section');
-    expect(sections.length).toBe(7);
+    expect(sections.length).toBe(8);
 
     // Check each section has a heading (h2).
     const headings = w.findAll('.s-title');
-    expect(headings.length).toBe(7);
+    expect(headings.length).toBe(8);
 
-    // Verify key sections exist by content.
-    expect(w.html()).toContain('Режим');
-    expect(w.html()).toContain('Логирование');
-    expect(w.html()).toContain('Обновления');
-    expect(w.html()).toContain('Безопасность');
-    expect(w.html()).toContain('Автообновление');
-    expect(w.html()).toContain('Метрики');
+    // Verify key sections exist by content (English, test default).
+    expect(w.html()).toContain('Mode');
+    expect(w.html()).toContain('Logging');
+    expect(w.html()).toContain('Updates');
+    expect(w.html()).toContain('Security');
+    expect(w.html()).toContain('Subscriptions');
+    expect(w.html()).toContain('Metrics');
     expect(w.html()).toContain('AmneziaWG');
+    expect(w.html()).toContain('Language');
   });
 
   it('CommandsTab mounts without errors', async () => {
@@ -246,7 +247,7 @@ describe('Component smoke tests', () => {
     // Wait for async loadInterfaces to complete
     await flushPromises();
     // Should show empty state for default 'client' sub-tab (mock returns [])
-    expect(w.text()).toContain('Нет клиентских конфигураций');
+    expect(w.text()).toContain('No client configurations');
 
     mockList.mockRestore();
   });

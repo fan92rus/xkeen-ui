@@ -6,9 +6,11 @@ import * as xkeenService from '../services/xkeen.js';
 import * as logsService from '../services/logs.js';
 import { filterLogs } from '../utils/log-filter.js';
 import { useAppStore } from './app.js';
+import { useI18nStore } from './i18n.js';
 
 export const useServiceStore = defineStore('service', () => {
 	// ── Service ──
+	const i18n = useI18nStore();
 	const serviceStatus = ref('unknown');
 
 	async function fetchServiceStatus() {
@@ -18,20 +20,20 @@ export const useServiceStore = defineStore('service', () => {
 
 	async function startService() {
 		const app = useAppStore();
-		try { await xkeenService.start(); app.showToast('Запуск сервиса...', 'success'); }
-		catch { app.showToast('Не удалось запустить сервис', 'error'); }
+		try { await xkeenService.start(); app.showToast(i18n.t('toast.service_starting'), 'success'); }
+		catch { app.showToast(i18n.t('toast.service_start_failed'), 'error'); }
 	}
 
 	async function stopService() {
 		const app = useAppStore();
-		try { await xkeenService.stop(); app.showToast('Остановка сервиса...', 'success'); }
-		catch { app.showToast('Не удалось остановить сервис', 'error'); }
+		try { await xkeenService.stop(); app.showToast(i18n.t('toast.service_stopping'), 'success'); }
+		catch { app.showToast(i18n.t('toast.service_stop_failed'), 'error'); }
 	}
 
 	async function restartService() {
 		const app = useAppStore();
-		try { await xkeenService.restart(); app.showToast('Перезапуск Xkeen...', 'success'); }
-		catch { app.showToast('Ошибка перезапуска', 'error'); }
+		try { await xkeenService.restart(); app.showToast(i18n.t('toast.service_restarting'), 'success'); }
+		catch { app.showToast(i18n.t('toast.service_restart_failed'), 'error'); }
 	}
 
 	// ── Xray settings ──
@@ -52,16 +54,16 @@ export const useServiceStore = defineStore('service', () => {
 				xraySettings.accessLog = data.access_log || '';
 				xraySettings.errorLog = data.error_log || '';
 			}
-		} catch { app.showToast('Не удалось загрузить настройки Xray', 'error'); }
+		} catch { app.showToast(i18n.t('toast.xray_settings_error'), 'error'); }
 	}
 
 	async function updateLogLevel() {
 		const app = useAppStore();
 		try {
 			const result = await xkeenService.setLogLevel(xraySettings.logLevel);
-			app.showToast(result.message || 'Уровень логирования обновлён', 'success');
+			app.showToast(result.message || i18n.t('toast.log_level_updated'), 'success');
 		} catch (err) {
-			app.showToast(err.message || 'Не удалось обновить уровень логирования', 'error');
+			app.showToast(err.message || i18n.t('toast.log_level_error'), 'error');
 			loadXraySettings();
 		}
 	}
@@ -76,7 +78,7 @@ export const useServiceStore = defineStore('service', () => {
 	async function loadLogs() {
 		const app = useAppStore();
 		try { logs.value = await logsService.fetchLogs(logFile.value, 100); }
-		catch { app.showToast('Не удалось загрузить логи', 'error'); }
+		catch { app.showToast(i18n.t('toast.log_load_error'), 'error'); }
 	}
 
 	function clearLogs() { logs.value = []; }

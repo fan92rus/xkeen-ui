@@ -2,6 +2,7 @@
 import { defineAsyncComponent } from 'vue';
 import { onMounted, onUnmounted, ref, computed, provide, watch } from 'vue';
 import { useAppStore } from './stores/app.js';
+import { useI18nStore } from './stores/i18n.js';
 import { renderAnsi } from './utils/ansi-format.js';
 import { getAWGStatus } from './services/install.js';
 import { getMetricsPort } from './services/metrics.js';
@@ -14,6 +15,7 @@ const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vu
 const AwgTab = defineAsyncComponent(() => import('./components/AwgTab.vue'));
 
 const app = useAppStore();
+const i18n = useI18nStore();
 
 // Persist active tab across page reloads
 watch(() => app.activeTab, (tab) => {
@@ -49,22 +51,21 @@ function redirectInvalidTab() {
 }
 
 const tabs = computed(() => {
-    const list = [
-        { id: 'editor', label: 'Редактор' },
-        { id: 'subscriptions', label: 'Подписки' },
-        { id: 'logs', label: 'Логи' },
-        { id: 'settings', label: 'Настройки' },
-        { id: 'commands', label: 'Команды' },
-    ];
-    if (metricsEnabled.value) {
-        list.push({ id: 'metrics', label: 'Монитор' });
-    }
-    if (awgInstalled.value) {
-        // Insert AWG tab after subscriptions
-        list.splice(2, 0, { id: 'awg', label: 'AWG' });
-    }
-    return list;
-});
+		const list = [
+			{ id: 'editor', label: i18n.t('nav.editor') },
+			{ id: 'subscriptions', label: i18n.t('nav.subscriptions') },
+			{ id: 'logs', label: i18n.t('nav.logs') },
+			{ id: 'settings', label: i18n.t('nav.settings') },
+			{ id: 'commands', label: i18n.t('nav.commands') },
+		];
+		if (metricsEnabled.value) {
+			list.push({ id: 'metrics', label: i18n.t('nav.metrics') });
+		}
+		if (awgInstalled.value) {
+			list.splice(2, 0, { id: 'awg', label: 'AWG' });
+		}
+		return list;
+	});
 
 /* SVG icon paths (24x24 viewBox, stroke-based, Lucide-style) */
 const theme = ref(localStorage.getItem('theme') || 'dark');
@@ -122,7 +123,7 @@ onUnmounted(() => {
 <template>
   <div class="app">
     <!-- Sidebar -->
-    <nav class="sidebar-nav" role="navigation" aria-label="Основная навигация">
+    <nav class="sidebar-nav" role="navigation" :aria-label="i18n.t('nav.main_nav')">
       <div class="sidebar-logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path v-for="(d, i) in icons.logo.split('M').filter(Boolean)" :key="i" :d="'M' + d" />
@@ -137,11 +138,11 @@ onUnmounted(() => {
         </button>
       </div>
       <div class="sidebar-bottom">
-        <button class="sidebar-btn theme-toggle" :title="isDark ? 'Светлая тема' : 'Тёмная тема'" :aria-label="isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'" @click="toggleTheme">
+        <button class="sidebar-btn theme-toggle" :title="isDark ? i18n.t('nav.light_theme') : i18n.t('nav.dark_theme')" :aria-label="isDark ? i18n.t('nav.switch_light') : i18n.t('nav.switch_dark')" @click="toggleTheme">
           <svg v-if="isDark" viewBox="0 0 24 24"><path :d="icons.sun" /></svg>
           <svg v-else viewBox="0 0 24 24"><path :d="icons.moon" /></svg>
         </button>
-        <button class="sidebar-btn" title="Выйти" aria-label="Выйти" @click="app.logout()">
+        <button class="sidebar-btn" :title="i18n.t('nav.logout')" :aria-label="i18n.t('nav.logout')" @click="app.logout()">
           <svg viewBox="0 0 24 24"><path :d="icons.logout" /></svg>
         </button>
       </div>
@@ -155,7 +156,7 @@ onUnmounted(() => {
           <template v-if="app.activeTab === 'editor'">
             <select class="file-select" :value="app.currentFile?.path || ''"
                     @change="app.loadFile($event.target.value)">
-              <option value="" disabled>Выберите файл…</option>
+              <option value="" disabled>{{ i18n.t('app.choose_file') }}</option>
               <template v-for="g in app.fileGroups" :key="g.section">
                 <optgroup v-if="g.files.length" :label="g.label">
                   <option v-for="f in g.files" :key="f.path" :value="f.path">{{ f.name }}</option>
@@ -171,14 +172,14 @@ onUnmounted(() => {
           <!-- Service controls (always visible) -->
           <div class="service-bar">
             <span class="status-dot" :class="app.serviceStatus"></span>
-            <span class="service-label">{{ app.serviceStatus === 'running' ? 'Запущен' : app.serviceStatus === 'stopped' ? 'Остановлен' : '…' }}</span>
-            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" title="Запустить" aria-label="Запустить XKeen">
+            <span class="service-label">{{ i18n.t(app.serviceStatus === 'running' ? 'app.running' : app.serviceStatus === 'stopped' ? 'app.stopped' : 'app.unknown') }}</span>
+            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" :title="i18n.t('app.start')" :aria-label="i18n.t('app.start_title')">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.play" /></svg>
             </button>
-            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" title="Остановить" aria-label="Остановить XKeen">
+            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" :title="i18n.t('app.stop')" :aria-label="i18n.t('app.stop_title')">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.stop" /></svg>
             </button>
-            <button class="btn btn-sm" @click="app.restartService()" title="Перезапустить" aria-label="Перезапустить XKeen">
+            <button class="btn btn-sm" @click="app.restartService()" :title="i18n.t('app.restart')" :aria-label="i18n.t('app.restart_title')">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.restart" /></svg>
             </button>
           </div>
@@ -188,8 +189,8 @@ onUnmounted(() => {
               {{ app.isValidJson === false ? '✗ JSON' : '✓ JSON' }}
             </span>
             <button class="btn btn-sm" @click="doDiff()">Diff</button>
-            <button class="btn btn-sm" @click="app.showBackups()">Бэкапы</button>
-            <button class="btn btn-sm btn-primary" @click="doSave()">Сохранить</button>
+            <button class="btn btn-sm" @click="app.showBackups()">{{ i18n.t('app.backups') }}</button>
+            <button class="btn btn-sm btn-primary" @click="doSave()">{{ i18n.t('app.save') }}</button>
           </template>
         </div>
       </div>
@@ -208,7 +209,7 @@ onUnmounted(() => {
     <div class="modal-overlay" v-show="app.modal.show" @click.self="app.closeModal()">
       <div class="modal">
         <div class="modal-header">
-          <h3>Вывод: <span>{{ app.modal.command }}</span></h3>
+          <h3>{{ i18n.t('app.output') }} <span>{{ app.modal.command }}</span></h3>
           <button class="modal-close" @click="app.closeModal()">&times;</button>
         </div>
         <div class="modal-body">
@@ -217,12 +218,12 @@ onUnmounted(() => {
         </div>
         <div class="modal-input" v-show="app.canSendInput()">
           <input type="text" v-model="app.inputValue" @keydown.enter="app.sendInput()"
-                 placeholder="Введите данные и нажмите Enter..." class="modal-input-field">
-          <button class="btn btn-primary" @click="app.sendInput()">Отправить</button>
+                 :placeholder="i18n.t('app.input_placeholder')" class="modal-input-field">
+          <button class="btn btn-primary" @click="app.sendInput()">{{ i18n.t('app.send') }}</button>
         </div>
         <div class="modal-footer">
-          <button class="btn" @click="app.copyModalOutput()">Скопировать</button>
-          <button class="btn btn-primary" @click="app.closeModal()">Закрыть</button>
+          <button class="btn" @click="app.copyModalOutput()">{{ i18n.t('app.copy') }}</button>
+          <button class="btn btn-primary" @click="app.closeModal()">{{ i18n.t('app.close') }}</button>
         </div>
       </div>
     </div>
@@ -230,14 +231,14 @@ onUnmounted(() => {
     <!-- Confirm Dialog -->
     <div class="modal-overlay" v-show="app.confirm.show" @click.self="app.cancelConfirm()">
       <div class="modal">
-        <div class="modal-header"><h3>Подтверждение</h3></div>
+        <div class="modal-header"><h3>{{ i18n.t('app.confirm_title') }}</h3></div>
         <div class="modal-body">
-          <p>Вы уверены, что хотите выполнить эту команду?</p>
+          <p>{{ i18n.t('app.confirm_text') }}</p>
           <p class="confirm-description">{{ app.confirm.description }}</p>
         </div>
         <div class="modal-footer">
-          <button class="btn" @click="app.cancelConfirm()">Отмена</button>
-          <button class="btn btn-danger" @click="app.executeConfirm()">Выполнить</button>
+          <button class="btn" @click="app.cancelConfirm()">{{ i18n.t('app.cancel') }}</button>
+          <button class="btn btn-danger" @click="app.executeConfirm()">{{ i18n.t('app.execute') }}</button>
         </div>
       </div>
     </div>
@@ -246,7 +247,7 @@ onUnmounted(() => {
     <div class="modal-overlay" v-show="app.backupsModal.show" @click.self="app.closeBackupsModal()">
       <div class="modal modal-large">
         <div class="modal-header">
-          <h3>Резервные копии: <span>{{ app.backupsModal.fileName }}</span></h3>
+          <h3>{{ i18n.t('app.backup_title') }} <span>{{ app.backupsModal.fileName }}</span></h3>
           <button class="modal-close" @click="app.closeBackupsModal()">&times;</button>
         </div>
         <div class="modal-body">
@@ -256,21 +257,21 @@ onUnmounted(() => {
                  @click="app.selectBackup(backup)">
               <span class="backup-time">{{ app.formatBackupTime(backup.modified) }}</span>
               <div class="backup-actions">
-                <button class="btn btn-sm" @click.stop="app.copyBackupContent(backup)">Копировать</button>
-                <button class="btn btn-sm btn-primary" @click.stop="app.loadBackupToEditor(backup)">Загрузить</button>
+                <button class="btn btn-sm" @click.stop="app.copyBackupContent(backup)">{{ i18n.t('app.backup_copy') }}</button>
+                <button class="btn btn-sm btn-primary" @click.stop="app.loadBackupToEditor(backup)">{{ i18n.t('app.backup_download') }}</button>
               </div>
             </div>
           </div>
           <div class="backups-empty" v-show="app.backupsModal.backups.length === 0">
-            <p>Нет доступных резервных копий</p>
+            <p>{{ i18n.t('app.backup_none') }}</p>
           </div>
           <div class="backup-diff" v-show="app.backupsModal.selectedBackup && app.backupsModal.diffContent">
-            <h4>Сравнение с текущим файлом</h4>
+            <h4>{{ i18n.t('app.diff_title') }}</h4>
             <pre class="diff-content" v-html="app.backupsModal.diffContent"></pre>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" @click="app.closeBackupsModal()">Закрыть</button>
+          <button class="btn" @click="app.closeBackupsModal()">{{ i18n.t('app.diff_close') }}</button>
         </div>
       </div>
     </div>
@@ -279,14 +280,14 @@ onUnmounted(() => {
     <div class="modal-overlay" v-show="app.diffModal.show" @click.self="app.closeDiffModal()">
       <div class="modal modal-large">
         <div class="modal-header">
-          <h3>Изменения с последнего сохранения</h3>
+          <h3>{{ i18n.t('app.unsaved_changes') }}</h3>
           <button class="modal-close" @click="app.closeDiffModal()">&times;</button>
         </div>
         <div class="modal-body">
           <pre class="diff-content" v-html="app.diffModal.diffContent"></pre>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-primary" @click="app.closeDiffModal()">Закрыть</button>
+          <button class="btn btn-primary" @click="app.closeDiffModal()">{{ i18n.t('app.unsaved_close') }}</button>
         </div>
       </div>
     </div>

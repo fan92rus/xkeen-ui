@@ -31,6 +31,23 @@ const CATEGORY_PRIORITY = [
   'Информация',
 ];
 
+// Maps Russian category name → locale key in ru.json/en.json
+const CATEGORY_LOCALE_KEY = {
+  'Установка': 'install',
+  'Переустановка': 'reinstall',
+  'Обновление': 'update',
+  'Запланированная задача автообновления GeoFile/GeoIPSET': 'scheduled',
+  'Резервная копия XKeen': 'backup_xkeen',
+  'Резервная копия конфигурации Xray': 'backup_xray',
+  'Резервная копия конфигурации Mihomo': 'backup_mihomo',
+  'Удаление': 'remove',
+  'Порты проксирования': 'proxy_ports',
+  'Порты, исключённые из проксирования': 'proxy_excluded',
+  'Управление прокси-клиентом': 'proxy_client',
+  'Информация': 'info',
+  'Прочее': 'other',
+};
+
 // Precompute a lookup: category → index in CATEGORY_PRIORITY.
 const PRIORITY_INDEX = new Map(CATEGORY_PRIORITY.map((name, i) => [name, i]));
 
@@ -72,6 +89,7 @@ export function groupCommandsByCategory(commands) {
   const categories = Array.from(byCat.keys()).sort(compareCategory);
   return categories.map(name => ({
     name,
+    localeKey: CATEGORY_LOCALE_KEY[name] || 'other',
     commands: byCat.get(name).sort((a, b) => a.name.localeCompare(b.name)),
   }));
 }

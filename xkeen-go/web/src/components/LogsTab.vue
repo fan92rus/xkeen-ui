@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
+import { useI18nStore } from '../stores/i18n.js';
 import { createLogStream } from '../services/logs.js';
 
 const app = useAppStore();
+const i18n = useI18nStore();
 const logsEl = ref(null);
 const autoScroll = ref(true);
 let stream = null;
@@ -55,14 +57,14 @@ onUnmounted(disconnect);
         <option value="/opt/var/log/mihomo/access.log" v-show="app.currentMode === 'mihomo'">Access</option>
         <option value="/opt/var/log/mihomo/error.log" v-show="app.currentMode === 'mihomo'">Error</option>
       </select>
-      <input type="text" v-model="app.logSearch" placeholder="Поиск…">
+      <input type="text" v-model="app.logSearch" :placeholder="i18n.t('logs.search')">
       <select v-model="app.logFilter">
-        <option value="all">Все</option>
-        <option value="error">Ошибки</option>
+        <option value="all">{{ i18n.t('logs.all') }}</option>
+        <option value="error">{{ i18n.t('logs.errors') }}</option>
         <option value="warn">Warning</option>
         <option value="info">Info</option>
       </select>
-      <button @click="app.clearLogs()" class="btn btn-sm">Очистить</button>
+      <button @click="app.clearLogs()" class="btn btn-sm">{{ i18n.t('logs.clear') }}</button>
     </div>
     <div class="logs-container" ref="logsEl" @scroll="onScroll">
       <div v-for="(log, index) in app.filteredLogs" :key="log.timestamp + '-' + index" :class="'log-entry log-' + log.level">

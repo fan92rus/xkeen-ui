@@ -4,8 +4,10 @@ import { defineStore } from 'pinia';
 import { ref, reactive } from 'vue';
 import * as updateService from '../services/update.js';
 import { useAppStore } from './app.js';
+import { useI18nStore } from './i18n.js';
 
 export const useUpdateStore = defineStore('update', () => {
+	const i18n = useI18nStore();
 	const currentVersion = ref('unknown');
 	const checkDevUpdates = ref(false);
 
@@ -37,29 +39,29 @@ export const useUpdateStore = defineStore('update', () => {
 				release_url: data.release_url || '',
 				release_notes: data.release_notes || '',
 			});
-			if (data.error) app.showToast('Проверка обновлений: ' + data.error, 'error');
-		} catch { app.showToast('Не удалось проверить обновления', 'error'); }
+			if (data.error) app.showToast(i18n.t('toast.update_checking') + data.error, 'error');
+		} catch { app.showToast(i18n.t('toast.update_check_error'), 'error'); }
 		finally { updateChecking.value = false; }
 	}
 
 	async function startUpdate() {
 		const app = useAppStore();
-		updating.value = true; updateProgress.value = 0; updateStatus.value = 'Запуск обновления...';
+		updating.value = true; updateProgress.value = 0; updateStatus.value = i18n.t('toast.update_starting');
 		try {
 			await updateService.startUpdate({
 				prerelease: checkDevUpdates.value,
 				onProgress: (data) => { updateProgress.value = data.percent; updateStatus.value = data.status; },
 				onComplete: (data) => {
-					app.showToast(data.message || 'Обновление завершено!', 'success');
+					app.showToast(data.message || i18n.t('toast.update_done'), 'success');
 					updating.value = false;
 				},
 				onError: (data) => {
-					app.showToast('Ошибка обновления: ' + data.error, 'error');
+					app.showToast(i18n.t('toast.update_error') + data.error, 'error');
 					updating.value = false;
 				},
 			});
 		} catch (err) {
-			app.showToast('Ошибка обновления: ' + err.message, 'error');
+			app.showToast(i18n.t('toast.update_error_short') + err.message, 'error');
 			updating.value = false;
 		}
 	}

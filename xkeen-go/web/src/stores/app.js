@@ -13,6 +13,7 @@ import { error as logError } from '../utils/logger.js';
 import { useConfigStore } from './config.js';
 import { useServiceStore } from './service.js';
 import { useUpdateStore } from './update.js';
+import { useI18nStore } from './i18n.js';
 
 function safeLS(key, fallback) {
 	try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
@@ -23,6 +24,7 @@ export const useAppStore = defineStore('app', () => {
 	const configStore = useConfigStore();
 	const serviceStore = useServiceStore();
 	const updateStore = useUpdateStore();
+	const t = (key, p) => useI18nStore().t(key, p);
 
 	// ── UI state ──
 	const activeTab = ref(location.hash.slice(1) || safeLS('xkeen_active_tab', 'editor'));
@@ -44,17 +46,17 @@ export const useAppStore = defineStore('app', () => {
 
 	async function switchMode(mode) {
 		if (mode === currentMode.value) return;
-		if (mode === 'mihomo' && !mihomoAvailable.value) { showToast('Mihomo не установлен', 'error'); return; }
-		if (mode === 'xray' && !xrayAvailable.value) { showToast('Xray не установлен', 'error'); return; }
+		if (mode === 'mihomo' && !mihomoAvailable.value) { showToast(t('app.mihomo_missing'), 'error'); return; }
+		if (mode === 'xray' && !xrayAvailable.value) { showToast(t('app.xray_missing'), 'error'); return; }
 		try {
 			await modeService.setMode(mode);
 			configStore.currentFile = null;
 			currentMode.value = mode;
 			serviceStore.logFile = mode === 'mihomo' ? '/opt/var/log/mihomo/access.log' : '/opt/var/log/xray/access.log';
 			await configStore.loadFiles(mode);
-			showToast(`Переключено на ${mode}`, 'success');
+			showToast(t('app.mode_switched', { mode }), 'success');
 		} catch (err) {
-			showToast(err.message || 'Не удалось переключить режим', 'error');
+			showToast(err.message || t('app.mode_switch_error'), 'error');
 		}
 	}
 
@@ -78,10 +80,10 @@ export const useAppStore = defineStore('app', () => {
 
 	async function changePassword() {
 		const p = passwordChange;
-		if (!p.currentPassword || !p.newPassword || !p.confirmPassword) { showToast('Все поля пароля обязательны', 'error'); return false; }
-		if (p.newPassword.length < 8) { showToast('Новый пароль должен содержать минимум 8 символов', 'error'); return false; }
-		if (p.newPassword !== p.confirmPassword) { showToast('Новые пароли не совпадают', 'error'); return false; }
-		if (p.currentPassword === p.newPassword) { showToast('Новый пароль должен отличаться от текущего', 'error'); return false; }
+		if (!p.currentPassword || !p.newPassword || !p.confirmPassword) { showToast(t('settings.password_required'), 'error'); return false; }
+		if (p.newPassword.length < 8) { showToast(t('settings.password_minlength'), 'error'); return false; }
+		if (p.newPassword !== p.confirmPassword) { showToast(t('settings.password_mismatch'), 'error'); return false; }
+		if (p.currentPassword === p.newPassword) { showToast(t('settings.password_same'), 'error'); return false; }
 		p.loading = true; p.error = ''; p.success = false;
 		try {
 			const csrfToken = document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '';
@@ -92,16 +94,16 @@ export const useAppStore = defineStore('app', () => {
 			});
 			const data = await response.json();
 			if (!response.ok || !data.ok) {
-				p.error = data.error || 'Не удалось изменить пароль';
+				p.error = data.error || t('settings.password_change_error');
 				showToast(p.error, 'error');
 				return false;
 			}
 			p.success = true;
-			showToast('Пароль успешно изменён', 'success');
+			showToast(t('settings.password_changed_ok'), 'success');
 			clearPasswordForm();
 			return true;
 		} catch (err) {
-			p.error = err.message || 'Не удалось изменить пароль';
+			p.error = err.message || t('settings.password_change_fail');
 			showToast(p.error, 'error');
 			return false;
 		} finally { p.loading = false; }
@@ -155,8 +157,8 @@ export const useAppStore = defineStore('app', () => {
 	async function copyModalOutput() {
 		try {
 			await navigator.clipboard.writeText(modal.output);
-			showToast('Вывод скопирован в буфер обмена', 'success');
-		} catch { showToast('Не удалось скопировать', 'error'); }
+			showToast(t('toast.copied'), 'success');
+		} catch { showToast(t('toast.copy_failed'), 'error'); }
 	}
 
 	function cancelConfirm() {

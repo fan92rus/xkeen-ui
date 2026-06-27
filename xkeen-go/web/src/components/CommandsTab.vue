@@ -4,8 +4,10 @@ import { useAppStore } from '../stores/app.js';
 import { InteractiveSession } from '../services/interactive.js';
 import { getCommands, refreshCommands } from '../services/xkeen.js';
 import { groupCommandsByCategory } from '../utils/commands-grouping.js';
+import { useI18nStore } from '../stores/i18n.js';
 
 const app = useAppStore();
+const i18n = useI18nStore();
 const executingCommand = ref('');
 
 // Command palette comes from the backend registry (GET /api/xkeen/commands),
@@ -41,7 +43,7 @@ async function loadCommandPalette() {
     } catch (err) {
         categories.value = [];
         commandIndex.value = {};
-        loadError.value = err?.message || 'причина неизвестна';
+        loadError.value = err?.message || i18n.t('commands.unknown_reason');
     } finally {
         loading.value = false;
     }
@@ -62,7 +64,7 @@ async function refreshCommandPalette() {
             loadError.value = error;
         }
     } catch (err) {
-        loadError.value = err?.message || 'причина неизвестна';
+        loadError.value = err?.message || i18n.t('commands.unknown_reason');
     } finally {
         refreshing.value = false;
     }
@@ -93,18 +95,18 @@ async function doExecute(command) {
                 (msg) => handleStreamMessage(msg),
                 (msg) => {
                     app.interactiveSession = null; app.commandComplete = true;
-                    if (!msg.success && !app.modal.error) app.modal.error = `Команда завершилась с кодом ${msg.exitCode}`;
+                    if (!msg.success && !app.modal.error) app.modal.error = i18n.t('commands.completed', { code: msg.exitCode });
                     resolve();
                 },
                 () => {
                     app.interactiveSession = null; app.commandComplete = true;
-                    reject(new Error('Ошибка WebSocket соединения'));
+                    reject(new Error(i18n.t('commands.ws_error')));
                 }
             );
             app.interactiveSession.connect();
         });
     } catch (err) {
-        app.modal.error = 'Ошибка выполнения команды: ' + err.message;
+        app.modal.error = i18n.t('commands.exec_error') + err.message;
     } finally {
         executingCommand.value = '';
         app.commandComplete = true;
@@ -120,7 +122,7 @@ function handleStreamMessage(msg) {
         scrollToBottom();
     } else if (msg.type === 'complete') {
         app.commandComplete = true;
-        if (!msg.success && !app.modal.error) app.modal.error = `Команда завершилась с кодом ${msg.exitCode}`;
+        if (!msg.success && !app.modal.error) app.modal.error = i18n.t('commands.completed', { code: msg.exitCode });
     }
 }
 
@@ -147,24 +149,24 @@ function isLoading(command) { return executingCommand.value === command; }
 
 <template>
   <div class="commands-container">
-    <div v-if="loading" class="commands-loading">Загрузка списка команд…</div>
+    <div v-if="loading" class="commands-loading">{{ i18n.t('commands.loading') }}</div>
     <div v-else-if="loadError" class="commands-error">
-      Не удалось загрузить список команд: {{ loadError }}
+      {{ i18n.t('commands.exec_error') }}{{ loadError }}
     </div>
     <div v-else-if="categories.length === 0" class="commands-empty">
-      Команды недоступны. Убедитесь, что XKeen установлен.
+      {{ i18n.t('commands.no_commands') }}
     </div>
     <template v-else>
       <!-- Toolbar with refresh -->
       <div class="commands-toolbar">
-        <span class="commands-count">{{ categories.flatMap(c => c.commands).length }} команд</span>
+        <span class="commands-count">{{ i18n.t('commands.count', { count: categories.flatMap(c => c.commands).length }) }}</span>
         <button class="btn btn-sm" @click="refreshCommandPalette" :disabled="refreshing" style="margin-left:auto">
-          {{ refreshing ? 'Обновление…' : '🔄 Обновить' }}
+          {{ refreshing ? i18n.t('commands.refreshing') : i18n.t('commands.refresh') }}
         </button>
       </div>
       <div class="commands-grid">
       <div v-for="category in categories" :key="category.name" class="command-category-block">
-        <h3 class="category-title">{{ category.name }}</h3>
+        <h3 class="category-title">{{ i18n.t('cat.' + category.localeKey) }}</h3>
         <div class="category-commands-list">
           <div v-for="cmd in category.commands" :key="cmd.name" class="command-item">
             <div class="command-info">
@@ -175,7 +177,7 @@ function isLoading(command) { return executingCommand.value === command; }
                     :class="isDangerous(cmd.name) ? 'btn-danger' : 'btn-primary'"
                     @click="executeCommand(cmd.name)"
                     :disabled="isLoading(cmd.name)">
-              {{ isLoading(cmd.name) ? 'Выполнение...' : (isDangerous(cmd.name) ? 'Выполнить' : 'Запустить') }}
+              {{ isLoading(cmd.name) ? i18n.t('commands.executing') : (isDangerous(cmd.name) ? i18n.t('commands.execute_btn') : i18n.t('commands.run_btn')) }}
             </button>
           </div>
         </div>

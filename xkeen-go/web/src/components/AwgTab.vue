@@ -5,18 +5,18 @@
       <div class="awg-tabs">
         <button class="awg-tab" :class="{ 'awg-tab-active': subTab === 'client' }" @click="subTab = 'client'">
           <span class="awg-tab-icon">🔌</span>
-          <span>Клиенты</span>
+          <span>{{ i18n.t('awg.tab_clients') }}</span>
           <span v-if="clientIfaces.length" class="awg-tab-badge">{{ clientIfaces.length }}</span>
         </button>
         <button class="awg-tab" :class="{ 'awg-tab-active': subTab === 'server' }" @click="subTab = 'server'">
           <span class="awg-tab-icon">🖥️</span>
-          <span>Серверы</span>
+          <span>{{ i18n.t('awg.tab_servers') }}</span>
           <span v-if="serverIfaces.length" class="awg-tab-badge">{{ serverIfaces.length }}</span>
         </button>
       </div>
       <button class="btn btn-sm awg-upload-btn" @click="$refs.fileInput.click()" :disabled="uploading">
-        <span v-if="!uploading">📤 Загрузить .conf</span>
-        <span v-else>Загрузка…</span>
+        <span v-if="!uploading">{{ i18n.t('awg.upload_btn') }}</span>
+        <span v-else>{{ i18n.t('awg.uploading') }}</span>
       </button>
       <input type="file" accept=".conf" ref="fileInput" @change="onFilePicked" class="awg-file-hidden" />
     </div>
@@ -33,16 +33,15 @@
       <!-- Loading -->
       <div v-if="loading && interfaces.length === 0" class="awg-state">
         <div class="awg-state-icon">⏳</div>
-        <p>Загрузка…</p>
+        <p>{{ i18n.t('awg.loading') }}</p>
       </div>
 
       <!-- Empty: client -->
       <div v-else-if="subTab === 'client' && clientIfaces.length === 0" class="awg-state">
         <div class="awg-state-icon">🔌</div>
-        <p class="awg-state-title">Нет клиентских конфигураций</p>
-        <p class="awg-state-desc">Загрузите .conf WARP или VPN-провайдера.<br />
-          Клиент — это исходящий туннель с <code>Endpoint</code> в [Peer].</p>
-        <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
+        <p class="awg-state-title">{{ i18n.t('awg.no_clients') }}</p>
+        <p class="awg-state-desc">{{ i18n.t('awg.client_desc') }}</p>
+        <button class="btn btn-primary" @click="$refs.fileInput.click()">{{ i18n.t('awg.upload_btn') }}</button>
       </div>
 
       <!-- Client cards -->
@@ -53,13 +52,13 @@
               <span class="awg-iface-icon">🔌</span>
               <span class="awg-iface-name">{{ iface.name }}</span>
               <span class="awg-pill" :class="iface.active ? 'awg-pill-on' : 'awg-pill-off'">
-                <span class="awg-pill-dot"></span>{{ iface.active ? 'активен' : 'остановлен' }}
+                <span class="awg-pill-dot"></span>{{ iface.active ? i18n.t('awg.active') : i18n.t('awg.stopped') }}
               </span>
             </div>
             <div class="awg-card-actions">
-              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">Старт</button>
-              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">Стоп</button>
-              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">Удалить</button>
+              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">{{ i18n.t('awg.start') }}</button>
+              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">{{ i18n.t('awg.stop') }}</button>
+              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">{{ i18n.t('awg.delete') }}</button>
             </div>
           </div>
           <div class="awg-card-body">
@@ -68,7 +67,7 @@
               <div class="awg-chip" v-if="iface.address"><span class="awg-chip-label">Address</span><code>{{ iface.address }}</code></div>
             </div>
             <div v-if="iface.active" class="awg-route-chain">
-              Xray → mark {{ iface.mark }} → table {{ iface.mark }} → dev {{ iface.name }}
+              {{ i18n.t('awg.route_chain', { mark: iface.mark, name: iface.name }) }}
             </div>
           </div>
         </div>
@@ -81,11 +80,11 @@
           <div class="awg-card-header">
             <div class="awg-card-title-group">
               <span class="awg-iface-icon">⚙</span>
-              <span class="awg-iface-name">Интерфейсы роутера</span>
+              <span class="awg-iface-name">{{ i18n.t('awg.server_settings_title') }}</span>
             </div>
           </div>
           <div class="awg-card-body">
-            <p class="awg-settings-desc">LAN/WAN для preset «Полный туннель» (iptables FORWARD/NAT). Endpoint — внешний адрес для клиентских конфигов. Пусто = авто-детект.</p>
+            <p class="awg-settings-desc">{{ i18n.t('awg.server_settings_desc') }}</p>
             <div class="awg-iface-row">
               <label class="awg-iface-field">
                 <span class="awg-iface-field-label">LAN</span>
@@ -96,11 +95,11 @@
                 <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving" />
               </label>
               <label class="awg-iface-field awg-iface-field-wide">
-                <span class="awg-iface-field-label">Endpoint (IP или домен)</span>
-                <input v-model="awgIface.endpoint" type="text" placeholder="авто-детект" :disabled="awgIfaceSaving" />
+                <span class="awg-iface-field-label">{{ i18n.t('awg.endpoint_label') }}</span>
+                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving" />
               </label>
               <button class="btn btn-primary btn-sm" @click="saveIfaceSettings()" :disabled="awgIfaceSaving">
-                {{ awgIfaceSaving ? 'Сохранение…' : 'Сохранить' }}
+                {{ awgIfaceSaving ? i18n.t('awg.saving') : i18n.t('awg.save') }}
               </button>
             </div>
           </div>
@@ -109,10 +108,10 @@
         <!-- Empty state -->
         <div v-if="serverIfaces.length === 0" class="awg-state">
           <div class="awg-state-icon">🖥️</div>
-          <p class="awg-state-title">Нет серверных конфигураций</p>
-          <p class="awg-state-desc">Загрузите серверный .conf (с <code>ListenPort</code> и без <code>Endpoint</code>).<br />
-            Сервер — это входящий VPN для удалённого доступа к домашней сети.</p>
-          <button class="btn btn-primary" @click="$refs.fileInput.click()">📤 Загрузить конфиг</button>
+          <p class="awg-state-title">{{ i18n.t('awg.no_servers') }}</p>
+          <p class="awg-state-desc">{{ i18n.t('awg.server_hint_start') }} <code>ListenPort</code>{{ i18n.t('awg.server_hint_listen') }} <code>Endpoint</code>).<br />
+            {{ i18n.t('awg.server_hint') }}</p>
+          <button class="btn btn-primary" @click="$refs.fileInput.click()">{{ i18n.t('awg.upload_config') }}</button>
         </div>
 
         <!-- Server interface cards -->
@@ -122,20 +121,20 @@
               <span class="awg-iface-icon">🖥️</span>
               <span class="awg-iface-name">{{ iface.name }}</span>
               <span class="awg-pill" :class="iface.active ? 'awg-pill-on' : 'awg-pill-off'">
-                <span class="awg-pill-dot"></span>{{ iface.active ? 'активен' : 'остановлен' }}
+                <span class="awg-pill-dot"></span>{{ iface.active ? i18n.t('awg.active') : i18n.t('awg.stopped') }}
               </span>
-              <span v-if="iface.active" class="awg-pill awg-pill-info">🔒 full-tunnel</span>
+              <span v-if="iface.active" class="awg-pill awg-pill-info">{{ i18n.t('awg.full_tunnel') }}</span>
             </div>
             <div class="awg-card-actions">
-              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">Старт</button>
-              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">Стоп</button>
-              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">Удалить</button>
+              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">{{ i18n.t('awg.start') }}</button>
+              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">{{ i18n.t('awg.stop') }}</button>
+              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">{{ i18n.t('awg.delete') }}</button>
             </div>
           </div>
           <div class="awg-card-body">
             <!-- Obfuscation profile (compact) -->
             <div v-if="obfuscation[iface.name]" class="awg-obfuscation">
-              <span class="awg-obfuscation-label-text">🛡 Обфускация</span>
+              <span class="awg-obfuscation-label-text">{{ i18n.t('awg.obfuscation_label') }}</span>
               <span v-if="obfuscation[iface.name].loading" class="awg-obfuscation-hint">…</span>
               <select v-else
                       :value="obfuscation[iface.name].current"
@@ -145,31 +144,31 @@
                 <option v-for="p in obfuscation[iface.name].presets" :key="p.id" :value="p.id">{{ p.name }}</option>
                 <option v-if="obfuscation[iface.name].current === 'custom' || obfuscation[iface.name].current === 'unknown'" :value="obfuscation[iface.name].current">{{ obfuscationPresetName(iface.name) }}</option>
               </select>
-              <span v-if="obfuscation[iface.name].applying" class="awg-obfuscation-hint">⟳ Применение…</span>
+              <span v-if="obfuscation[iface.name].applying" class="awg-obfuscation-hint">{{ i18n.t('awg.obfuscation_applying') }}</span>
               <span v-else-if="currentObfDescription(iface.name)" class="awg-obfuscation-hint" :title="currentObfDescription(iface.name)">{{ currentObfDescription(iface.name) }}</span>
             </div>
 
             <!-- Peers section -->
             <div class="awg-peers">
               <div class="awg-peers-head">
-                <span class="awg-peers-title">Клиенты ({{ (peers[iface.name] || []).length }})</span>
-                <button class="btn btn-primary btn-sm" @click="openAddPeer(iface.name)" :disabled="busy">+ Добавить клиента</button>
+                <span class="awg-peers-title">{{ i18n.t('awg.clients_title', { count: (peers[iface.name] || []).length }) }}</span>
+                <button class="btn btn-primary btn-sm" @click="openAddPeer(iface.name)" :disabled="busy">{{ i18n.t('awg.add_client') }}</button>
               </div>
 
-              <div v-if="peerLoading[iface.name]" class="awg-peers-status">Загрузка…</div>
-              <div v-else-if="!(peers[iface.name] || []).length" class="awg-peers-status">Нет клиентов. Добавьте, чтобы создать конфиг для подключения.</div>
+              <div v-if="peerLoading[iface.name]" class="awg-peers-status">{{ i18n.t('awg.peer_loading') }}</div>
+              <div v-else-if="!(peers[iface.name] || []).length" class="awg-peers-status">{{ i18n.t('awg.peer_none') }}</div>
               <div v-else class="awg-peer-list">
                 <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key"
                      class="awg-peer-row awg-peer-row-clickable"
                      @click="showPeerQR(iface.name, peer)">
                   <div class="awg-peer-info">
-                    <span class="awg-peer-name" :class="{ 'awg-peer-name-fallback': !peer.label }">{{ peer.label || 'Без названия' }}</span>
+                    <span class="awg-peer-name" :class="{ 'awg-peer-name-fallback': !peer.label }">{{ peer.label || i18n.t('awg.peer_unnamed') }}</span>
                     <span class="awg-peer-ip">{{ peer.ip }}</span>
                     <span class="awg-peer-key" :title="peer.public_key">{{ shortenKey(peer.public_key) }}</span>
-                    <span class="awg-peer-qr-hint" :title="peer.has_client_config ? 'Нажмите, чтобы показать QR' : 'Конфиг не сохранён'">{{ peer.has_client_config ? '📱' : '🔒' }}</span>
+                    <span class="awg-peer-qr-hint" :title="peer.has_client_config ? i18n.t('awg.peer_qr_hint') : i18n.t('awg.peer_no_config')">{{ peer.has_client_config ? '📱' : '🔒' }}</span>
                   </div>
                   <div class="awg-peer-actions">
-                    <button class="btn btn-danger btn-sm" @click.stop="removePeer(iface.name, peer)" :disabled="busy" title="Удалить">✕</button>
+                    <button class="btn btn-danger btn-sm" @click.stop="removePeer(iface.name, peer)" :disabled="busy" :title="i18n.t('awg.peer_delete')">✕</button>
                   </div>
                 </div>
               </div>
@@ -183,48 +182,48 @@
     <div v-if="addPeer.show" class="awg-modal-overlay" @click.self="closeAddPeer">
       <div class="awg-modal">
         <div class="awg-modal-head">
-          <h3>Новый клиент — {{ addPeer.server }}</h3>
+          <h3>{{ i18n.t('awg.add_title', { server: addPeer.server }) }}</h3>
           <button class="awg-banner-close" @click="closeAddPeer">✕</button>
         </div>
         <div class="awg-modal-body">
           <!-- Form -->
           <template v-if="!addPeer.result">
-            <label class="awg-modal-label">Название (необязательно)</label>
-            <input v-model="addPeer.label" type="text" class="awg-modal-input" placeholder="например: phone, laptop"
+            <label class="awg-modal-label">{{ i18n.t('awg.add_name_label') }}</label>
+            <input v-model="addPeer.label" type="text" class="awg-modal-input" :placeholder="i18n.t('awg.add_name_placeholder')"
                    @keyup.enter="doAddPeer" />
-            <p class="awg-modal-hint">Будет сгенерирован ключ, назначен IP и создан готовый клиентский конфиг.</p>
+            <p class="awg-modal-hint">{{ i18n.t('awg.add_desc') }}</p>
             <div class="awg-modal-actions">
-              <button class="btn" @click="closeAddPeer">Отмена</button>
+              <button class="btn" @click="closeAddPeer">{{ i18n.t('awg.add_cancel') }}</button>
               <button class="btn btn-primary" @click="doAddPeer" :disabled="addPeer.loading">
-                {{ addPeer.loading ? 'Генерация…' : 'Сгенерировать конфиг' }}
+                {{ addPeer.loading ? i18n.t('awg.add_generating') : i18n.t('awg.add_generate') }}
               </button>
             </div>
           </template>
           <!-- Result -->
           <template v-else>
             <div class="awg-result-banner">
-              ✅ Клиент <code>{{ addPeer.result.client_ip }}</code> добавлен в <code>{{ addPeer.server }}</code>
+              ✅ {{ i18n.t('awg.add_added_to') }} <code>{{ addPeer.result.client_ip }}</code> → <code>{{ addPeer.server }}</code>
             </div>
             <!-- View toggle -->
             <div class="awg-config-toggle">
               <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
-                      @click="configView = 'qr'">📱 QR-код</button>
+                      @click="configView = 'qr'">{{ i18n.t('awg.peer_qr_tab') }}</button>
               <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
-                      @click="configView = 'text'">📄 Текст</button>
+                      @click="configView = 'text'">{{ i18n.t('awg.peer_text_tab') }}</button>
             </div>
             <!-- QR view -->
             <div v-if="configView === 'qr'" class="awg-qr-wrap">
-              <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR-код конфига" class="awg-qr-img" />
-              <p v-else class="awg-peers-status">QR-код недоступен</p>
+              <img v-if="qrDataUrl" :src="qrDataUrl" :alt="i18n.t('awg.peer_qr_alt')" class="awg-qr-img" />
+              <p v-else class="awg-peers-status">{{ i18n.t('awg.peer_qr_unavailable') }}</p>
             </div>
             <!-- Text view -->
             <div v-else class="awg-config-wrap">
               <pre class="awg-config-text">{{ addPeer.result.client_config }}</pre>
-              <button class="awg-copy-btn" @click="copyConfig" :title="'Копировать'">{{ copied ? '✓' : '📋' }}</button>
+              <button class="awg-copy-btn" @click="copyConfig" :title="i18n.t('awg.peer_copy')">{{ copied ? '✓' : '📋' }}</button>
             </div>
             <div class="awg-modal-actions">
-              <button class="btn" @click="downloadConfig">⬇ Скачать .conf</button>
-              <button class="btn btn-primary" @click="closeAddPeer">Готово</button>
+              <button class="btn" @click="downloadConfig">{{ i18n.t('awg.peer_download') }}</button>
+              <button class="btn btn-primary" @click="closeAddPeer">{{ i18n.t('awg.peer_done') }}</button>
             </div>
           </template>
         </div>
@@ -235,38 +234,38 @@
     <div v-if="peerView.show" class="awg-modal-overlay" @click.self="closePeerView">
       <div class="awg-modal">
         <div class="awg-modal-head">
-          <h3>📱 Клиент {{ peerView.ip }}</h3>
+          <h3>{{ i18n.t('awg.viewer_title', { ip: peerView.ip }) }}</h3>
           <button class="awg-banner-close" @click="closePeerView">✕</button>
         </div>
         <div class="awg-modal-body">
-          <div v-if="peerView.loading" class="awg-peers-status">Загрузка…</div>
+          <div v-if="peerView.loading" class="awg-peers-status">{{ i18n.t('awg.viewer_loading') }}</div>
           <template v-else-if="peerView.error">
             <div class="awg-result-banner awg-result-error">⚠ {{ peerView.error }}</div>
             <div class="awg-modal-actions">
-              <button class="btn btn-primary" @click="closePeerView">Закрыть</button>
+              <button class="btn btn-primary" @click="closePeerView">{{ i18n.t('awg.viewer_close') }}</button>
             </div>
           </template>
           <template v-else>
             <!-- View toggle -->
             <div class="awg-config-toggle">
               <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
-                      @click="configView = 'qr'">📱 QR-код</button>
+                      @click="configView = 'qr'">{{ i18n.t('awg.peer_qr_tab') }}</button>
               <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
-                      @click="configView = 'text'">📄 Текст</button>
+                      @click="configView = 'text'">{{ i18n.t('awg.peer_text_tab') }}</button>
             </div>
             <!-- QR view -->
             <div v-if="configView === 'qr'" class="awg-qr-wrap">
-              <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR-код конфига" class="awg-qr-img" />
-              <p v-else class="awg-peers-status">QR-код недоступен</p>
+              <img v-if="qrDataUrl" :src="qrDataUrl" :alt="i18n.t('awg.peer_qr_alt')" class="awg-qr-img" />
+              <p v-else class="awg-peers-status">{{ i18n.t('awg.peer_qr_unavailable') }}</p>
             </div>
             <!-- Text view -->
             <div v-else class="awg-config-wrap">
               <pre class="awg-config-text">{{ peerView.config }}</pre>
-              <button class="awg-copy-btn" @click="copyConfig" :title="'Копировать'">{{ copied ? '✓' : '📋' }}</button>
+              <button class="awg-copy-btn" @click="copyConfig" :title="i18n.t('awg.peer_copy')">{{ copied ? '✓' : '📋' }}</button>
             </div>
             <div class="awg-modal-actions">
-              <button class="btn" @click="downloadPeerConfig">⬇ Скачать .conf</button>
-              <button class="btn btn-primary" @click="closePeerView">Закрыть</button>
+              <button class="btn" @click="downloadPeerConfig">{{ i18n.t('awg.peer_download') }}</button>
+              <button class="btn btn-primary" @click="closePeerView">{{ i18n.t('awg.viewer_close') }}</button>
             </div>
           </template>
         </div>
@@ -280,10 +279,12 @@ import { ref, reactive, computed, watch, onMounted } from 'vue';
 import * as awgApi from '../services/awg.js';
 import * as xkeen from '../services/xkeen.js';
 import { useAppStore } from '../stores/app.js';
+import { useI18nStore } from '../stores/i18n.js';
 import { log } from '../utils/logger.js';
 import QRCode from 'qrcode';
 
 const app = useAppStore();
+const i18n = useI18nStore();
 
 const interfaces = ref([]);
 const loading = ref(false);
@@ -340,7 +341,7 @@ async function loadInterfaces() {
       }
     }
   } catch (e) {
-    error.value = 'Не удалось загрузить: ' + (e.message || e);
+    error.value = i18n.t('awg.error_load') + (e.message || e);
   } finally {
     loading.value = false;
   }
@@ -359,12 +360,12 @@ async function saveIfaceSettings() {
     await xkeen.updateAWGInterfaces(awgIface.value.lan, awgIface.value.wan, awgIface.value.endpoint);
     app.showToast(
       awgIface.value.lan || awgIface.value.wan
-        ? 'Интерфейсы сохранены'
-        : 'Интерфейсы: авто-детект',
+        ? i18n.t('awg.saved_ok')
+        : i18n.t('awg.saved_auto'),
       'success',
     );
   } catch (e) {
-    app.showToast(e.message || 'Ошибка сохранения', 'error');
+    app.showToast(e.message || i18n.t('awg.saved_error'), 'error');
   } finally {
     awgIfaceSaving.value = false;
   }
@@ -388,7 +389,7 @@ async function loadPeers(name) {
 function obfuscationPresetName(name) {
   const o = obfuscation[name];
   if (!o || o.loading) return '—';
-  if (o.current === 'custom') return 'Custom (уникальный)';
+  if (o.current === 'custom') return i18n.t('awg.preset_custom');
   if (o.current === 'unknown') return '?';
   const p = (o.presets || []).find(x => x.id === o.current);
   return p ? p.name : o.current;
@@ -399,7 +400,7 @@ function currentObfDescription(name) {
   if (!o || o.loading) return '';
   const p = (o.presets || []).find(x => x.id === o.current);
   if (p) return p.description || '';
-  if (o.current === 'custom') return 'Пользовательский набор параметров AWG';
+  if (o.current === 'custom') return i18n.t('awg.preset_custom_desc');
   return '';
 }
 
@@ -427,8 +428,8 @@ async function applyObfuscationPreset(name, presetId) {
   const preset = (obfuscation[name]?.presets || []).find(p => p.id === presetId);
   const warn = preset?.warning ? `\n\n⚠ ${preset.warning}` : '';
   const iface = interfaces.value.find(i => i.name === name);
-  const restartMsg = iface?.active ? '\n\nИнтерфейс будет перезапущен — клиенты на несколько секунд отключатся.' : '';
-  if (!confirm(`Применить профиль «${preset?.name || presetId}»?${warn}${restartMsg}`)) return;
+  const restartMsg = iface?.active ? i18n.t('awg.restart_warning') : '';
+  if (!confirm(i18n.t('awg.apply_confirm', { name: preset?.name || presetId, warn, restart: restartMsg }))) return;
   obfuscation[name].applying = true;
   try {
     const res = await awgApi.applyObfuscation(name, presetId);
@@ -440,7 +441,7 @@ async function applyObfuscationPreset(name, presetId) {
     // Reload interfaces to reflect restart status
     await loadInterfaces();
   } catch (e) {
-    error.value = 'Ошибка применения профиля: ' + (e.message || e);
+    error.value = i18n.t('awg.error_apply') + (e.message || e);
   } finally {
     obfuscation[name].applying = false;
   }
@@ -463,9 +464,9 @@ async function doUpload(file) {
     // Auto-switch to the tab where the config landed
     if (res.role === 'server') subTab.value = 'server';
     else subTab.value = 'client';
-    app.showToast(`«${res.name || file.name}» загружен (${res.role === 'server' ? 'сервер' : 'клиент'})`, 'success');
+    app.showToast(i18n.t('awg.uploaded', { name: res.name || file.name, role: i18n.t(res.role === 'server' ? 'awg.role_server' : 'awg.role_client') }), 'success');
   } catch (e) {
-    error.value = 'Ошибка загрузки: ' + (e.message || e);
+    error.value = i18n.t('awg.error_upload') + (e.message || e);
   } finally {
     uploading.value = false;
   }
@@ -480,7 +481,7 @@ async function startIface(name) {
     await awgApi.upInterface(name);
     await pollStatus(name, true);
   } catch (e) {
-    error.value = 'Ошибка запуска: ' + (e.message || e);
+    error.value = i18n.t('awg.error_start') + (e.message || e);
   } finally {
     busy.value = false;
   }
@@ -493,7 +494,7 @@ async function stopIface(name) {
     await awgApi.downInterface(name);
     await pollStatus(name, false);
   } catch (e) {
-    error.value = 'Ошибка остановки: ' + (e.message || e);
+    error.value = i18n.t('awg.error_stop') + (e.message || e);
   } finally {
     busy.value = false;
   }
@@ -509,15 +510,15 @@ async function pollStatus(name, wantActive) {
 }
 
 async function deleteIface(name) {
-  const role = subTab.value === 'server' ? 'сервер' : 'клиент';
-  if (!confirm(`Удалить ${role} «${name}»? Интерфейс будет остановлен, роутинг очищен.`)) return;
+  const role = subTab.value === 'server' ? i18n.t('awg.role_server') : i18n.t('awg.role_client');
+  if (!confirm(i18n.t('awg.delete_confirm_title', { role, name }))) return;
   busy.value = true;
   error.value = '';
   try {
     await awgApi.deleteConfig(name);
     await loadInterfaces();
   } catch (e) {
-    error.value = 'Ошибка удаления: ' + (e.message || e);
+    error.value = i18n.t('awg.error_delete') + (e.message || e);
   } finally {
     busy.value = false;
   }
@@ -561,7 +562,7 @@ async function doAddPeer() {
       configView.value = 'text';
     }
   } catch (e) {
-    error.value = 'Ошибка: ' + (e.message || e);
+    error.value = i18n.t('awg.error_generic') + (e.message || e);
     closeAddPeer();
   } finally {
     addPeer.loading = false;
@@ -569,14 +570,14 @@ async function doAddPeer() {
 }
 
 async function removePeer(serverName, peer) {
-  const label = peer.label || peer.ip || 'без названия';
-  if (!confirm(`Удалить клиента «${label}»?`)) return;
+  const label = peer.label || peer.ip || i18n.t('awg.peer_unnamed');
+  if (!confirm(i18n.t('awg.delete_peer_confirm', { label }))) return;
   busy.value = true;
   try {
     await awgApi.deletePeer(serverName, peer);
     await loadPeers(serverName);
   } catch (e) {
-    error.value = 'Ошибка: ' + (e.message || e);
+    error.value = i18n.t('awg.error_generic') + (e.message || e);
   } finally {
     busy.value = false;
   }
@@ -616,7 +617,7 @@ async function showPeerQR(serverName, peer) {
       configView.value = 'text';
     }
   } catch (e) {
-    peerView.error = e.message || 'Конфиг не найден (приватный ключ не сохранён)';
+    peerView.error = e.message || i18n.t('awg.config_not_found');
     configView.value = 'text';
   } finally {
     peerView.loading = false;

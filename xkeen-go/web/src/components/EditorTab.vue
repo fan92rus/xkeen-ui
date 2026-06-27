@@ -5,8 +5,10 @@ import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useAppStore } from '../stores/app.js';
+import { useI18nStore } from '../stores/i18n.js';
 
 const app = useAppStore();
+const i18n = useI18nStore();
 const editorRef = ref(null);
 const loading = ref(false);
 let instance = null;
@@ -108,7 +110,7 @@ defineExpose({ getContent, save, diff, loadText });
 
 <template>
   <div class="editor-container">
-    <div v-if="loading" class="editor-loading">Загрузка…</div>
+    <div v-if="loading" class="editor-loading">{{ i18n.t('editor.loading') }}</div>
     <div ref="editorRef" id="editor" v-show="!loading"></div>
   </div>
 </template>

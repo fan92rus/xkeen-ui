@@ -5,8 +5,11 @@ import { ref, reactive } from 'vue';
 import * as configService from '../services/config.js';
 import { computeDiff as computeDiffHtml } from '../utils/diff.js';
 import { useAppStore } from './app.js';
+import { useI18nStore } from './i18n.js';
 
 export const useConfigStore = defineStore('config', () => {
+	const i18n = useI18nStore();
+
 	// ── State ──
 	const files = ref([]);
 	const fileGroups = ref([]);
@@ -24,7 +27,7 @@ export const useConfigStore = defineStore('config', () => {
 		try {
 			const data = await configService.listFiles(mode);
 			files.value = data;
-		} catch { app.showToast('Не удалось загрузить файлы', 'error'); }
+		} catch { app.showToast(i18n.t('toast.file_load_error'), 'error'); }
 	}
 
 	async function loadGroupedFiles() {
@@ -42,7 +45,7 @@ export const useConfigStore = defineStore('config', () => {
 				}
 			}
 			files.value = all;
-		} catch { app.showToast('Не удалось загрузить файлы', 'error'); }
+		} catch { app.showToast(i18n.t('toast.file_load_error'), 'error'); }
 	}
 
 	async function loadFile(path) {
@@ -59,12 +62,12 @@ export const useConfigStore = defineStore('config', () => {
 				isValidJson.value = data.valid;
 				lastSavedContent.value = data.content;
 			}
-		} catch { app.showToast('Не удалось загрузить файл', 'error'); }
+		} catch { app.showToast(i18n.t('toast.file_load_error_single'), 'error'); }
 	}
 
 	async function saveFile(content) {
 		const app = useAppStore();
-		if (!currentFile.value) { app.showToast('Файл не выбран', 'error'); return false; }
+		if (!currentFile.value) { app.showToast(i18n.t('toast.file_not_selected'), 'error'); return false; }
 		try {
 			const data = await configService.saveFile(
 				currentFile.value.path,
@@ -76,15 +79,15 @@ export const useConfigStore = defineStore('config', () => {
 				currentFile.value.modified = data.modified;
 			}
 			lastSavedContent.value = content;
-			app.showToast('Сохранено успешно', 'success');
+			app.showToast(i18n.t('toast.saved_ok'), 'success');
 			return true;
 		} catch (err) {
 			if (err.status === 409) {
-				app.showToast('Файл изменён на диске, перезагружаем…', 'error');
+				app.showToast(i18n.t('toast.file_changed_disk'), 'error');
 				await loadFile(currentFile.value.path);
 				return false;
 			}
-			app.showToast(err.message || 'Ошибка сохранения', 'error');
+			app.showToast(err.message || i18n.t('toast.save_error'), 'error');
 			return false;
 		}
 	}
@@ -100,7 +103,7 @@ export const useConfigStore = defineStore('config', () => {
 			backupsModal.diffContent = '';
 			backupsModal.show = true;
 			if (backupsModal.backups.length > 0) await selectBackup(backupsModal.backups[0]);
-		} catch { app.showToast('Не удалось загрузить резервные копии', 'error'); }
+		} catch { app.showToast(i18n.t('toast.backup_load_error'), 'error'); }
 	}
 
 	function closeBackupsModal() {
@@ -113,7 +116,7 @@ export const useConfigStore = defineStore('config', () => {
 		try {
 			const backupContent = await configService.getBackupContent(backup.path);
 			backupsModal.diffContent = computeDiffHtml(lastSavedContent.value || '', backupContent);
-		} catch { app.showToast('Не удалось загрузить содержимое', 'error'); }
+		} catch { app.showToast(i18n.t('toast.backup_content_error'), 'error'); }
 	}
 
 	async function copyBackupContent(backup) {
@@ -121,8 +124,8 @@ export const useConfigStore = defineStore('config', () => {
 		try {
 			const content = await configService.getBackupContent(backup.path);
 			await navigator.clipboard.writeText(content);
-			app.showToast('Резервная копия скопирована', 'success');
-		} catch { app.showToast('Не удалось скопировать', 'error'); }
+			app.showToast(i18n.t('toast.backup_copied'), 'success');
+		} catch { app.showToast(i18n.t('toast.backup_copy_failed'), 'error'); }
 	}
 
 	async function loadBackupToEditor(backup) {
@@ -131,14 +134,14 @@ export const useConfigStore = defineStore('config', () => {
 			const content = await configService.getBackupContent(backup.path);
 			editorLoadContent.value = content;
 			closeBackupsModal();
-			app.showToast('Резервная копия загружена в редактор', 'success');
-		} catch { app.showToast('Не удалось загрузить', 'error'); }
+			app.showToast(i18n.t('toast.backup_loaded'), 'success');
+		} catch { app.showToast(i18n.t('toast.backup_load_failed'), 'error'); }
 	}
 
 	// ── Actions: Diff ──
 	function openDiffModal(currentContent, savedContent) {
 		const app = useAppStore();
-		if (currentContent === savedContent) { app.showToast('Нет изменений с последнего сохранения'); return; }
+		if (currentContent === savedContent) { app.showToast(i18n.t('toast.no_changes')); return; }
 		diffModal.diffContent = computeDiffHtml(currentContent, savedContent);
 		diffModal.show = true;
 	}
