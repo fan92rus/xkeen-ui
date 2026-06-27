@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -626,4 +627,432 @@ func TestGetPeerConfig_ReturnsSyncedConfig(t *testing.T) {
 	if strings.Contains(resp.ClientConfig, "Jc = 2") {
 		t.Errorf("returned config should NOT have stale Jc=2, got:\n%s", resp.ClientConfig)
 	}
+}
+
+// ---------- extractPeers ----------
+
+func TestExtractPeers_EmptyReturnsSliceNotNull(t *testing.T) {
+	// Regression: a server config with no [Peer] sections must yield an empty
+	// slice (JSON []) not a nil slice (JSON null), or the frontend crashes on
+	// peers.length when opening a freshly-created server.
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
+	}
+	got := extractPeers(conf)
+	if got == nil {
+		t.Fatal("extractPeers returned nil for a config with no peers — must be an empty slice so JSON serializes to [] not null")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 peers, got %d", len(got))
+	}
+}
+
+func TestExtractPeers_FieldsAndIndex(t *testing.T) {
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
+		Peers: []*subscription.AWGConfigSection{
+			{Type: "Peer", Comment: "peer: phone", Values: map[string]string{"PublicKey": "PUB1", "AllowedIPs": "10.8.0.2/32"}},
+			{Type: "Peer", Values: map[string]string{"PublicKey": "PUB2", "AllowedIPs": "10.8.0.3/32, 10.8.0.4/32"}},
+			{Type: "Peer", Comment: "peer: laptop", Values: map[string]string{"PublicKey": "PUB3"}}, // no AllowedIPs
+		},
+	}
+	got := extractPeers(conf)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 peers, got %d", len(got))
+	}
+	// Peer 0: label from comment, IP from first AllowedIPs entry, index 0.
+	if got[0].Label != "phone" {
+		t.Errorf("peer0 label: want 'phone', got %q", got[0].Label)
+	}
+	if got[0].PublicKey != "PUB1" || got[0].IP != "10.8.0.2" || got[0].Index != 0 {
+		t.Errorf("peer0 mismatch: %+v", got[0])
+	}
+	// Peer 1: no label, IP is the FIRST of multiple AllowedIPs, index 1.
+	if got[1].Label != "" {
+		t.Errorf("peer1 label should be empty, got %q", got[1].Label)
+	}
+	if got[1].IP != "10.8.0.3" {
+		t.Errorf("peer1 IP should be first of list (10.8.0.3), got %q", got[1].IP)
+	}
+	if got[1].Index != 1 {
+		t.Errorf("peer1 index: want 1, got %d", got[1].Index)
+	}
+	// Peer 2: no AllowedIPs → empty IP, index 2.
+	if got[2].IP != "" {
+		t.Errorf("peer2 IP should be empty (no AllowedIPs), got %q", got[2].IP)
+	}
+	if got[2].Index != 2 {
+		t.Errorf("peer2 index: want 2, got %d", got[2].Index)
+	}
+}
+
+func TestExtractPeers_AllowedIPsWithoutSlash(t *testing.T) {
+	// AllowedIPs without a / prefix (bare IP) must not panic and must yield the IP.
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
+		Peers: []*subscription.AWGConfigSection{
+			{Type: "Peer", Values: map[string]string{"AllowedIPs": "10.8.0.7"}},
+		},
+	}
+	got := extractPeers(conf)
+	if got[0].IP != "10.8.0.7" {
+		t.Errorf("bare IP parse: want 10.8.0.7, got %q", got[0].IP)
+	}
+}
+
+// ---------- allocatePeerIP ----------
+
+func mustPeerSection(allowed string) *subscription.AWGConfigSection {
+	return &subscription.AWGConfigSection{Type: "Peer", Values: map[string]string{"AllowedIPs": allowed}}
+}
+
+func TestAllocatePeerIP_DefaultSubnet(t *testing.T) {
+	h := &AWGHandler{}
+	// No peers, no subnet → default 10.8.0.0/24, lowest free = .2 (skips .0/.1/.255).
+	conf := &subscription.AWGConf{Interface: &subscription.AWGConfigSection{Values: map[string]string{}}}
+	ip, err := h.allocatePeerIP(conf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ip != "10.8.0.2" {
+		t.Errorf("want 10.8.0.2, got %s", ip)
+	}
+}
+
+func TestAllocatePeerIP_LowestFreeWithGaps(t *testing.T) {
+	h := &AWGHandler{}
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
+		Peers: []*subscription.AWGConfigSection{
+			mustPeerSection("10.8.0.2/32"),
+			mustPeerSection("10.8.0.4/32"), // gap at .3 → must pick .3, not .5
+		},
+	}
+	ip, err := h.allocatePeerIP(conf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ip != "10.8.0.3" {
+		t.Errorf("want lowest free 10.8.0.3, got %s", ip)
+	}
+}
+
+func TestAllocatePeerIP_CustomSubnet(t *testing.T) {
+	h := &AWGHandler{}
+	// Subnet derived from peers' AllowedIPs (192.168.5.x).
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{"Address": "192.168.5.1/24"}},
+		Peers: []*subscription.AWGConfigSection{
+			mustPeerSection("192.168.5.2/32"),
+		},
+	}
+	ip, err := h.allocatePeerIP(conf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ip != "192.168.5.3" {
+		t.Errorf("want 192.168.5.3, got %s", ip)
+	}
+}
+
+func TestAllocatePeerIP_ReservesServerAndBroadcast(t *testing.T) {
+	h := &AWGHandler{}
+	// Even if somehow .1/.255 appear in peers, allocator reserves them and must
+	// never hand them out.
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
+		Peers: []*subscription.AWGConfigSection{
+			mustPeerSection("10.8.0.1/32"), // server IP — must not be reused
+		},
+	}
+	ip, err := h.allocatePeerIP(conf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ip == "10.8.0.1" {
+		t.Errorf("must never allocate the server IP .1")
+	}
+	if ip != "10.8.0.2" {
+		t.Errorf("want 10.8.0.2, got %s", ip)
+	}
+}
+
+func TestAllocatePeerIP_SubnetExhausted(t *testing.T) {
+	h := &AWGHandler{}
+	// Fill .2 through .254 — next allocation must error.
+	peers := make([]*subscription.AWGConfigSection, 0, 253)
+	for i := 2; i <= 254; i++ {
+		peers = append(peers, mustPeerSection(fmt.Sprintf("10.8.0.%d/32", i)))
+	}
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
+		Peers: peers,
+	}
+	_, err := h.allocatePeerIP(conf)
+	if err == nil {
+		t.Fatal("expected error when subnet is exhausted, got nil")
+	}
+}
+
+// ---------- buildPeerSection ----------
+
+func TestBuildPeerSection_WithLabel(t *testing.T) {
+	s := buildPeerSection("PUBKEY", "10.8.0.5", "my-phone")
+	if !strings.Contains(s, "# peer: my-phone\n") {
+		t.Errorf("missing label comment, got:\n%s", s)
+	}
+	if !strings.Contains(s, "[Peer]\n") {
+		t.Errorf("missing [Peer] header, got:\n%s", s)
+	}
+	if !strings.Contains(s, "PublicKey = PUBKEY\n") {
+		t.Errorf("missing PublicKey line, got:\n%s", s)
+	}
+	// IP must be written with /32 suffix regardless of input.
+	if !strings.Contains(s, "AllowedIPs = 10.8.0.5/32\n") {
+		t.Errorf("missing/bad AllowedIPs line, got:\n%s", s)
+	}
+}
+
+func TestBuildPeerSection_NoLabel(t *testing.T) {
+	s := buildPeerSection("PUB", "10.8.0.2", "")
+	if strings.Contains(s, "# peer:") {
+		t.Errorf("empty label must not emit a comment line, got:\n%s", s)
+	}
+	if !strings.Contains(s, "AllowedIPs = 10.8.0.2/32\n") {
+		t.Errorf("missing AllowedIPs line, got:\n%s", s)
+	}
+}
+
+// ---------- removePeerFromFile ----------
+
+func writeServerConf(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "server.conf")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const threePeerConf = `[Interface]
+PrivateKey = skey
+Jc = 1
+
+# peer: phone
+[Peer]
+PublicKey = PUB1
+AllowedIPs = 10.8.0.2/32
+
+# peer: laptop
+[Peer]
+PublicKey = PUB2
+AllowedIPs = 10.8.0.3/32
+
+[Peer]
+PublicKey = PUB3
+AllowedIPs = 10.8.0.4/32
+`
+
+func TestRemovePeerFromFile_ByPublicKey(t *testing.T) {
+	path := writeServerConf(t, threePeerConf)
+	if err := removePeerFromFile(path, "PUB2", "", -1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if strings.Contains(string(got), "PUB2") {
+		t.Errorf("PUB2 peer should have been removed")
+	}
+	if !strings.Contains(string(got), "PUB1") || !strings.Contains(string(got), "PUB3") {
+		t.Errorf("other peers must survive, got:\n%s", string(got))
+	}
+	// The label comment of the removed peer must also be stripped.
+	if strings.Contains(string(got), "peer: laptop") {
+		t.Errorf("removed peer's label comment should be stripped, got:\n%s", string(got))
+	}
+	if !strings.Contains(string(got), "peer: phone") {
+		t.Errorf("surviving peer's label comment must remain, got:\n%s", string(got))
+	}
+}
+
+func TestRemovePeerFromFile_ByIP(t *testing.T) {
+	path := writeServerConf(t, threePeerConf)
+	if err := removePeerFromFile(path, "", "10.8.0.4", -1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if strings.Contains(string(got), "PUB3") || strings.Contains(string(got), "10.8.0.4") {
+		t.Errorf("peer with IP 10.8.0.4 should have been removed, got:\n%s", string(got))
+	}
+}
+
+func TestRemovePeerFromFile_ByIndex(t *testing.T) {
+	// Index fallback (used when key+ip are empty, e.g. on the user's router).
+	path := writeServerConf(t, threePeerConf)
+	if err := removePeerFromFile(path, "", "", 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if strings.Contains(string(got), "PUB2") {
+		t.Errorf("peer at index 1 (PUB2) should have been removed")
+	}
+	if !strings.Contains(string(got), "PUB1") || !strings.Contains(string(got), "PUB3") {
+		t.Errorf("peers at index 0 and 2 must survive, got:\n%s", string(got))
+	}
+}
+
+func TestRemovePeerFromFile_NoMatchLeavesUntouched(t *testing.T) {
+	path := writeServerConf(t, threePeerConf)
+	orig := threePeerConf
+	if err := removePeerFromFile(path, "NONEXISTENT", "", -1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	// All three peers must still be present.
+	for _, key := range []string{"PUB1", "PUB2", "PUB3"} {
+		if !strings.Contains(string(got), key) {
+			t.Errorf("%s should remain when no peer matches, got:\n%s", key, string(got))
+		}
+	}
+	_ = orig
+}
+
+// ---------- maskKey ----------
+
+func TestMaskKey(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", "***"},         // empty
+		{"abcd", "***"},      // short (≤8)
+		{"abcdefgh", "***"},  // exactly 8
+		{"abcdefghi", "abcd...fghi"},  // 9 → first4...last4
+		{"0123456789abcdef", "0123...cdef"}, // 16
+	}
+	for _, tc := range cases {
+		if got := maskKey(tc.in); got != tc.want {
+			t.Errorf("maskKey(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// ---------- clientConfigPath ----------
+
+func TestClientConfigPath(t *testing.T) {
+	h := &AWGHandler{awgDir: "/opt/etc/awg"}
+	// Bare IP (no slash) — kept as-is.
+	p := h.clientConfigPath("server", "10.8.0.2")
+	want := "/opt/etc/awg/clients/server-10.8.0.2.conf"
+	// Normalize separators for cross-platform comparison.
+	if filepath.ToSlash(p) != want {
+		t.Errorf("bare IP: want %s, got %s", want, filepath.ToSlash(p))
+	}
+	// IP with /32 — slash replaced by underscore so it's a valid filename.
+	p2 := h.clientConfigPath("server", "10.8.0.2/32")
+	want2 := "/opt/etc/awg/clients/server-10.8.0.2_32.conf"
+	if filepath.ToSlash(p2) != want2 {
+		t.Errorf("CIDR IP: want %s, got %s", want2, filepath.ToSlash(p2))
+	}
+}
+
+// ---------- awgParamsEqual ----------
+
+func TestAWGParamsEqual(t *testing.T) {
+	if !awgParamsEqual(map[string]string{}, map[string]string{}) {
+		t.Error("two empty maps should be equal")
+	}
+	if !awgParamsEqual(map[string]string{"Jc": "1", "H1": "2"}, map[string]string{"H1": "2", "Jc": "1"}) {
+		t.Error("maps with same keys/values in different order should be equal")
+	}
+	if awgParamsEqual(map[string]string{"Jc": "1"}, map[string]string{"Jc": "1", "H1": "2"}) {
+		t.Error("maps of different length should NOT be equal")
+	}
+	if awgParamsEqual(map[string]string{"Jc": "1"}, map[string]string{"Jc": "2"}) {
+		t.Error("maps with differing values should NOT be equal")
+	}
+	if awgParamsEqual(map[string]string{"Jc": "1"}, map[string]string{"H1": "1"}) {
+		t.Error("maps with differing keys should NOT be equal")
+	}
+}
+
+// ---------- detectObfuscationPreset ----------
+
+func TestDetectObfuscationPreset(t *testing.T) {
+	cases := []struct {
+		name string
+		conf string
+		want string
+	}{
+		{
+			name: "plain (no AWG params)",
+			conf: "[Interface]\nPrivateKey = k\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n",
+			want: "plain",
+		},
+		{
+			name: "minimal preset",
+			conf: "[Interface]\nPrivateKey = k\nJc = 2\nJmin = 20\nJmax = 40\nS1 = 0\nS2 = 0\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nI1 = 0\n",
+			want: "minimal",
+		},
+		{
+			name: "full preset",
+			conf: "[Interface]\nPrivateKey = k\nJc = 8\nJmin = 50\nJmax = 100\nS1 = 30\nS2 = 20\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nI1 = 0\n",
+			want: "full",
+		},
+		{
+			name: "custom (non-preset values)",
+			conf: "[Interface]\nPrivateKey = k\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n",
+			want: "custom",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeServerConf(t, tc.conf)
+			got, err := detectObfuscationPreset(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("want %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestDetectObfuscationPreset_MissingFile(t *testing.T) {
+	_, err := detectObfuscationPreset(filepath.Join(t.TempDir(), "nope.conf"))
+	if err == nil {
+		t.Fatal("expected error for missing file, got nil")
+	}
+}
+
+// ---------- updateClientConfigsObfuscation ----------
+
+func TestUpdateClientConfigsObfuscation(t *testing.T) {
+	_, _, awgDir := newTestAWGHandler(t)
+	h := &AWGHandler{awgDir: awgDir}
+	clientsDir := filepath.Join(awgDir, "clients")
+	os.MkdirAll(clientsDir, 0755)
+
+	// Two client configs for "server", one unrelated file (different server name).
+	serverClient := "[Interface]\nPrivateKey = c1\nJc = 1\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	serverClient2 := "[Interface]\nPrivateKey = c2\nJc = 1\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	unrelated := "[Interface]\nPrivateKey = cu\nJc = 1\n\n[Peer]\nPublicKey = upub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(serverClient), 0600)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.3.conf"), []byte(serverClient2), 0600)
+	os.WriteFile(filepath.Join(clientsDir, "other-10.0.0.2.conf"), []byte(unrelated), 0600)
+
+	params := map[string]string{"Jc": "5", "H1": "1", "H2": "2", "H3": "3", "H4": "4"}
+	h.updateClientConfigsObfuscation("server", params)
+
+	// Both server clients updated.
+	assertParam(t, filepath.Join(clientsDir, "server-10.8.0.2.conf"), "Jc", "5")
+	assertParam(t, filepath.Join(clientsDir, "server-10.8.0.3.conf"), "Jc", "5")
+	// Unrelated client (different prefix) untouched.
+	assertParam(t, filepath.Join(clientsDir, "other-10.0.0.2.conf"), "Jc", "1")
+}
+
+func TestUpdateClientConfigsObfuscation_NoClientsDir(t *testing.T) {
+	// Missing clients/ directory must be a silent no-op, not a crash.
+	h := &AWGHandler{awgDir: t.TempDir()}
+	h.updateClientConfigsObfuscation("server", map[string]string{"Jc": "5"})
+	// Reaching here without panic is the pass condition.
 }

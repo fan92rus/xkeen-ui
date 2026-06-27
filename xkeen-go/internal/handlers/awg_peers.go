@@ -78,7 +78,7 @@ func (h *AWGHandler) ListPeers(w http.ResponseWriter, r *http.Request) {
 
 // extractPeers converts parsed [Peer] sections into awgPeer objects.
 func extractPeers(conf *subscription.AWGConf) []awgPeer {
-	var peers []awgPeer
+	peers := make([]awgPeer, 0, len(conf.Peers))
 	for idx, p := range conf.Peers {
 		peer := awgPeer{
 			PublicKey:  p.Values["PublicKey"],
@@ -433,77 +433,112 @@ func appendToFile(path, content string) error {
 	return err
 }
 
-// removePeerFromFile removes a [Peer] section matching the given public key or IP.
+// removePeerFromFile removes the [Peer] section matching the given public key,
+// IP, or (fallback) 0-based index. The whole block is dropped: its header, all
+// of its key=value lines, and any "# peer: ..." comment lines directly
+// preceding the header. Other peers (and the [Interface] section) are left
+// verbatim.
 func removePeerFromFile(path, pubKey, peerIP string, peerIndex int) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
+	matchKey := strings.TrimSpace(pubKey)
+	matchIP := strings.TrimSpace(peerIP)
+	if matchIP != "" && !strings.Contains(matchIP, "/") {
+		matchIP = matchIP + "/32"
+	}
+
+	// Resolve WHICH peer (by 0-based index) to remove. Matching by key/IP is
+	// done via a structural parse so we know the index up front, rather than
+	// deciding mid-section (which previously left an empty [Peer] header behind
+	// because the match key sits after the header). Falls back to peerIndex when
+	// no key/IP match is found.
+	removeIdx := -1
+	if matchKey != "" || matchIP != "" {
+		if conf, perr := subscription.ParseAWGConf(path); perr == nil && conf != nil {
+			for i, p := range conf.Peers {
+				if matchKey != "" && p.Values["PublicKey"] == matchKey {
+					removeIdx = i
+					break
+				}
+				if matchIP != "" && strings.Contains(p.Values["AllowedIPs"], matchIP) {
+					removeIdx = i
+					break
+				}
+			}
+		}
+		if removeIdx < 0 && peerIndex >= 0 {
+			removeIdx = peerIndex
+		}
+	} else if peerIndex >= 0 {
+		removeIdx = peerIndex
+	}
+	if removeIdx < 0 {
+		return nil // nothing matched — leave the file untouched
+	}
+
+	// Single forward pass. Comment lines are deferred (buffered) until the next
+	// section header decides whether they precede a kept or a removed peer; this
+	// is what lets us drop a removed peer's "# peer: <label>" comment along with
+	// its header and body.
 	lines := strings.Split(string(content), "\n")
-	var result []string
-	inPeerSection := false
-	peerCount := 0 // how many [Peer] headers we've seen
-	skipCurrent := false
-	peerMatchKey := strings.TrimSpace(pubKey)
-	peerMatchIP := strings.TrimSpace(peerIP)
-	if peerMatchIP != "" && !strings.Contains(peerMatchIP, "/") {
-		peerMatchIP = peerMatchIP + "/32"
+	var out []string
+	var commentBuf []string
+	curPeer := -1
+	skipSection := false
+
+	flushComments := func(keep bool) {
+		if keep {
+			out = append(out, commentBuf...)
+		}
+		commentBuf = nil
 	}
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		isHeader := strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")
 
-		// Track section boundaries
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			inPeerSection = trimmed == "[Peer]"
-			skipCurrent = false
-			// Index-based matching: skip the nth peer
-			if inPeerSection && peerIndex >= 0 {
-				if peerCount == peerIndex {
-					skipCurrent = true
+		if isHeader {
+			if trimmed == "[Peer]" {
+				curPeer++
+				if curPeer == removeIdx {
+					skipSection = true
+					flushComments(false) // drop the removed peer's preceding comment(s)
+				} else {
+					skipSection = false
+					flushComments(true)
 				}
-				peerCount++
+			} else {
+				// [Interface] or other section — keep it and any deferred comments.
+				skipSection = false
+				flushComments(true)
 			}
-		}
-
-		if inPeerSection {
-			// Check if this peer matches by key
-			if peerMatchKey != "" && strings.HasPrefix(trimmed, "PublicKey") {
-				val := strings.TrimSpace(strings.TrimPrefix(trimmed, "PublicKey"))
-				val = strings.TrimPrefix(val, "=")
-				val = strings.TrimSpace(val)
-				if val == peerMatchKey {
-					skipCurrent = true
-					continue
-				}
-			}
-			// Check if this peer matches by IP
-			if peerMatchIP != "" && strings.HasPrefix(trimmed, "AllowedIPs") {
-				val := strings.TrimSpace(strings.TrimPrefix(trimmed, "AllowedIPs"))
-				val = strings.TrimPrefix(val, "=")
-				val = strings.TrimSpace(val)
-				if strings.Contains(val, peerMatchIP) {
-					skipCurrent = true
-					continue
-				}
-			}
-			if skipCurrent {
+			if skipSection {
 				continue
 			}
-		}
-
-		// Also skip comment lines directly above a skipped peer (# peer: ...)
-		if skipCurrent && strings.HasPrefix(trimmed, "#") {
+			out = append(out, line)
 			continue
 		}
 
-		result = append(result, line)
-	}
+		if strings.HasPrefix(trimmed, "#") {
+			// Defer: this comment belongs to whichever section header follows.
+			commentBuf = append(commentBuf, line)
+			continue
+		}
 
-	// Clean up trailing empty lines
-	output := strings.Join(result, "\n")
-	output = strings.TrimRight(output, "\n") + "\n"
+		if skipSection {
+			continue // drop body of the removed peer
+		}
+		// Non-comment line in a kept section: emit any deferred comments first
+		// (they belong to this section), then the line itself.
+		flushComments(true)
+		out = append(out, line)
+	}
+	flushComments(true) // preserve trailing comments after the last section
+
+	output := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
 	return os.WriteFile(path, []byte(output), 0600)
 }
 
