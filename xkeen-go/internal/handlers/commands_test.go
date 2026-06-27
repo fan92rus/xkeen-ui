@@ -284,6 +284,94 @@ func TestRegisterCommandsRoutes(t *testing.T) {
 	}
 }
 
+// ---------- RefreshCommands ----------
+
+func TestRefreshCommands_ReturnsOK(t *testing.T) {
+	h := newTestCommandsHandler(t)
+
+	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", nil)
+	rec := httptest.NewRecorder()
+	h.RefreshCommands(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRefreshCommands_ReturnsSameCommandsAsGet(t *testing.T) {
+	h := newTestCommandsHandler(t)
+	expected := h.registry.Count()
+
+	// Refresh
+	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", nil)
+	rec := httptest.NewRecorder()
+	h.RefreshCommands(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp CommandsListResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Commands) != expected {
+		t.Errorf("expected %d commands, got %d", expected, len(resp.Commands))
+	}
+
+	// Verify each command has required fields (same contract as GetCommands)
+	for _, cmd := range resp.Commands {
+		if cmd.Cmd == "" {
+			t.Error("command has empty Cmd field")
+		}
+		if cmd.Description == "" {
+			t.Errorf("command %q has empty Description", cmd.Cmd)
+		}
+		if cmd.Category == "" {
+			t.Errorf("command %q has empty Category", cmd.Cmd)
+		}
+	}
+}
+
+func TestRefreshCommands_EmptyRegistry(t *testing.T) {
+	h := NewCommandsHandler(emptyRegistry())
+
+	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", nil)
+	rec := httptest.NewRecorder()
+	h.RefreshCommands(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp CommandsListResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Commands == nil {
+		t.Fatal("commands is null — frontend will crash on .length")
+	}
+	if len(resp.Commands) != 0 {
+		t.Errorf("expected 0 commands, got %d", len(resp.Commands))
+	}
+}
+
+func TestRefreshCommands_RouteRegistered(t *testing.T) {
+	h := newTestCommandsHandler(t)
+	router := mux.NewRouter()
+	RegisterCommandsRoutes(router, h)
+
+	req := httptest.NewRequest("POST", "/xkeen/commands/refresh", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRegisterCommandsRoutes_MethodNotAllowed(t *testing.T) {
 	h := newTestCommandsHandler(t)
 	router := mux.NewRouter()

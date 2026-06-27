@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1055,4 +1057,830 @@ func TestUpdateClientConfigsObfuscation_NoClientsDir(t *testing.T) {
 	h := &AWGHandler{awgDir: t.TempDir()}
 	h.updateClientConfigsObfuscation("server", map[string]string{"Jc": "5"})
 	// Reaching here without panic is the pass condition.
+}
+
+
+
+// ---------- ListPeers ----------
+
+func TestAWGListPeers_WithPeers(t *testing.T) {
+	handler, router, awgDir := newTestAWGHandler(t)
+
+	serverConf := `[Interface]
+PrivateKey = skey
+ListenPort = 443
+Address = 10.8.0.1/24
+
+# peer: phone
+[Peer]
+PublicKey = PUBKEY1
+AllowedIPs = 10.8.0.2/32
+
+# peer: laptop
+[Peer]
+PublicKey = PUBKEY2
+AllowedIPs = 10.8.0.3/32
+`
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(serverConf), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Register configs in store so parse works
+	handler.store.ScanAWGConfigs(awgDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peers/server", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Name         string    `json:"name"`
+		ListenPort   int       `json:"listen_port"`
+		TunnelSubnet string    `json:"tunnel_subnet"`
+		Peers        []awgPeer `json:"peers"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if resp.Name != "server" {
+		t.Errorf("name: want 'server', got %q", resp.Name)
+	}
+	if resp.ListenPort != 443 {
+		t.Errorf("listen_port: want 443, got %d", resp.ListenPort)
+	}
+	if resp.TunnelSubnet != "10.8.0.0/24" {
+		t.Errorf("tunnel_subnet: want 10.8.0.0/24, got %q", resp.TunnelSubnet)
+	}
+	if len(resp.Peers) != 2 {
+		t.Fatalf("expected 2 peers, got %d", len(resp.Peers))
+	}
+	if resp.Peers[0].Label != "phone" {
+		t.Errorf("peer0 label: want 'phone', got %q", resp.Peers[0].Label)
+	}
+	if resp.Peers[0].PublicKey != "PUBKEY1" {
+		t.Errorf("peer0 public_key: want PUBKEY1, got %q", resp.Peers[0].PublicKey)
+	}
+	if resp.Peers[0].IP != "10.8.0.2" {
+		t.Errorf("peer0 ip: want 10.8.0.2, got %q", resp.Peers[0].IP)
+	}
+	if resp.Peers[0].Index != 0 {
+		t.Errorf("peer0 index: want 0, got %d", resp.Peers[0].Index)
+	}
+	if resp.Peers[1].Label != "laptop" {
+		t.Errorf("peer1 label: want 'laptop', got %q", resp.Peers[1].Label)
+	}
+	if resp.Peers[1].PublicKey != "PUBKEY2" {
+		t.Errorf("peer1 public_key: want PUBKEY2, got %q", resp.Peers[1].PublicKey)
+	}
+	if resp.Peers[1].IP != "10.8.0.3" {
+		t.Errorf("peer1 ip: want 10.8.0.3, got %q", resp.Peers[1].IP)
+	}
+	if resp.Peers[1].Index != 1 {
+		t.Errorf("peer1 index: want 1, got %d", resp.Peers[1].Index)
+	}
+}
+
+func TestAWGListPeers_EmptyPeers(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peers/server", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Peers interface{} `json:"peers"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	if resp.Peers == nil {
+		t.Fatal("peers is null — frontend will crash on .length; extractPeers must return [] not nil")
+	}
+	// Verify it decodes as a non-nil array
+	peers, ok := resp.Peers.([]interface{})
+	if !ok {
+		t.Fatalf("peers should be a JSON array, got %T", resp.Peers)
+	}
+	if len(peers) != 0 {
+		t.Errorf("expected 0 peers, got %d", len(peers))
+	}
+}
+
+func TestAWGListPeers_NotFound(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peers/nonexistent", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for nonexistent config, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp.Error == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+func TestAWGListPeers_InvalidName(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	// gorilla/mux redirects path-traversal sequences (../) to canonical form
+	// before the handler is reached. Use an invalid name that doesn't trigger
+	// URL path normalization: special characters like '@' are rejected by
+	// validateAWGName but pass through the mux router unchanged.
+	for _, invalid := range []string{"test@invalid", "a@b"} {
+		t.Run(invalid, func(t *testing.T) {
+			path := "/awg/peers/" + invalid
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for name %q, got %d: %s", invalid, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// ---------- GetPeerConfig ----------
+
+func TestAWGGetPeerConfig_Exists(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Write server.conf (needed by syncClientWithServer)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(server), 0600)
+
+	// Write stored client config
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	clientsDir := filepath.Join(awgDir, "clients")
+	os.MkdirAll(clientsDir, 0755)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(client), 0600)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Success      bool   `json:"success"`
+		ClientConfig string `json:"client_config"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+	if !strings.Contains(resp.ClientConfig, "PrivateKey = ckey") {
+		t.Errorf("client config should contain the stored private key")
+	}
+	if !strings.Contains(resp.ClientConfig, "Endpoint = 1.2.3.4:443") {
+		t.Errorf("client config should contain the endpoint")
+	}
+}
+
+func TestAWGGetPeerConfig_MissingClient(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for missing client config, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGGetPeerConfig_MissingIP(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing ip, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---------- DeletePeer ----------
+
+func TestAWGDeletePeer_ByKey(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := `[Interface]
+PrivateKey = skey
+ListenPort = 443
+
+[Peer]
+PublicKey = PUB1
+AllowedIPs = 10.8.0.2/32
+
+[Peer]
+PublicKey = PUB2
+AllowedIPs = 10.8.0.3/32
+`
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"key":"PUB2"}`
+	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/server", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+
+	// Verify the peer was actually removed from the file
+	parsed, err := subscription.ParseAWGConf(filepath.Join(awgDir, "server.conf"))
+	if err != nil {
+		t.Fatalf("failed to parse conf after deletion: %v", err)
+	}
+	if len(parsed.Peers) != 1 {
+		t.Fatalf("expected 1 peer remaining, got %d", len(parsed.Peers))
+	}
+	if parsed.Peers[0].Values["PublicKey"] != "PUB1" {
+		t.Errorf("remaining peer should be PUB1, got %q", parsed.Peers[0].Values["PublicKey"])
+	}
+}
+
+func TestAWGDeletePeer_ByIP(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := `[Interface]
+PrivateKey = skey
+ListenPort = 443
+
+[Peer]
+PublicKey = PUB1
+AllowedIPs = 10.8.0.2/32
+
+[Peer]
+PublicKey = PUB2
+AllowedIPs = 10.8.0.3/32
+`
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"ip":"10.8.0.2"}`
+	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/server", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify PUB1 was removed (IP=10.8.0.2)
+	parsed, err := subscription.ParseAWGConf(filepath.Join(awgDir, "server.conf"))
+	if err != nil {
+		t.Fatalf("failed to parse conf: %v", err)
+	}
+	if len(parsed.Peers) != 1 {
+		t.Fatalf("expected 1 peer remaining, got %d", len(parsed.Peers))
+	}
+	if parsed.Peers[0].Values["PublicKey"] != "PUB2" {
+		t.Errorf("remaining peer should be PUB2, got %q", parsed.Peers[0].Values["PublicKey"])
+	}
+}
+
+func TestAWGDeletePeer_ByIndex(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := `[Interface]
+PrivateKey = skey
+ListenPort = 443
+
+[Peer]
+PublicKey = PUB1
+AllowedIPs = 10.8.0.2/32
+
+[Peer]
+PublicKey = PUB2
+AllowedIPs = 10.8.0.3/32
+
+[Peer]
+PublicKey = PUB3
+AllowedIPs = 10.8.0.4/32
+`
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete middle peer by index 1 (PUB2)
+	body := `{"index":1}`
+	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/server", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	parsed, err := subscription.ParseAWGConf(filepath.Join(awgDir, "server.conf"))
+	if err != nil {
+		t.Fatalf("failed to parse conf: %v", err)
+	}
+	if len(parsed.Peers) != 2 {
+		t.Fatalf("expected 2 peers remaining, got %d", len(parsed.Peers))
+	}
+	if parsed.Peers[0].Values["PublicKey"] != "PUB1" {
+		t.Errorf("peer0 should be PUB1, got %q", parsed.Peers[0].Values["PublicKey"])
+	}
+	if parsed.Peers[1].Values["PublicKey"] != "PUB3" {
+		t.Errorf("peer1 should be PUB3, got %q", parsed.Peers[1].Values["PublicKey"])
+	}
+}
+
+func TestAWGDeletePeer_MissingBody(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n"), 0600)
+
+	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/server", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing key/ip/index, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if !strings.Contains(errResp.Error, "provide") {
+		t.Errorf("expected 'provide key, ip, or index' error, got %q", errResp.Error)
+	}
+}
+
+func TestAWGDeletePeer_InvalidName(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	// gorilla/mux redirects path-traversal sequences to canonical form.
+	// Use invalid chars (@, space) that pass through the router but fail
+	// validateAWGName.
+	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/test@invalid", strings.NewReader(`{"key":"X"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid name, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---------- GetObfuscation ----------
+
+func TestAWGGetObfuscation_FullPreset(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := "[Interface]\nPrivateKey = skey\nJc = 8\nJmin = 50\nJmax = 100\nS1 = 30\nS2 = 20\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nI1 = 0\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/server", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	var current string
+	json.Unmarshal(raw["current"], &current)
+	if current != "full" {
+		t.Errorf("expected current='full', got %q", current)
+	}
+	// Verify presets array is non-empty
+	var presets []interface{}
+	json.Unmarshal(raw["presets"], &presets)
+	if len(presets) == 0 {
+		t.Error("expected non-empty presets array")
+	}
+}
+
+func TestAWGGetObfuscation_Plain(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/server", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]json.RawMessage
+	json.Unmarshal(w.Body.Bytes(), &raw)
+	var current string
+	json.Unmarshal(raw["current"], &current)
+	if current != "plain" {
+		t.Errorf("expected current='plain', got %q", current)
+	}
+}
+
+func TestAWGGetObfuscation_MissingConfig(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/nonexistent", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]json.RawMessage
+	json.Unmarshal(w.Body.Bytes(), &raw)
+	var current string
+	json.Unmarshal(raw["current"], &current)
+	if current != "unknown" {
+		t.Errorf("expected current='unknown' for missing config, got %q", current)
+	}
+}
+
+func TestAWGGetObfuscation_InvalidName(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	// gorilla/mux redirects path-traversal sequences to canonical form.
+	// Use invalid characters that pass through the router but fail
+	// validateAWGName.
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/test@invalid", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---------- ApplyObfuscation ----------
+
+// testApplyObfuscationBody is a helper to send an ApplyObfuscation request and check success.
+func testApplyObfuscationBody(t *testing.T, router *mux.Router, name, preset string) *httptest.ResponseRecorder {
+	t.Helper()
+	body := fmt.Sprintf(`{"preset":"%s"}`, preset)
+	req := httptest.NewRequest(http.MethodPost, "/awg/obfuscation/"+name, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestAWGApplyObfuscation_Full(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Start with a plain conf (no AWG params)
+	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := testApplyObfuscationBody(t, router, "server", "full")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify conf was updated with full preset params
+	parsed, err := subscription.ParseAWGConf(filepath.Join(awgDir, "server.conf"))
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	if parsed.Interface.Values["Jc"] != "8" {
+		t.Errorf("expected Jc=8, got %q", parsed.Interface.Values["Jc"])
+	}
+	if parsed.Interface.Values["H1"] != "1" {
+		t.Errorf("expected H1=1, got %q", parsed.Interface.Values["H1"])
+	}
+	// Verify [Peer] section is preserved
+	if len(parsed.Peers) != 1 {
+		t.Errorf("expected 1 peer preserved, got %d", len(parsed.Peers))
+	}
+}
+
+func TestAWGApplyObfuscation_Minimal(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Start with plain conf
+	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := testApplyObfuscationBody(t, router, "server", "minimal")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	assertParam(t, filepath.Join(awgDir, "server.conf"), "Jc", "2")
+	assertParam(t, filepath.Join(awgDir, "server.conf"), "Jmin", "20")
+}
+
+func TestAWGApplyObfuscation_Plain(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Start with a conf that has AWG params
+	conf := "[Interface]\nPrivateKey = skey\nJc = 8\nJmin = 50\nJmax = 100\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := testApplyObfuscationBody(t, router, "server", "plain")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify all AWG params were stripped
+	parsed, err := subscription.ParseAWGConf(filepath.Join(awgDir, "server.conf"))
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	for _, key := range []string{"Jc", "Jmin", "Jmax", "H1", "H2", "H3", "H4"} {
+		if _, ok := parsed.Interface.Values[key]; ok {
+			t.Errorf("AWG param %s should be stripped by plain preset", key)
+		}
+	}
+	// [Peer] must survive
+	if len(parsed.Peers) != 1 {
+		t.Errorf("expected 1 peer preserved, got %d", len(parsed.Peers))
+	}
+}
+
+func TestAWGApplyObfuscation_Random(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := testApplyObfuscationBody(t, router, "server", "random")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Random preset must add AWG parameters
+	parsed, err := subscription.ParseAWGConf(filepath.Join(awgDir, "server.conf"))
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	if parsed.Interface.Values["Jc"] == "" {
+		t.Error("Jc should be set by random preset")
+	}
+	if parsed.Interface.Values["H1"] == "" || parsed.Interface.Values["H1"] == "0" {
+		t.Errorf("H1 should be non-zero in random preset, got %q", parsed.Interface.Values["H1"])
+	}
+}
+
+func TestAWGApplyObfuscation_UnknownPreset(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"), 0600)
+
+	w := testApplyObfuscationBody(t, router, "server", "nonexistent")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for unknown preset, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGApplyObfuscation_MissingConfig(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	// Server name doesn't match any conf file (passes validate but conf doesn't exist)
+	w := testApplyObfuscationBody(t, router, "nope", "full")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for missing config, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGApplyObfuscation_InvalidBody(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"), 0600)
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/obfuscation/server", strings.NewReader("not-json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid body, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGApplyObfuscation_UpdateStoredClient(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Server with AWG params
+	serverConf := "[Interface]\nPrivateKey = skey\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(serverConf), 0600)
+
+	// Stored client config
+	clientConf := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	clientsDir := filepath.Join(awgDir, "clients")
+	os.MkdirAll(clientsDir, 0755)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(clientConf), 0600)
+
+	// Apply full preset (Jc=8)
+	w := testApplyObfuscationBody(t, router, "server", "full")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify stored client was also updated to Jc=8
+	assertParam(t, filepath.Join(clientsDir, "server-10.8.0.2.conf"), "Jc", "8")
+}
+
+// ---------- UploadConfig ----------
+
+func TestAWGUploadConfig_ServerConfig(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("file", "myserver.conf")
+	content := "[Interface]\nPrivateKey = skey\nListenPort = 443\nAddress = 10.8.0.1/24\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	part.Write([]byte(content))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool   `json:"success"`
+		Name    string `json:"name"`
+		Role    string `json:"role"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+	if resp.Name != "myserver" {
+		t.Errorf("name: want 'myserver', got %q", resp.Name)
+	}
+	// Server conf (has ListenPort, no Endpoint) should be detected as server role
+	if resp.Role != "server" {
+		t.Errorf("role: want 'server', got %q", resp.Role)
+	}
+	// Verify file was actually written
+	if _, err := os.Stat(filepath.Join(awgDir, "myserver.conf")); err != nil {
+		t.Errorf("uploaded file should exist: %v", err)
+	}
+}
+
+func TestAWGUploadConfig_ClientConfig(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("file", "warp.conf")
+	content := "[Interface]\nPrivateKey = ckey\nAddress = 10.0.0.2/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = spub\nEndpoint = 162.159.192.192:2408\nAllowedIPs = 0.0.0.0/0\n"
+	part.Write([]byte(content))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool   `json:"success"`
+		Role    string `json:"role"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+	if resp.Role != "client" {
+		t.Errorf("role: want 'client', got %q", resp.Role)
+	}
+}
+
+func TestAWGUploadConfig_MissingPeer(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("file", "bad.conf")
+	part.Write([]byte("[Interface]\nPrivateKey = skey\n"))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing [Peer], got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGUploadConfig_MissingInterface(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("file", "bad.conf")
+	part.Write([]byte("[Peer]\nPublicKey = p\n"))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing [Interface], got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGUploadConfig_NoFile(t *testing.T) {
+	_, router, _ := newTestAWGHandler(t)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing file, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAWGUploadConfig_Duplicate(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Pre-create a config
+	os.WriteFile(filepath.Join(awgDir, "existing.conf"), []byte("[Interface]\nPrivateKey = k\n\n[Peer]\nPublicKey = p\nAllowedIPs = 0.0.0.0/0\n"), 0600)
+
+	// Upload the same name again
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("file", "existing.conf")
+	part.Write([]byte("[Interface]\nPrivateKey = k\n\n[Peer]\nPublicKey = p\nAllowedIPs = 0.0.0.0/0\n"))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409 for duplicate, got %d: %s", w.Code, w.Body.String())
+	}
 }

@@ -1684,6 +1684,225 @@ func TestGetMode_MihomoUnavailable(t *testing.T) {
 	}
 }
 
+// ---------- ListFilesGrouped ----------
+
+func TestListFilesGrouped_AllThreeDirs(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+
+	// Create awg dir with a .conf file (setupConfigTest creates xray+mihomo but not awg)
+	awgDir := handler.awgConfigDir
+	os.MkdirAll(awgDir, 0755)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = k\n"), 0644)
+
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	rec := httptest.NewRecorder()
+	handler.ListFilesGrouped(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp ListFilesGroupedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(resp.Groups))
+	}
+
+	// Verify each group section and label
+	expected := []struct {
+		section string
+		label   string
+	}{
+		{"xray", "Xray"},
+		{"mihomo", "Mihomo"},
+		{"awg", "AmneziaWG"},
+	}
+	for i, exp := range expected {
+		g := resp.Groups[i]
+		if g.Section != exp.section {
+			t.Errorf("group[%d].Section = %q, want %q", i, g.Section, exp.section)
+		}
+		if g.Label != exp.label {
+			t.Errorf("group[%d].Label = %q, want %q", i, g.Label, exp.label)
+		}
+	}
+
+	// Xray group should have JSON files
+	if len(resp.Groups[0].Files) == 0 {
+		t.Error("xray group should have files")
+	}
+	for _, f := range resp.Groups[0].Files {
+		if !isJSONFile(f.Name) {
+			t.Errorf("xray group has non-JSON file: %q", f.Name)
+		}
+	}
+
+	// Mihomo group should have YAML files
+	if len(resp.Groups[1].Files) == 0 {
+		t.Error("mihomo group should have files")
+	}
+	for _, f := range resp.Groups[1].Files {
+		if !isYAMLFile(f.Name) {
+			t.Errorf("mihomo group has non-YAML file: %q", f.Name)
+		}
+	}
+
+	// AWG group should have the server.conf
+	if len(resp.Groups[2].Files) != 1 {
+		t.Fatalf("awg group expected 1 file, got %d", len(resp.Groups[2].Files))
+	}
+	if resp.Groups[2].Files[0].Name != "server.conf" {
+		t.Errorf("awg group file = %q, want %q", resp.Groups[2].Files[0].Name, "server.conf")
+	}
+}
+
+func TestListFilesGrouped_OnlyXray(t *testing.T) {
+	handler, tmpDir, _ := setupConfigTest(t)
+
+	// Remove mihomo dir; awg dir never created by setupConfigTest
+	os.RemoveAll(filepath.Join(tmpDir, "mihomo"))
+
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	rec := httptest.NewRecorder()
+	handler.ListFilesGrouped(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp ListFilesGroupedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(resp.Groups))
+	}
+	if resp.Groups[0].Section != "xray" {
+		t.Errorf("expected section 'xray', got %q", resp.Groups[0].Section)
+	}
+	if len(resp.Groups[0].Files) == 0 {
+		t.Error("xray group should have files")
+	}
+}
+
+func TestListFilesGrouped_EmptyDirs(t *testing.T) {
+	// Create a handler whose config dirs exist but contain no relevant files.
+	// We use a completely separate tmpDir so we control exactly what's created.
+	tmpDir := t.TempDir()
+
+	xrayDir := filepath.Join(tmpDir, "xray")
+	mihomoDir := filepath.Join(tmpDir, "mihomo")
+	awgDir := filepath.Join(tmpDir, "awg")
+	backupDir := filepath.Join(tmpDir, "backups")
+
+	os.MkdirAll(xrayDir, 0755)
+	os.MkdirAll(mihomoDir, 0755)
+	os.MkdirAll(awgDir, 0755)
+
+	// Create a file that won't match any filter (e.g., .txt in xray dir)
+	os.WriteFile(filepath.Join(xrayDir, "notes.txt"), []byte("ignored"), 0644)
+	os.WriteFile(filepath.Join(mihomoDir, "notes.txt"), []byte("ignored"), 0644)
+	os.WriteFile(filepath.Join(awgDir, "notes.txt"), []byte("ignored"), 0644)
+
+	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0644)
+
+	handler := NewConfigHandler(
+		[]string{tmpDir},
+		backupDir,
+		xrayDir,
+		mihomoDir,
+		awgDir,
+		configPath,
+		"xray",
+	)
+
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	rec := httptest.NewRecorder()
+	handler.ListFilesGrouped(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp ListFilesGroupedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Groups) != 3 {
+		t.Fatalf("expected 3 groups (dirs exist but empty), got %d", len(resp.Groups))
+	}
+	for i, g := range resp.Groups {
+		if len(g.Files) != 0 {
+			t.Errorf("group[%d] (%s) expected 0 files, got %d: %v", i, g.Section, len(g.Files), g.Files)
+		}
+	}
+}
+
+func TestListFilesGrouped_NoDirsExist(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// All dir paths point to nonexistent directories
+	nonexistentDir := filepath.Join(tmpDir, "nonexistent")
+	backupDir := filepath.Join(tmpDir, "backups")
+	os.MkdirAll(backupDir, 0755)
+
+	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0644)
+
+	handler := NewConfigHandler(
+		[]string{tmpDir},
+		backupDir,
+		nonexistentDir, // xray
+		nonexistentDir, // mihomo
+		nonexistentDir, // awg
+		configPath,
+		"xray",
+	)
+
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	rec := httptest.NewRecorder()
+	handler.ListFilesGrouped(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp ListFilesGroupedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Must return [] not null — frontend iterates over groups
+	if resp.Groups == nil {
+		t.Fatal("groups is null — frontend will crash on .length")
+	}
+	if len(resp.Groups) != 0 {
+		t.Errorf("expected 0 groups for missing dirs, got %d", len(resp.Groups))
+	}
+}
+
+func TestListFilesGrouped_RouteRegistered(t *testing.T) {
+	handler, _, _ := setupConfigTest(t)
+	r := mux.NewRouter()
+	RegisterConfigRoutes(r, handler)
+
+	req := httptest.NewRequest("GET", "/config/files/grouped", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // --- CleanupOldBackups Test ---
 
 func TestCleanupOldBackups(t *testing.T) {
