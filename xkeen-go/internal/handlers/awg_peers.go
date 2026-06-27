@@ -203,6 +203,18 @@ func (h *AWGHandler) GetPeerConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientConfPath := h.clientConfigPath(name, peerIP)
+	if _, err := os.Stat(clientConfPath); err != nil {
+		respondError(w, http.StatusNotFound, "client config not saved (private key was shown only at creation)")
+		return
+	}
+
+	// Re-sync the stored client config with the CURRENT server config so the
+	// displayed/downloaded config always matches the live server. AWG requires
+	// exact obfuscation-param + port match for handshake, and stored clients can
+	// drift when the server is edited manually after the peer was created.
+	// Best-effort: on any failure we fall back to the stored config as-is.
+	h.syncClientWithServer(name, clientConfPath)
+
 	data, err := os.ReadFile(clientConfPath)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "client config not saved (private key was shown only at creation)")
@@ -524,6 +536,39 @@ func (h *AWGHandler) removeClientConfig(server, ip string) {
 }
 
 // ---------- Client config generation ----------
+
+// syncClientWithServer refreshes a stored client config's server-derived
+// fields from the CURRENT server.conf, so viewing/downloading an existing
+// peer always returns a config consistent with the live server.
+//
+// Synced fields (all server-owned, file-only — no shell calls):
+//   - [Interface] AWG obfuscation params (Jc/Jmin/Jmax/S1-S4/H1-H4/I1)
+//   - [Peer] Endpoint port (from server ListenPort); the host part is preserved
+//
+// Client-owned fields (PrivateKey, Address, AllowedIPs, PublicKey, Keepalive)
+// are never touched. Best-effort: any read/parse/write failure leaves the
+// stored config unchanged so the operation never breaks config display.
+func (h *AWGHandler) syncClientWithServer(serverName, clientConfPath string) {
+	serverConfPath := filepath.Join(h.awgDir, serverName+".conf")
+	serverConf, err := subscription.ParseAWGConf(serverConfPath)
+	if err != nil {
+		return // server config unreadable — leave client config untouched
+	}
+	// 1. AWG obfuscation params. applyObfuscationToConfig strips existing params
+	//    and inserts the server's current set; with an empty map it strips all
+	//    params (syncing a plain-WG server correctly removes them from clients).
+	params := readAWGParams(serverConf)
+	if err := applyObfuscationToConfig(clientConfPath, params); err != nil {
+		log.Printf("[awg] syncClientWithServer: failed to sync AWG params for %s: %v", filepath.Base(clientConfPath), err)
+		return // don't proceed to port rewrite on a half-updated file
+	}
+	// 2. Endpoint port (from server ListenPort). The host is preserved.
+	if port := serverConf.GetListenPort(); port > 0 {
+		if err := rewriteEndpointPort(clientConfPath, port); err != nil {
+			log.Printf("[awg] syncClientWithServer: failed to sync endpoint port for %s: %v", filepath.Base(clientConfPath), err)
+		}
+	}
+}
 
 // generateClientConfig produces a client .conf from a server config and a new client's keys.
 func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientIP string) (string, error) {

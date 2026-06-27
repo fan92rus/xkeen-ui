@@ -321,3 +321,309 @@ func TestObfuscationPresets_S4AlwaysZero(t *testing.T) {
 		}
 	}
 }
+
+// ---------- readAWGParams ----------
+
+func TestReadAWGParams(t *testing.T) {
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{
+			Values: map[string]string{
+				"Jc":         "1",
+				"Jmin":       "20",
+				"ListenPort": "443", // not an AWG param — must be excluded
+				"PrivateKey": "xxx",  // not an AWG param — must be excluded
+			},
+		},
+	}
+	params := readAWGParams(conf)
+	if params["Jc"] != "1" {
+		t.Errorf("expected Jc=1, got %q", params["Jc"])
+	}
+	if params["Jmin"] != "20" {
+		t.Errorf("expected Jmin=20, got %q", params["Jmin"])
+	}
+	if _, ok := params["ListenPort"]; ok {
+		t.Error("ListenPort must not be treated as an AWG param")
+	}
+	if _, ok := params["PrivateKey"]; ok {
+		t.Error("PrivateKey must not be treated as an AWG param")
+	}
+}
+
+func TestReadAWGParams_PlainOrEmpty(t *testing.T) {
+	// No AWG params set (plain WireGuard) → empty map.
+	conf := &subscription.AWGConf{
+		Interface: &subscription.AWGConfigSection{
+			Values: map[string]string{"PrivateKey": "xxx"},
+		},
+	}
+	if got := readAWGParams(conf); len(got) != 0 {
+		t.Errorf("expected empty params for plain config, got %v", got)
+	}
+	// nil interface → empty map, no panic.
+	if got := readAWGParams(&subscription.AWGConf{}); len(got) != 0 {
+		t.Errorf("expected empty params for nil interface, got %v", got)
+	}
+	// nil conf → empty map, no panic.
+	if got := readAWGParams(nil); len(got) != 0 {
+		t.Errorf("expected empty params for nil conf, got %v", got)
+	}
+}
+
+// ---------- rewriteEndpointPort ----------
+
+func TestRewriteEndpointPort(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  string
+		port   int
+		expect string
+	}{
+		{
+			name:   "ipv4 host",
+			input:  "Endpoint = 146.120.53.90:443\n",
+			port:   51820,
+			expect: "Endpoint = 146.120.53.90:51820\n",
+		},
+		{
+			name:   "domain host",
+			input:  "Endpoint = vpn.example.com:443\n",
+			port:   443,
+			expect: "Endpoint = vpn.example.com:443\n",
+		},
+		{
+			name:   "ipv6 bracketed host",
+			input:  "Endpoint = [2001:db8::1]:443\n",
+			port:   9999,
+			expect: "Endpoint = [2001:db8::1]:9999\n",
+		},
+		{
+			name:   "within full config — only Endpoint line changes",
+			input:  "[Interface]\nPrivateKey = k\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = p\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n",
+			port:   7443,
+			expect: "[Interface]\nPrivateKey = k\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = p\nEndpoint = 1.2.3.4:7443\nAllowedIPs = 0.0.0.0/0\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "client.conf")
+			if err := os.WriteFile(path, []byte(tc.input), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := rewriteEndpointPort(path, tc.port); err != nil {
+				t.Fatalf("rewriteEndpointPort failed: %v", err)
+			}
+			got, _ := os.ReadFile(path)
+			if string(got) != tc.expect {
+				t.Errorf("expected:\n%s\ngot:\n%s", tc.expect, string(got))
+			}
+		})
+	}
+}
+
+func TestRewriteEndpointPort_NoOpCases(t *testing.T) {
+	// port <= 0 → no-op, file untouched.
+	path := filepath.Join(t.TempDir(), "client.conf")
+	orig := []byte("Endpoint = 1.2.3.4:443\n")
+	os.WriteFile(path, orig, 0600)
+	if err := rewriteEndpointPort(path, 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(orig) {
+		t.Errorf("port=0 should be a no-op, got %s", string(got))
+	}
+	// No Endpoint line → no-op.
+	path2 := filepath.Join(t.TempDir(), "noep.conf")
+	orig2 := []byte("[Interface]\nPrivateKey = k\n\n[Peer]\nPublicKey = p\n")
+	os.WriteFile(path2, orig2, 0600)
+	if err := rewriteEndpointPort(path2, 443); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got2, _ := os.ReadFile(path2)
+	if string(got2) != string(orig2) {
+		t.Errorf("file without Endpoint should be unchanged, got %s", string(got2))
+	}
+}
+
+// ---------- syncClientWithServer (A+ fix) ----------
+
+// writeTestConfigs writes a server.conf and a stored client config into the
+// handler's awgDir and returns their paths.
+func writeTestConfigs(t *testing.T, awgDir, serverConf, clientConf string) (serverPath, clientPath string) {
+	t.Helper()
+	serverPath = filepath.Join(awgDir, "server.conf")
+	if err := os.WriteFile(serverPath, []byte(serverConf), 0600); err != nil {
+		t.Fatal(err)
+	}
+	clientPath = filepath.Join(awgDir, "clients", "server-10.8.0.2.conf")
+	os.MkdirAll(filepath.Dir(clientPath), 0755)
+	if err := os.WriteFile(clientPath, []byte(clientConf), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+// assertParam reads a config file and checks a key's value in [Interface].
+func assertParam(t *testing.T, path, key, want string) {
+	t.Helper()
+	conf, err := subscription.ParseAWGConf(path)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if conf.Interface == nil {
+		t.Fatal("no [Interface] section")
+	}
+	got := conf.Interface.Values[key]
+	if got != want {
+		t.Errorf("%s: expected %s=%q, got %q", filepath.Base(path), key, want, got)
+	}
+}
+
+func TestSyncClientWithServer_AWGParams(t *testing.T) {
+	// Regression: server has Jc=1 (manually edited), client snapshot has Jc=2
+	// (stale from a prior Minimal preset). After sync the client must match the
+	// server's current Jc=1 — AWG requires exact match for handshake.
+	handler, _, awgDir := newTestAWGHandler(t)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\nJc = 1\nJmin = 10\nJmax = 20\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 2\nJmin = 20\nJmax = 40\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	_, clientPath := writeTestConfigs(t, awgDir, server, client)
+
+	handler.syncClientWithServer("server", clientPath)
+
+	assertParam(t, clientPath, "Jc", "1")
+	assertParam(t, clientPath, "Jmin", "10")
+	assertParam(t, clientPath, "Jmax", "20")
+	// Client-owned fields must be preserved.
+	assertParam(t, clientPath, "PrivateKey", "ckey")
+	assertParam(t, clientPath, "Address", "10.8.0.2/32")
+}
+
+func TestSyncClientWithServer_PlainStripsClientParams(t *testing.T) {
+	// Server is plain WireGuard (no AWG params). Syncing must REMOVE the params
+	// from the stored client (a client with leftover AWG params cannot connect
+	// to a plain server).
+	handler, _, awgDir := newTestAWGHandler(t)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 8\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	_, clientPath := writeTestConfigs(t, awgDir, server, client)
+
+	handler.syncClientWithServer("server", clientPath)
+
+	conf, _ := subscription.ParseAWGConf(clientPath)
+	for _, key := range []string{"Jc", "H1", "H2", "H3", "H4"} {
+		if _, ok := conf.Interface.Values[key]; ok {
+			t.Errorf("plain server: client still has AWG param %s after sync", key)
+		}
+	}
+}
+
+func TestSyncClientWithServer_EndpointPort(t *testing.T) {
+	// Server ListenPort changed 443 → 51820; client Endpoint port must follow.
+	handler, _, awgDir := newTestAWGHandler(t)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 51820\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = spub\nEndpoint = 146.120.53.90:443\nAllowedIPs = 0.0.0.0/0\n"
+	_, clientPath := writeTestConfigs(t, awgDir, server, client)
+
+	handler.syncClientWithServer("server", clientPath)
+
+	conf, _ := subscription.ParseAWGConf(clientPath)
+	endpoint := ""
+	if len(conf.Peers) > 0 {
+		endpoint = conf.Peers[0].Values["Endpoint"]
+	}
+	if endpoint != "146.120.53.90:51820" {
+		t.Errorf("expected endpoint port synced to 51820, got %q", endpoint)
+	}
+}
+
+func TestSyncClientWithServer_PreservesEndpointHost(t *testing.T) {
+	// The Endpoint HOST must be preserved (sync is file-only, no WAN detection).
+	handler, _, awgDir := newTestAWGHandler(t)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = spub\nEndpoint = vpn.example.com:443\nAllowedIPs = 0.0.0.0/0\n"
+	_, clientPath := writeTestConfigs(t, awgDir, server, client)
+
+	handler.syncClientWithServer("server", clientPath)
+
+	conf, _ := subscription.ParseAWGConf(clientPath)
+	endpoint := conf.Peers[0].Values["Endpoint"]
+	if endpoint != "vpn.example.com:443" {
+		t.Errorf("endpoint host must be preserved, got %q", endpoint)
+	}
+}
+
+func TestSyncClientWithServer_MissingServerLeavesClientUntouched(t *testing.T) {
+	// If server.conf is unreadable, the client config must be returned as-is.
+	handler, _, awgDir := newTestAWGHandler(t)
+	client := "[Interface]\nPrivateKey = ckey\nJc = 2\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	clientPath := filepath.Join(awgDir, "clients", "server-10.8.0.2.conf")
+	os.MkdirAll(filepath.Dir(clientPath), 0755)
+	os.WriteFile(clientPath, []byte(client), 0600)
+	// No server.conf written.
+
+	handler.syncClientWithServer("server", clientPath)
+
+	got, _ := os.ReadFile(clientPath)
+	if string(got) != client {
+		t.Errorf("client config should be unchanged when server.conf is missing")
+	}
+}
+
+func TestSyncClientWithServer_PreservesPeerBlock(t *testing.T) {
+	// The entire [Peer] section (except Endpoint port) must survive intact.
+	handler, _, awgDir := newTestAWGHandler(t)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 2\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n"
+	_, clientPath := writeTestConfigs(t, awgDir, server, client)
+
+	handler.syncClientWithServer("server", clientPath)
+
+	conf, _ := subscription.ParseAWGConf(clientPath)
+	if len(conf.Peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(conf.Peers))
+	}
+	p := conf.Peers[0]
+	if p.Values["PublicKey"] != "spub" {
+		t.Errorf("PublicKey not preserved: %q", p.Values["PublicKey"])
+	}
+	if p.Values["AllowedIPs"] != "0.0.0.0/0, ::/0" {
+		t.Errorf("AllowedIPs not preserved: %q", p.Values["AllowedIPs"])
+	}
+	if p.Values["PersistentKeepalive"] != "25" {
+		t.Errorf("PersistentKeepalive not preserved: %q", p.Values["PersistentKeepalive"])
+	}
+}
+
+// ---------- GetPeerConfig end-to-end sync ----------
+
+func TestGetPeerConfig_ReturnsSyncedConfig(t *testing.T) {
+	// Full HTTP path: server edited to Jc=1 after peer creation; the stored
+	// client snapshot is stale (Jc=2). GET /peer-config must return Jc=1.
+	_, router, awgDir := newTestAWGHandler(t)
+	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
+	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 2\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
+	writeTestConfigs(t, awgDir, server, client)
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Success      bool   `json:"success"`
+		ClientConfig string `json:"client_config"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+	if !strings.Contains(resp.ClientConfig, "Jc = 1") {
+		t.Errorf("returned config should have synced Jc=1, got:\n%s", resp.ClientConfig)
+	}
+	if strings.Contains(resp.ClientConfig, "Jc = 2") {
+		t.Errorf("returned config should NOT have stale Jc=2, got:\n%s", resp.ClientConfig)
+	}
+}

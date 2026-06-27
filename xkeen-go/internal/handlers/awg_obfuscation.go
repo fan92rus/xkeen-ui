@@ -202,6 +202,56 @@ func applyObfuscationToConfig(confPath string, params map[string]string) error {
 	return os.WriteFile(confPath, []byte(output), 0600)
 }
 
+// readAWGParams extracts all AWG obfuscation parameters present in the
+// [Interface] section of a parsed config. Returns an empty map when none are
+// set (plain WireGuard) or when the config has no [Interface] section.
+func readAWGParams(conf *subscription.AWGConf) map[string]string {
+	params := make(map[string]string)
+	if conf == nil || conf.Interface == nil {
+		return params
+	}
+	for _, key := range awgParamKeys {
+		if val, exists := conf.Interface.Values[key]; exists {
+			params[key] = val
+		}
+	}
+	return params
+}
+
+// rewriteEndpointPort updates the port of every `Endpoint = host:port` line in
+// a config file, preserving the host. Handles IPv6 bracketed hosts
+// (`[::1]:443`) by splitting on the LAST colon. No-op when port <= 0.
+func rewriteEndpointPort(clientPath string, port int) error {
+	if port <= 0 {
+		return nil
+	}
+	data, err := os.ReadFile(clientPath)
+	if err != nil {
+		return err
+	}
+	portStr := strconv.Itoa(port)
+	lines := strings.Split(string(data), "\n")
+	changed := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		idx := strings.Index(trimmed, "=")
+		if idx < 0 || strings.TrimSpace(trimmed[:idx]) != "Endpoint" {
+			continue
+		}
+		val := strings.TrimSpace(trimmed[idx+1:])
+		c := strings.LastIndex(val, ":")
+		if c < 0 {
+			continue // malformed endpoint — leave untouched
+		}
+		lines[i] = "Endpoint = " + val[:c] + ":" + portStr
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return os.WriteFile(clientPath, []byte(strings.Join(lines, "\n")), 0600)
+}
+
 // detectObfuscationPreset compares current config params to known presets.
 // Returns preset ID ("full", "light", "minimal", "plain") or "custom".
 func detectObfuscationPreset(confPath string) (string, error) {
@@ -210,17 +260,7 @@ func detectObfuscationPreset(confPath string) (string, error) {
 		return "", err
 	}
 
-	if conf.Interface == nil {
-		return "plain", nil
-	}
-
-	// Extract current AWG params from [Interface]
-	current := make(map[string]string)
-	for _, key := range awgParamKeys {
-		if val, exists := conf.Interface.Values[key]; exists {
-			current[key] = val
-		}
-	}
+	current := readAWGParams(conf)
 
 	if len(current) == 0 {
 		return "plain", nil
