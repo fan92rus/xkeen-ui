@@ -1591,3 +1591,290 @@ func TestProxyCache_AtomicWriteNoCorruption(t *testing.T) {
 		t.Error(".tmp file leftover after proxy cache write")
 	}
 }
+
+// ---------- IsBuiltinSubscription ----------
+
+func TestIsBuiltinSubscription_ReservedID(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subs.json"))
+
+	if !store.IsBuiltinSubscription(ReservedAWGSubscriptionID) {
+		t.Errorf("ReservedAWGSubscriptionID (%q) should be recognized as builtin", ReservedAWGSubscriptionID)
+	}
+}
+
+func TestIsBuiltinSubscription_NonBuiltinID(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subs.json"))
+
+	if store.IsBuiltinSubscription("some-regular-id") {
+		t.Error("a regular subscription ID should NOT be recognized as builtin")
+	}
+}
+
+func TestIsBuiltinSubscription_EmptyID(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subs.json"))
+
+	if store.IsBuiltinSubscription("") {
+		t.Error("empty string should NOT be recognized as builtin")
+	}
+}
+
+// ---------- saveConfig error branches ----------
+
+func TestSaveConfig_MkdirAllFailure(t *testing.T) {
+	dir := t.TempDir()
+	// Create a regular file that blocks using its path as a parent directory.
+	blocker := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("blocker"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(blocker, "subs.json") // parent is a file, not a dir
+	store, _ := NewStore(path)
+
+	// Save must fail because MkdirAll cannot create dir at "not-a-dir".
+	if err := store.Save(); err == nil {
+		t.Error("expected Save to fail when parent is a regular file")
+	}
+}
+
+// ---------- defaultProfile create-on-missing branch ----------
+
+func TestDefaultProfile_CreateOnMissing(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subs.json"))
+
+	// Wipe profiles to trigger the "create default" fallback in defaultProfile().
+	store.mu.Lock()
+	store.config.Profiles = nil
+	dp := store.defaultProfile()
+	store.mu.Unlock()
+
+	if dp == nil {
+		t.Fatal("defaultProfile returned nil")
+	}
+	if dp.ID != "default" {
+		t.Errorf("expected ID 'default', got %q", dp.ID)
+	}
+	if !dp.IsDefault {
+		t.Error("created profile must have IsDefault=true")
+	}
+	if !dp.Enabled {
+		t.Error("created profile must be Enabled")
+	}
+	if dp.Filter.IncludeCountries == nil || dp.Filter.ExcludeCountries == nil ||
+		dp.Filter.IncludeRegexes == nil || dp.Filter.ExcludeRegexes == nil {
+		t.Error("created profile's Filter slices must not be nil")
+	}
+}
+
+// ---------- atomicWriteFile error branches ----------
+
+func TestAtomicWriteFile_ErrorOnBadPath(t *testing.T) {
+	dir := t.TempDir()
+	// Path inside a non-existent subdirectory — WriteFile will fail because
+	// atomicWriteFile does NOT create parent directories.
+	badPath := filepath.Join(dir, "nonexistent", "out.json")
+	err := atomicWriteFile(badPath, []byte("data"), 0644)
+	if err == nil {
+		t.Error("atomicWriteFile should fail when parent directory does not exist")
+	}
+	// Verify no .tmp leftover.
+	if _, statErr := os.Stat(badPath + ".tmp"); !os.IsNotExist(statErr) {
+		t.Error(".tmp file was left behind after failed atomic write")
+	}
+}
+
+// ---------- migrateRegexFields ----------
+
+// writeRawConfig writes an arbitrary JSON to the store path and creates the store.
+func writeRawConfig(t *testing.T, dir string, cfg interface{}) *Store {
+	t.Helper()
+	path := filepath.Join(dir, "subscriptions.json")
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal raw config: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write raw config: %v", err)
+	}
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return store
+}
+
+func TestMigrateRegexFields_FromLegacy(t *testing.T) {
+	dir := t.TempDir()
+	// Write a config whose profile has LegacyIncludeRegex / LegacyExcludeRegex
+	// but empty IncludeRegexes / ExcludeRegexes — migration must populate them.
+	rawCfg := &SubscriptionConfig{
+		Subscriptions: []Subscription{},
+		Profiles: []Profile{{
+			ID:        "default",
+			Name:      "Old",
+			IsDefault: true,
+			Enabled:   true,
+			Filter: Filter{
+				LegacyIncludeRegex: `^RU$`,
+				LegacyExcludeRegex: `(XXX|YYY)`,
+				IncludeRegexes:     nil, // will be populated by migration
+				ExcludeRegexes:     nil,
+			},
+			Strategy: RoutingStrategy{Type: "all"},
+		}},
+	}
+	store := writeRawConfig(t, dir, rawCfg)
+
+	// migrateRegexFields is called once by NewStore after loading.
+	// Verify migration happened.
+	p, err := store.GetProfile("default")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if len(p.Filter.IncludeRegexes) != 1 || p.Filter.IncludeRegexes[0] != "^RU$" {
+		t.Errorf("IncludeRegexes not migrated from LegacyIncludeRegex, got %v", p.Filter.IncludeRegexes)
+	}
+	if len(p.Filter.ExcludeRegexes) != 1 || p.Filter.ExcludeRegexes[0] != "(XXX|YYY)" {
+		t.Errorf("ExcludeRegexes not migrated from LegacyExcludeRegex, got %v", p.Filter.ExcludeRegexes)
+	}
+	// Legacy fields must be cleared.
+	if p.Filter.LegacyIncludeRegex != "" {
+		t.Errorf("LegacyIncludeRegex should be cleared after migration, got %q", p.Filter.LegacyIncludeRegex)
+	}
+	if p.Filter.LegacyExcludeRegex != "" {
+		t.Errorf("LegacyExcludeRegex should be cleared after migration, got %q", p.Filter.LegacyExcludeRegex)
+	}
+}
+
+func TestMigrateRegexFields_AlreadyMigrated(t *testing.T) {
+	dir := t.TempDir()
+	// Config that already has IncludeRegexes populated and Legacy fields empty
+	// — migration must NOT change it.
+	rawCfg := &SubscriptionConfig{
+		Subscriptions: []Subscription{},
+		Profiles: []Profile{{
+			ID:        "default",
+			Name:      "Migrated",
+			IsDefault: true,
+			Enabled:   true,
+			Filter: Filter{
+				IncludeRegexes:     []string{"^RU$"},
+				ExcludeRegexes:     []string{"^DE$"},
+				LegacyIncludeRegex: "",
+				LegacyExcludeRegex: "",
+			},
+			Strategy: RoutingStrategy{Type: "all"},
+		}},
+	}
+	store := writeRawConfig(t, dir, rawCfg)
+
+	p, err := store.GetProfile("default")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	// Original IncludeRegexes must remain untouched.
+	if len(p.Filter.IncludeRegexes) != 1 || p.Filter.IncludeRegexes[0] != "^RU$" {
+		t.Errorf("already-migrated IncludeRegexes changed, got %v", p.Filter.IncludeRegexes)
+	}
+	// Non-nil enforcement: slices that were already non-nil stay, nil ones become [].
+	if p.Filter.ExcludeRegexes == nil {
+		t.Errorf("ExcludeRegexes must not be nil after migration read")
+	}
+}
+
+func TestMigrateRegexFields_NilSlicesNormalized(t *testing.T) {
+	dir := t.TempDir()
+	// Profile with nil IncludeRegexes and ExcludeRegexes (no legacy fields) —
+	// migration must replace nils with empty slices.
+	rawCfg := &SubscriptionConfig{
+		Subscriptions: []Subscription{},
+		Profiles: []Profile{{
+			ID:        "default",
+			Name:      "Nil",
+			IsDefault: true,
+			Enabled:   true,
+			Filter: Filter{
+				IncludeRegexes: nil,
+				ExcludeRegexes: nil,
+			},
+			Strategy: RoutingStrategy{Type: "all"},
+		}},
+	}
+	store := writeRawConfig(t, dir, rawCfg)
+
+	p, err := store.GetProfile("default")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if p.Filter.IncludeRegexes == nil {
+		t.Error("IncludeRegexes must not be nil after migration")
+	}
+	if p.Filter.ExcludeRegexes == nil {
+		t.Error("ExcludeRegexes must not be nil after migration")
+	}
+}
+
+// ---------- generateID ----------
+
+func TestGenerateID_HappyPath(t *testing.T) {
+	ids := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		id, err := generateID()
+		if err != nil {
+			t.Fatalf("generateID failed: %v", err)
+		}
+		if len(id) != 32 {
+			t.Errorf("expected 32-char hex, got %q (len=%d)", id, len(id))
+		}
+		if ids[id] {
+			t.Errorf("duplicate ID: %s", id)
+		}
+		ids[id] = true
+	}
+}
+
+// ---------- cloneConfig ----------
+
+func TestCloneConfig_DeepCopy(t *testing.T) {
+	orig := &SubscriptionConfig{
+		Subscriptions: []Subscription{
+			{ID: "sub-1", Name: "Original", URL: "https://example.com/list", Enabled: true},
+		},
+		Profiles: []Profile{
+			{
+				ID: "p1", Name: "Profile 1", IsDefault: true, Enabled: true,
+				Filter:   Filter{IncludeCountries: []string{"RU", "DE"}},
+				Strategy: RoutingStrategy{Type: "all"},
+			},
+		},
+		Filters:  &Filter{ExcludeCountries: []string{"US"}},
+		Strategy: &RoutingStrategy{Type: "geoip"},
+	}
+	cp := cloneConfig(orig)
+
+	// Must be equal.
+	origJSON, _ := json.Marshal(orig)
+	cpJSON, _ := json.Marshal(cp)
+	if string(origJSON) != string(cpJSON) {
+		t.Errorf("clone should produce identical JSON:\norig: %s\ncp:   %s", string(origJSON), string(cpJSON))
+	}
+
+	// Mutating the clone must not affect original (deep copy).
+	cp.Subscriptions[0].Name = "Mutated"
+	cp.Profiles[0].Filter.IncludeCountries[0] = "XX"
+	cp.Filters.ExcludeCountries[0] = "YY"
+
+	if orig.Subscriptions[0].Name != "Original" {
+		t.Errorf("subscription name should be isolated after clone, got %q", orig.Subscriptions[0].Name)
+	}
+	if orig.Profiles[0].Filter.IncludeCountries[0] != "RU" {
+		t.Errorf("profile filter should be isolated after clone, got %q", orig.Profiles[0].Filter.IncludeCountries[0])
+	}
+	if orig.Filters.ExcludeCountries[0] != "US" {
+		t.Errorf("global filter should be isolated after clone, got %q", orig.Filters.ExcludeCountries[0])
+	}
+}
+
