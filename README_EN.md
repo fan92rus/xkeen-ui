@@ -2,6 +2,8 @@
 
 A web interface for managing network service configurations on Keenetic routers with Entware.
 
+> 🇷🇺 [Русская версия](README.md)
+
 <img width="1918" height="886" alt="image" src="https://github.com/user-attachments/assets/26d13089-0a58-4df8-853b-de1aa68168a9" />
 
 ## Quick Install
@@ -59,13 +61,7 @@ Open the web interface: `http://<router-ip>:8089`
 - Input support for interactive commands
 - Commands grouped by category
 - Warnings for destructive operations
-
-### Settings
-
-- Switch operation mode (Xray/Mihomo)
-- Change logging level
-- Manage admin password
-- One-click update check and install
+- Command list cached for 5 hours with manual refresh
 
 ### AmneziaWG (AWG) Management
 
@@ -73,19 +69,29 @@ Open the web interface: `http://<router-ip>:8089`
 - AWG interface management: start, stop, add, delete configurations
 - **Client mode** — tunnel with fwmark routing for Xray/Mihomo integration
 - **Server mode** — full-tunnel VPN server with built-in iptables firewall
-- Peer management: add, delete, and generate client configurations
+- Peer management: add, delete, generate client configurations
 - QR code for mobile client configs (AmneziaWG app)
-- Obfuscation presets (Random, Full, Light, Minimal, Plain WG)
+- Obfuscation presets: Random, Full, Light, Minimal, Plain WG
 - Peer changes applied live via `awg syncconf` — no service interruption
-- Built-in watchdog with cron health checks
+- Built-in watchdog: cron health checks every minute, automatic iptables restoration
+- Persistent client config storage in `/opt/etc/awg/clients/`
 
 ### Subscriptions
 
 - Subscription-based proxy management
-- Built-in AWG subscription for automatic proxy generation from AWG interfaces
+- Built-in AWG subscription (ID `__awg__`) — automatic proxy generation from AWG interfaces
 - Filter system for selective proxy usage
 - Mihomo config generation from subscriptions with proxy-group strategy mapping
 - Optional Xray 05_routing.json to Mihomo rules conversion
+
+### Settings
+
+- Switch operation mode (Xray/Mihomo)
+- Change logging level
+- Manage admin password
+- One-click update check and install via GitHub releases with SSE progress
+- AWG install and uninstall
+- Conditional tabs: AWG shown only when installed, Metrics shown only when enabled
 
 ## Service Management Commands
 
@@ -110,13 +116,18 @@ Configuration file: `/opt/etc/xkeen-ui/config.json`
     "xkeen_binary": "xkeen",
     "mihomo_config_dir": "/opt/etc/mihomo",
     "mihomo_binary": "mihomo",
+    "awg_config_dir": "/opt/etc/awg",
     "allowed_roots": [
         "/opt/etc/xray",
         "/opt/etc/xkeen",
         "/opt/etc/mihomo",
+        "/opt/etc/awg",
         "/opt/var/log"
     ],
     "log_level": "info",
+    "metrics_port": 0,
+    "cookie_secure": false,
+    "trust_proxy_headers": false,
     "auth": {
         "session_timeout": 24,
         "max_login_attempts": 5,
@@ -132,9 +143,18 @@ Configuration file: `/opt/etc/xkeen-ui/config.json`
 | `port` | Web interface port | 8089 |
 | `mode` | Operation mode: `xray` or `mihomo` | xray |
 | `xray_config_dir` | Xray config directory | /opt/etc/xray/configs |
+| `xkeen_binary` | Path to xkeen binary | xkeen |
 | `mihomo_config_dir` | Mihomo config directory | /opt/etc/mihomo |
-| `allowed_roots` | Allowed directories for file operations | — |
+| `mihomo_binary` | Path to mihomo binary | mihomo |
+| `awg_config_dir` | AWG config directory | /opt/etc/awg |
+| `awg_lan_iface` | LAN interface for firewall (empty = auto) | — |
+| `awg_wan_iface` | WAN interface for firewall (empty = auto) | — |
+| `awg_endpoint` | Endpoint override for clients (empty = auto) | — |
+| `allowed_roots` | Allowed directories for file operations | xray, xkeen, mihomo, awg, log |
 | `log_level` | Logging level (debug, info, warn, error) | info |
+| `metrics_port` | Xray metrics port (0 = disabled) | 0 |
+| `cookie_secure` | Set Secure flag on cookies (enable behind HTTPS) | false |
+| `trust_proxy_headers` | Trust X-Forwarded-For headers (behind reverse proxy) | false |
 | `session_timeout` | Session lifetime in hours | 24 |
 | `max_login_attempts` | Login attempts before lockout | 5 |
 | `lockout_duration` | Lockout duration in minutes | 5 |
@@ -171,9 +191,10 @@ upx --best --lzma build/xkeen-ui-keenetic-arm64
 
 ## Tech Stack
 
-- **Backend:** Go 1.21+
-- **Frontend:** Alpine.js, CodeMirror 6
+- **Backend:** Go
+- **Frontend:** Vue 3, Pinia, CodeMirror 6, Chart.js
 - **Protocols:** HTTP, WebSocket, SSE
+- **Testing:** Vitest (frontend), Go testing (backend)
 
 ## License
 

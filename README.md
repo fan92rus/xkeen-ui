@@ -3,6 +3,7 @@
 # XKEEN-UI
 
 Веб-интерфейс для управления конфигурациями сетевых сервисов на роутерах Keenetic с установленным Entware.
+
 <img width="1918" height="886" alt="image" src="https://github.com/user-attachments/assets/26d13089-0a58-4df8-853b-de1aa68168a9" />
 
 ## Быстрая установка
@@ -60,6 +61,28 @@ wget -qO- https://raw.githubusercontent.com/fan92rus/xkeen-ui/master/xkeen-go/sc
 - Поддержка ввода данных для интерактивных команд
 - Категоризация команд по группам
 - Предупреждения для опасных операций
+- Кэширование списка команд на 5 часов с ручным обновлением
+
+### AmneziaWG (AWG)
+
+- Одно-кликовая установка (amneziawg-go + amneziawg-tools)
+- Управление интерфейсами: старт, стоп, добавление, удаление конфигураций
+- **Клиентский режим** — туннель с fwmark-маршрутизацией для Xray/Mihomo
+- **Серверный режим** — полноценный Full Tunnel VPN-сервер со встроенным iptables firewall
+- Управление пирами: добавление, удаление, генерация клиентских конфигураций
+- QR-код для мобильных клиентов (AmneziaWG)
+- Пресеты обфускации: Random, Full, Light, Minimal, Plain WG
+- Применение изменений пиров через `awg syncconf` без перезапуска интерфейса
+- Встроенный watchdog: cron-проверка каждую минуту, автоматическое восстановление iptables
+- Постоянное хранение клиентских конфигураций в `/opt/etc/awg/clients/`
+
+### Подписки
+
+- Управление прокси-подписками
+- Встроенная AWG-подписка (ID `__awg__`) — автоматическая генерация прокси из AWG-интерфейсов
+- Система фильтров для выборочного использования прокси
+- Генерация конфигурации Mihomo из подписок с маппингом стратегий proxy-group
+- Опциональная конвертация Xray 05_routing.json в правила Mihomo
 
 ### Настройки
 
@@ -67,6 +90,9 @@ wget -qO- https://raw.githubusercontent.com/fan92rus/xkeen-ui/master/xkeen-go/sc
 - Изменение уровня логирования
 - Управление паролем администратора
 - Проверка и установка обновлений в один клик
+- Автоматическое обновление через GitHub releases с SSE-прогрессом
+- Установка и удаление AWG
+- Условные вкладки: AWG показывается только при установленном AWG, Метрики — при включённых метриках Xray
 
 ## Команды управления сервисом
 
@@ -91,13 +117,18 @@ xkeen-ui uninstall  # Удаление
     "xkeen_binary": "xkeen",
     "mihomo_config_dir": "/opt/etc/mihomo",
     "mihomo_binary": "mihomo",
+    "awg_config_dir": "/opt/etc/awg",
     "allowed_roots": [
         "/opt/etc/xray",
         "/opt/etc/xkeen",
         "/opt/etc/mihomo",
+        "/opt/etc/awg",
         "/opt/var/log"
     ],
     "log_level": "info",
+    "metrics_port": 0,
+    "cookie_secure": false,
+    "trust_proxy_headers": false,
     "auth": {
         "session_timeout": 24,
         "max_login_attempts": 5,
@@ -113,9 +144,18 @@ xkeen-ui uninstall  # Удаление
 | `port` | Порт веб-интерфейса | 8089 |
 | `mode` | Режим работы: `xray` или `mihomo` | xray |
 | `xray_config_dir` | Директория конфигураций Xray | /opt/etc/xray/configs |
+| `xkeen_binary` | Путь к бинарнику xkeen | xkeen |
 | `mihomo_config_dir` | Директория конфигураций Mihomo | /opt/etc/mihomo |
-| `allowed_roots` | Разрешённые директории для файловых операций | - |
+| `mihomo_binary` | Путь к бинарнику mihomo | mihomo |
+| `awg_config_dir` | Директория AWG-конфигураций | /opt/etc/awg |
+| `awg_lan_iface` | LAN-интерфейс для firewall (пусто = авто) | — |
+| `awg_wan_iface` | WAN-интерфейс для firewall (пусто = авто) | — |
+| `awg_endpoint` | Переопределение Endpoint для клиентов (пусто = авто) | — |
+| `allowed_roots` | Разрешённые директории для файловых операций | xray, xkeen, mihomo, awg, log |
 | `log_level` | Уровень логирования (debug, info, warn, error) | info |
+| `metrics_port` | Порт метрик Xray (0 = отключено) | 0 |
+| `cookie_secure` | Secure-флаг для cookie (включать при HTTPS) | false |
+| `trust_proxy_headers` | Доверять X-Forwarded-For (за обратным прокси) | false |
 | `session_timeout` | Время жизни сессии в часах | 24 |
 | `max_login_attempts` | Попыток входа до блокировки | 5 |
 | `lockout_duration` | Длительность блокировки в минутах | 5 |
@@ -152,9 +192,10 @@ upx --best --lzma build/xkeen-ui-keenetic-arm64
 
 ## Технологии
 
-- **Backend:** Go 1.21+
-- **Frontend:** Alpine.js, CodeMirror 6
+- **Backend:** Go
+- **Frontend:** Vue 3, Pinia, CodeMirror 6, Chart.js
 - **Протоколы:** HTTP, WebSocket, SSE
+- **Тестирование:** Vitest (frontend), Go testing (backend)
 
 ## Лицензия
 
@@ -169,4 +210,3 @@ MIT License
 <img width="1914" height="814" alt="image" src="https://github.com/user-attachments/assets/741b42f6-3b1d-4ff6-af40-e110c31bd14e" />
 <img width="1910" height="880" alt="image" src="https://github.com/user-attachments/assets/3c7e25ee-eda8-42bf-927c-bba9c07895d4" />
 <img width="1917" height="865" alt="image" src="https://github.com/user-attachments/assets/711231f2-25e1-4b34-b026-36a815c99901" />
-
