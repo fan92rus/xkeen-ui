@@ -558,6 +558,45 @@ func (s *Store) SetProxies(proxies []*ProxyEntry) {
 	s.saveProxyCache(proxies)
 }
 
+// ReplaceProxiesForSubscription atomically replaces all proxies belonging to
+// subscriptionID with newEntries, preserving proxies from other subscriptions.
+// The optional transform callback (when non-nil) is invoked on the merged
+// slice while the store lock is held, so it can mutate the entries in place
+// (e.g. regenerate tags) before the result is persisted.
+//
+// Proxies with an empty SubscriptionID (orphans from previous versions) are
+// removed in the process. The entire read-modify-write cycle runs under the
+// store lock, making it safe to call concurrently from multiple goroutines
+// (e.g. parallel subscription refreshes).
+//
+// This is the atomic equivalent of the previous GetProxies → filter → append
+// → SetProxies pattern, which was subject to a TOCTOU race that silently
+// dropped freshly-fetched proxies when two refreshes overlapped.
+func (s *Store) ReplaceProxiesForSubscription(subscriptionID string, newEntries []*ProxyEntry, transform func(merged []*ProxyEntry)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	merged := make([]*ProxyEntry, 0, len(s.proxies)+len(newEntries))
+	for _, p := range s.proxies {
+		if p.SubscriptionID == subscriptionID {
+			continue // drop old proxies of the refreshed subscription
+		}
+		if p.SubscriptionID == "" {
+			continue // drop orphans
+		}
+		merged = append(merged, p)
+	}
+	merged = append(merged, newEntries...)
+
+	if transform != nil {
+		transform(merged)
+	}
+
+	s.proxies = merged
+	s.saveProxyCache(merged)
+	return nil
+}
+
 // GetProxies returns a deep copy of the in-memory proxy cache.
 func (s *Store) GetProxies() []*ProxyEntry {
 	s.mu.RLock()

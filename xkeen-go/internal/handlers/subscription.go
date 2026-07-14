@@ -257,24 +257,16 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 		e.SubscriptionID = id
 	}
 
-	// Replace proxies for this subscription, keep others (skip orphaned entries without subscription_id)
-	existing := h.store.GetProxies()
-	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(result.Entries))
-	for _, p := range existing {
-		if p.SubscriptionID == id {
-			continue // remove old proxies from this subscription
-		}
-		if p.SubscriptionID == "" {
-			continue // remove orphaned proxies from previous versions
-		}
-		merged = append(merged, p)
+	// Atomically replace proxies for this subscription while keeping others.
+	// Uses a store-level lock to avoid the TOCTOU race that a manual
+	// GetProxies → modify → SetProxies sequence would introduce when
+	// multiple refreshes overlap (manual + auto-apply).
+	if err := h.store.ReplaceProxiesForSubscription(id, result.Entries, func(merged []*subscription.ProxyEntry) {
+		subscription.GenerateTags(merged)
+	}); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update proxy cache: %v", err))
+		return
 	}
-	merged = append(merged, result.Entries...)
-
-	// Regenerate tags globally to avoid collisions between subscriptions
-	subscription.GenerateTags(merged)
-
-	h.store.SetProxies(merged)
 
 	respondJSON(w, http.StatusOK, &subFetchResponse{Success: true, ProxyCount: len(result.Entries), Total: len(result.Entries), Proxies: result.Entries})
 }
@@ -301,24 +293,14 @@ func (h *SubscriptionHandler) fetchAWG(w http.ResponseWriter, r *http.Request, s
 		e.SubscriptionID = subscription.ReservedAWGSubscriptionID
 	}
 
-	// Replace AWG proxies in the pool, keep others
-	existing := h.store.GetProxies()
-	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(entries))
-	for _, p := range existing {
-		if p.SubscriptionID == subscription.ReservedAWGSubscriptionID {
-			continue // remove old AWG proxies
-		}
-		if p.SubscriptionID == "" {
-			continue // remove orphaned proxies
-		}
-		merged = append(merged, p)
+	// Atomically replace AWG proxies in the pool, keep others.
+	// Same TOCTOU-safe pattern as FetchSubscription.
+	if err := h.store.ReplaceProxiesForSubscription(subscription.ReservedAWGSubscriptionID, entries, func(merged []*subscription.ProxyEntry) {
+		subscription.GenerateTags(merged)
+	}); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update AWG proxy cache: %v", err))
+		return
 	}
-	merged = append(merged, entries...)
-
-	// Regenerate tags for non-AWG proxies (GenerateTags skips AWG protocol)
-	subscription.GenerateTags(merged)
-
-	h.store.SetProxies(merged)
 
 	respondJSON(w, http.StatusOK, &subFetchResponse{
 		Success:    true,

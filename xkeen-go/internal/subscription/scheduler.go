@@ -489,20 +489,13 @@ func (s *Scheduler) RefreshOne(id string) error {
 		e.SubscriptionID = id
 	}
 
-	// Replace proxies for this subscription, keep others (skip orphaned entries without subscription_id)
-	existing := s.store.GetProxies()
-	merged := make([]*ProxyEntry, 0, len(existing)+len(result.Entries))
-	for _, p := range existing {
-		if p.SubscriptionID == id {
-			continue // remove old proxies from this subscription
-		}
-		if p.SubscriptionID == "" {
-			continue // remove orphaned proxies from previous versions
-		}
-		merged = append(merged, p)
-	}
-	merged = append(merged, result.Entries...)
-	GenerateTags(merged)
-	s.store.SetProxies(merged)
-	return nil
+	// Atomically replace proxies for this subscription while keeping others.
+	// Uses a store-level lock to avoid the TOCTOU race that a manual
+	// GetProxies → modify → SetProxies sequence would introduce when
+	// multiple subscriptions refresh in parallel. GenerateTags runs under
+	// the same lock (as a transform callback) so tags are consistent with
+	// what gets persisted.
+	return s.store.ReplaceProxiesForSubscription(id, result.Entries, func(merged []*ProxyEntry) {
+		GenerateTags(merged)
+	})
 }
