@@ -446,6 +446,8 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 .sub-row .dot.off { background: var(--indicator-offline); }
 .sub-row .name { font-weight: 500; color: var(--primary-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; font-size: var(--text-body); line-height: var(--lh-body); }
 .sub-row .badge { font-size: var(--text-small); color: var(--primary-color); background: var(--status-special-background); padding: 0 6px; border-radius: var(--radius); white-space: nowrap; }
+.sub-row .badge.src { color: #fff; background: var(--indicator-online); }
+.sub-row .badge.src-direct { color: var(--text-gray); background: var(--status-special-background); }
 .sub-row .meta { font-size: var(--text-small); color: var(--text-gray); white-space: nowrap; }
 .sub-row .err { font-size: var(--text-small); color: var(--error); cursor: help; }
 .sub-row .acts { display: flex; gap: 2px; flex-shrink: 0; }

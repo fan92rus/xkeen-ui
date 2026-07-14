@@ -234,7 +234,7 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	entries, err := h.fetcher.Fetch(ctx, sub.URL)
+	result, err := h.fetcher.FetchWithCascade(ctx, sub.URL)
 	if err != nil {
 		// Update error state
 		sub.LastError = err.Error()
@@ -248,17 +248,18 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 	// Update subscription metadata
 	sub.LastFetch = time.Now()
 	sub.LastError = ""
-	sub.ProxyCount = len(entries)
+	sub.ProxyCount = len(result.Entries)
+	sub.LastSource = result.Source
 	_ = h.store.UpdateSubscription(sub)
 
 	// Tag entries with subscription ID
-	for _, e := range entries {
+	for _, e := range result.Entries {
 		e.SubscriptionID = id
 	}
 
 	// Replace proxies for this subscription, keep others (skip orphaned entries without subscription_id)
 	existing := h.store.GetProxies()
-	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(entries))
+	merged := make([]*subscription.ProxyEntry, 0, len(existing)+len(result.Entries))
 	for _, p := range existing {
 		if p.SubscriptionID == id {
 			continue // remove old proxies from this subscription
@@ -268,14 +269,14 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 		}
 		merged = append(merged, p)
 	}
-	merged = append(merged, entries...)
+	merged = append(merged, result.Entries...)
 
 	// Regenerate tags globally to avoid collisions between subscriptions
 	subscription.GenerateTags(merged)
 
 	h.store.SetProxies(merged)
 
-	respondJSON(w, http.StatusOK, &subFetchResponse{Success: true, ProxyCount: len(entries), Total: len(entries), Proxies: entries})
+	respondJSON(w, http.StatusOK, &subFetchResponse{Success: true, ProxyCount: len(result.Entries), Total: len(result.Entries), Proxies: result.Entries})
 }
 
 // fetchAWG handles fetching for the built-in AWG subscription — scans .conf files.
@@ -292,6 +293,7 @@ func (h *SubscriptionHandler) fetchAWG(w http.ResponseWriter, r *http.Request, s
 	sub.LastFetch = time.Now()
 	sub.LastError = ""
 	sub.ProxyCount = len(entries)
+	sub.LastSource = "awg-local" // AWG reads local .conf files, no network fetch
 	_ = h.store.UpdateSubscription(sub)
 
 	// Tag entries with subscription ID

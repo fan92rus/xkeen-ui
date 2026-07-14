@@ -6,13 +6,37 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
+
+// Source constants describe how the last successful fetch was delivered.
+const (
+	// SourceProxy — fetch succeeded through the SOCKS5/HTTP inbound of a
+	// running Xray instance (traffic went through the VPN tunnel).
+	SourceProxy = "xray-proxy"
+	// SourceDirect — fetch succeeded via a direct connection from the host
+	// (no tunnel; used as a fallback or when no inbound proxy is configured).
+	SourceDirect = "direct"
+)
+
+// perAttemptTimeout is the budget for a single cascade attempt (proxy or
+// direct). Two attempts fit within the historical 30s client timeout while
+// still leaving headroom.
+const perAttemptTimeout = 20 * time.Second
 
 // Fetcher downloads and parses subscription content from a URL.
 type Fetcher struct {
 	client *http.Client
+
+	// proxyURL, if non-empty, routes fetches through a local SOCKS5/HTTP
+	// inbound (typically Xray on 127.0.0.1). When empty, fetches go direct.
+	proxyURL string
+	proxyMu  sync.RWMutex
 }
 
 // NewFetcher creates a Fetcher with a 30-second timeout, Hiddify User-Agent,
@@ -20,22 +44,7 @@ type Fetcher struct {
 // resolver is unavailable (common on Keenetic routers where local DNS
 // may be intercepted by xray).
 func NewFetcher() *Fetcher {
-	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
-		Resolver: &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return dialDNSServers(ctx, address)
-			},
-		},
-	}
-
-	transport := &http.Transport{
-		DialContext:           dialer.DialContext,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		IdleConnTimeout:       30 * time.Second,
-	}
+	transport := newDirectTransport()
 
 	return &Fetcher{
 		client: &http.Client{
@@ -50,13 +59,225 @@ func NewFetcherWithClient(client *http.Client) *Fetcher {
 	return &Fetcher{client: client}
 }
 
-// Fetch downloads the subscription from url, decodes base64 if needed,
-// and parses each share URI into a ProxyEntry.
-func (f *Fetcher) Fetch(ctx context.Context, url string) ([]*ProxyEntry, error) {
+// newDirectTransport builds an http.Transport that dials directly (no proxy)
+// with a DNS resolver that falls back to public DNS if the system resolver
+// is unavailable (common on Keenetic routers where local DNS may be
+// intercepted by xray).
+func newDirectTransport() *http.Transport {
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Resolver: &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return dialDNSServers(ctx, address)
+			},
+		},
+	}
+
+	return &http.Transport{
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		IdleConnTimeout:       30 * time.Second,
+	}
+}
+
+// newProxiedTransport builds an http.Transport that routes all dialing
+// through the given proxy URL. Supports socks5 (remote DNS resolution via
+// the SOCKS5 server, so DNS leaks are prevented) and http/https schemes.
+func newProxiedTransport(proxyURL string) (*http.Transport, error) {
+	pu, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
+	}
+
+	switch pu.Scheme {
+	case "socks5", "socks5h":
+		// proxy.SOCKS5 performs DNS resolution on the SOCKS5 server side
+		// (remote DNS) when the address is a hostname. This prevents DNS
+		// leaks through the host's resolver.
+		hostPort := pu.Host
+		if hostPort == "" {
+			return nil, fmt.Errorf("socks5 proxy URL missing host:port")
+		}
+		var auth *proxy.Auth
+		if pu.User != nil {
+			pwd, _ := pu.User.Password()
+			auth = &proxy.Auth{User: pu.User.Username(), Password: pwd}
+		}
+		socksDialer, err := proxy.SOCKS5("tcp", hostPort, auth, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
+		}
+		return &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// proxy.Dialer.Dial does not accept a context, so we wrap it
+				// in a goroutine + select to honor cancellation/timeouts.
+				// On ctx cancellation we abort the caller, but the background
+				// dial goroutine continues until the kernel connect() returns
+				// (bounded by the client Timeout). The returned conn, if any,
+				// is closed immediately to avoid leaking a live connection.
+				type result struct {
+					conn net.Conn
+					err  error
+				}
+				ch := make(chan result, 1)
+				go func() {
+					c, e := socksDialer.Dial(network, addr)
+					ch <- result{c, e}
+				}()
+				select {
+				case <-ctx.Done():
+					// Best-effort cleanup if the dial completes late.
+					go func() {
+						if r := <-ch; r.conn != nil {
+							r.conn.Close()
+						}
+					}()
+					return nil, ctx.Err()
+				case r := <-ch:
+					return r.conn, r.err
+				}
+			},
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
+		}, nil
+
+	case "http", "https":
+		return &http.Transport{
+			Proxy:                 http.ProxyURL(pu),
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme %q (want socks5 or http)", pu.Scheme)
+	}
+}
+
+// SetProxyURL configures the proxy used for subsequent fetches.
+//
+// Accepts "socks5://host:port", "socks5h://host:port", or
+// "http://host:port". An empty string clears the proxy (fetches go direct).
+//
+// Returns an error for malformed URLs or unsupported schemes; the fetcher
+// state is left unchanged in that case.
+func (f *Fetcher) SetProxyURL(proxyURL string) error {
+	f.proxyMu.Lock()
+	defer f.proxyMu.Unlock()
+
+	if proxyURL == "" {
+		f.proxyURL = ""
+		return nil
+	}
+
+	// Validate up front so a bad URL is rejected before first use.
+	pu, err := url.Parse(proxyURL)
+	if err != nil {
+		return fmt.Errorf("invalid proxy URL: %w", err)
+	}
+	if pu.Scheme != "socks5" && pu.Scheme != "socks5h" && pu.Scheme != "http" && pu.Scheme != "https" {
+		return fmt.Errorf("unsupported proxy scheme %q (want socks5 or http)", pu.Scheme)
+	}
+	if pu.Host == "" {
+		return fmt.Errorf("proxy URL missing host:port")
+	}
+
+	f.proxyURL = proxyURL
+	return nil
+}
+
+// FetchResult holds the parsed subscription entries together with the
+// delivery method that produced them.
+type FetchResult struct {
+	Entries []*ProxyEntry
+	Source  string // SourceProxy or SourceDirect
+}
+
+// FetchWithCascade downloads the subscription with a two-stage strategy:
+//
+//  1. If a proxy is configured (see SetProxyURL), try fetching through it
+//     with a 20s budget. On success, return SourceProxy.
+//  2. On proxy failure (or if no proxy is set), fall back to a direct
+//     fetch with a 20s budget. On success, return SourceDirect.
+//  3. If both stages fail, return an aggregated error describing both
+//     attempts so the caller can surface a useful diagnostic.
+//
+// The parent ctx bounds the total operation; each stage also receives its
+// own child timeout so a hung proxy does not consume the entire budget.
+// deadlineOf returns the time remaining until ctx's deadline, or zero
+// if ctx has no deadline. Used to decide whether a cascade stage has
+// enough budget left to run.
+func deadlineRemaining(ctx context.Context) time.Duration {
+	if dl, ok := ctx.Deadline(); ok {
+		return time.Until(dl)
+	}
+	return 0 // no deadline → unbounded
+}
+
+// attemptCtx returns a child context bounded by both the parent deadline
+// and perAttemptTimeout, so a single stage can never run longer than
+// perAttemptTimeout even if the parent still has budget — and never runs
+// at all if the parent has already expired.
+func attemptCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	timeout := perAttemptTimeout
+	if rem := deadlineRemaining(parent); rem > 0 && rem < timeout {
+		timeout = rem
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
+func (f *Fetcher) FetchWithCascade(ctx context.Context, url string) (*FetchResult, error) {
 	if url == "" {
 		return nil, fmt.Errorf("subscription URL is empty")
 	}
 
+	f.proxyMu.RLock()
+	pURL := f.proxyURL
+	f.proxyMu.RUnlock()
+
+	var proxyErr error
+	if pURL != "" {
+		transport, err := newProxiedTransport(pURL)
+		if err != nil {
+			// Treat a bad proxy config as a proxy-stage failure and
+			// fall through to direct.
+			proxyErr = err
+		} else {
+			client := &http.Client{
+				Timeout:   perAttemptTimeout,
+				Transport: transport,
+			}
+		pCtx, pCancel := attemptCtx(ctx)
+			entries, err := f.doFetch(pCtx, client, url)
+			pCancel()
+			if err == nil {
+				return &FetchResult{Entries: entries, Source: SourceProxy}, nil
+			}
+			proxyErr = err
+		}
+	}
+
+	// Direct attempt — own child context so a proxy timeout doesn't starve it.
+	dCtx, dCancel := attemptCtx(ctx)
+	directEntries, directErr := f.doFetch(dCtx, f.client, url)
+	dCancel()
+	if directErr == nil {
+		return &FetchResult{Entries: directEntries, Source: SourceDirect}, nil
+	}
+
+	// Both failed (or proxy failed + direct failed).
+	if proxyErr != nil {
+		return nil, fmt.Errorf("proxy: %v; direct: %v", proxyErr, directErr)
+	}
+	return nil, fmt.Errorf("direct: %v", directErr)
+}
+
+// doFetch performs a single HTTP GET using the provided client, decodes
+// base64 if needed, and parses each share URI into a ProxyEntry.
+func (f *Fetcher) doFetch(ctx context.Context, client *http.Client, url string) ([]*ProxyEntry, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -64,7 +285,7 @@ func (f *Fetcher) Fetch(ctx context.Context, url string) ([]*ProxyEntry, error) 
 	req.Header.Set("User-Agent", "Hiddify")
 	req.Header.Set("Accept", "*/*")
 
-	resp, err := f.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch subscription: %w", err)
 	}
@@ -86,6 +307,20 @@ func (f *Fetcher) Fetch(ctx context.Context, url string) ([]*ProxyEntry, error) 
 	}
 
 	return entries, nil
+}
+
+// Fetch downloads the subscription from url, decodes base64 if needed,
+// and parses each share URI into a ProxyEntry.
+//
+// This is a backward-compatible wrapper around FetchWithCascade: it returns
+// only the entries (the caller loses the source information). New callers
+// should use FetchWithCascade.
+func (f *Fetcher) Fetch(ctx context.Context, url string) ([]*ProxyEntry, error) {
+	result, err := f.FetchWithCascade(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	return result.Entries, nil
 }
 
 // dialDNSServers tries multiple DNS servers with per-server timeouts.

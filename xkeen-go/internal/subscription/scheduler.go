@@ -414,7 +414,7 @@ func (s *Scheduler) RefreshAll() error {
 			defer s.recoverPanic("RefreshAll")
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			entries, err := s.fetcher.Fetch(ctx, sub.URL)
+			result, err := s.fetcher.FetchWithCascade(ctx, sub.URL)
 			cancel()
 
 			if err != nil {
@@ -427,16 +427,17 @@ func (s *Scheduler) RefreshAll() error {
 
 			sub.LastFetch = time.Now()
 			sub.LastError = ""
-			sub.ProxyCount = len(entries)
+			sub.ProxyCount = len(result.Entries)
+			sub.LastSource = result.Source
 			_ = s.store.UpdateSubscription(&sub)
 
 			// Tag entries with subscription ID
-			for _, e := range entries {
+			for _, e := range result.Entries {
 				e.SubscriptionID = sub.ID
 			}
 
 			mu.Lock()
-			merged = append(merged, entries...)
+			merged = append(merged, result.Entries...)
 			anySuccess = true
 			mu.Unlock()
 		}()
@@ -466,7 +467,7 @@ func (s *Scheduler) RefreshOne(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	entries, err := s.fetcher.Fetch(ctx, sub.URL)
+	result, err := s.fetcher.FetchWithCascade(ctx, sub.URL)
 	if err != nil {
 		sub.LastError = err.Error()
 		sub.LastFetch = time.Now()
@@ -476,20 +477,21 @@ func (s *Scheduler) RefreshOne(id string) error {
 
 	sub.LastFetch = time.Now()
 	sub.LastError = ""
-	sub.ProxyCount = len(entries)
+	sub.ProxyCount = len(result.Entries)
+	sub.LastSource = result.Source
 
 	if err := s.store.UpdateSubscription(sub); err != nil {
 		return err
 	}
 
 	// Tag entries with subscription ID
-	for _, e := range entries {
+	for _, e := range result.Entries {
 		e.SubscriptionID = id
 	}
 
 	// Replace proxies for this subscription, keep others (skip orphaned entries without subscription_id)
 	existing := s.store.GetProxies()
-	merged := make([]*ProxyEntry, 0, len(existing)+len(entries))
+	merged := make([]*ProxyEntry, 0, len(existing)+len(result.Entries))
 	for _, p := range existing {
 		if p.SubscriptionID == id {
 			continue // remove old proxies from this subscription
@@ -499,7 +501,7 @@ func (s *Scheduler) RefreshOne(id string) error {
 		}
 		merged = append(merged, p)
 	}
-	merged = append(merged, entries...)
+	merged = append(merged, result.Entries...)
 	GenerateTags(merged)
 	s.store.SetProxies(merged)
 	return nil

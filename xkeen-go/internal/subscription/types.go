@@ -44,6 +44,7 @@ type Subscription struct {
 	LastError  string      `json:"last_error"`
 	ProxyCount int         `json:"proxy_count"`
 	IsBuiltin  bool        `json:"is_builtin"` // system subscription, cannot be deleted
+	LastSource string      `json:"last_source"` // how last successful fetch reached us: "xray-proxy" | "direct" (empty for legacy)
 }
 
 // ProxyEntry represents a single parsed proxy from a subscription.

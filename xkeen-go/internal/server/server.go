@@ -137,6 +137,19 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		log.Printf("Warning: failed to create subscription store: %v", subErr)
 	}
 	subFetcher := subscription.NewFetcher()
+
+	// Auto-detect a local SOCKS5/HTTP inbound from the Xray config so that
+	// subscription fetches are routed through the VPN tunnel (avoids leaks
+	// and works around ISP blocking of the subscription host). Falls back
+	// silently to direct fetching if no inbound is found.
+	if proxyURL := subscription.DetectInboundProxy(cfg.XrayConfigDir); proxyURL != "" {
+		if err := subFetcher.SetProxyURL(proxyURL); err != nil {
+			log.Printf("Warning: failed to configure fetcher proxy %q: %v", proxyURL, err)
+		} else {
+			log.Printf("Subscription fetches will route through %s", proxyURL)
+		}
+	}
+
 	subScheduler := subscription.NewScheduler(subStore, subFetcher)
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
 	subScheduler.SetMetricsPort(cfg.MetricsPort)

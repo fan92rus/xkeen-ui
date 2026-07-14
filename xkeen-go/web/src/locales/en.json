@@ -317,7 +317,10 @@
     "preview_filtered": "After filters:",
     "preview_profiles": "Profiles:",
     "apply_btn": "Apply",
-    "apply_close": "Close"
+    "apply_close": "Close",
+    "source_proxy": "VPN",
+    "source_direct": "Direct",
+    "source_awg": "Local"
   },
   "toast": {
     "copied": "Output copied to clipboard",

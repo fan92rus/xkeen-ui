@@ -317,7 +317,10 @@
     "preview_filtered": "После фильтров:",
     "preview_profiles": "Профили:",
     "apply_btn": "Применить",
-    "apply_close": "Закрыть"
+    "apply_close": "Закрыть",
+    "source_proxy": "VPN",
+    "source_direct": "Напрямую",
+    "source_awg": "Локальный"
   },
   "toast": {
     "copied": "Вывод скопирован в буфер обмена",
