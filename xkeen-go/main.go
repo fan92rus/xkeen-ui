@@ -35,6 +35,10 @@ const (
 	installUpdateScript = "/opt/etc/xkeen-ui/update.sh"
 	installLogFile      = "/opt/var/log/xkeen-ui.log"
 	installPidFile      = "/var/run/xkeen-ui.pid"
+	// S70 runs before S89* scripts that may fail (awg-server, warp-routing)
+	// and abort the Entware rc.unslung boot sequence. S99 was too late.
+	installAutoStart    = "/opt/etc/init.d/S70xkeen-ui"
+	installOldAutoStart = "/opt/etc/init.d/S99xkeen-ui"
 )
 
 // binaryName is the architecture-specific binary name

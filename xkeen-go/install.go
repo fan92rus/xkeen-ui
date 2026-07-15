@@ -139,22 +139,30 @@ func install() error {
 		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
-	// Enable autostart — Entware runs /opt/etc/init.d/S* at boot
+	// Enable autostart — Entware runs /opt/etc/init.d/S* at boot.
+	// S70 (not S99) so we start before S89* scripts (awg-server, warp-routing)
+	// that may return non-zero and abort the rc.unslung boot sequence.
 	fmt.Println("Enabling autostart...")
-	autoStart := "/opt/etc/init.d/S99xkeen-ui"
-	os.Remove(autoStart)
-	if err := os.Symlink(installInitScript, autoStart); err != nil {
+	// Remove legacy S99 symlink if upgrading from an older xkeen-ui version
+	os.Remove(installOldAutoStart)
+	os.Remove(installAutoStart)
+	if err := os.Symlink(installInitScript, installAutoStart); err != nil {
 		fmt.Printf("Warning: failed to create autostart symlink: %v\n", err)
 	}
-	// Also create in rc.d/ for Entware variants that use it
+	// Also create in rc.d/ for Entware variants that use it.
+	// Clean both S70 and legacy S99 links before creating new ones.
 	rcDir := "/opt/etc/init.d/rc.d"
 	os.MkdirAll(rcDir, 0755)
-	sLink := filepath.Join(rcDir, "S99xkeen-ui")
-	kLink := filepath.Join(rcDir, "K01xkeen-ui")
-	os.Remove(sLink)
-	os.Remove(kLink)
-	os.Symlink(installInitScript, sLink)
-	os.Symlink(installInitScript, kLink)
+	for _, suffix := range []string{"S70xkeen-ui", "S99xkeen-ui"} {
+		os.Remove(filepath.Join(rcDir, suffix))
+	}
+	os.Remove(filepath.Join(rcDir, "K01xkeen-ui"))
+	os.Symlink(installInitScript, filepath.Join(rcDir, "S70xkeen-ui"))
+	os.Symlink(installInitScript, filepath.Join(rcDir, "K01xkeen-ui"))
+
+	// Clean up stale init scripts from older xkeen-ui versions that can
+	// break boot on some Keenetic setups (non-zero exit aborts rc.unslung).
+	cleanupStaleInitScripts()
 
 	// Create cron watchdog for auto-restart on crash
 	cronDir := "/opt/etc/cron.d"
@@ -287,4 +295,31 @@ func generateSecret() string {
 		return "xkeen-ui-change-this-secret-" + buildDate
 	}
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+// cleanupStaleInitScripts removes legacy init scripts that can break the
+// Entware boot sequence. On some Keenetic setups, rc.unslung sources each
+// S* script and aborts the entire sequence when one returns non-zero.
+// We disable known-offending scripts that belong to superseded setups.
+func cleanupStaleInitScripts() {
+	// S89amnezia-wg-quick: old AmneziaWG client script that references
+	// /opt/etc/amnezia/amneziawg/awg0.conf — typically missing on systems
+	// that have migrated to xkeen-managed AWG (server.conf). Its failure
+	// (awg-quick: ... does not exist) aborts rc.unslung before S99 runs.
+	stale := []string{
+		"/opt/etc/init.d/S89amnezia-wg-quick",
+	}
+	for _, s := range stale {
+		if _, err := os.Stat(s); err == nil {
+			disabled := s + ".disabled"
+			// Don't clobber an existing .disabled backup
+			if _, err := os.Stat(disabled); err != nil {
+				os.Rename(s, disabled)
+				fmt.Printf("Disabled stale init script: %s (was breaking boot)\n", s)
+			} else {
+				os.Remove(s)
+				fmt.Printf("Removed stale init script: %s\n", s)
+			}
+		}
+	}
 }

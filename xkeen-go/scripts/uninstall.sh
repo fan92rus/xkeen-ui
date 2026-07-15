@@ -58,7 +58,10 @@ killall -HUP crond 2>/dev/null || true
 
 # 5. Remove rc.d symlinks
 log "Removing rc.d symlinks..."
-rm -f "$RC_DIR/S99xkeen-ui" "$RC_DIR/K01xkeen-ui"
+rm -f "$RC_DIR/S70xkeen-ui" "$RC_DIR/S99xkeen-ui" "$RC_DIR/K01xkeen-ui"
+
+# 5b. Remove autostart symlinks (S70 current, S99 legacy)
+rm -f "/opt/etc/init.d/S70xkeen-ui" "/opt/etc/init.d/S99xkeen-ui"
 
 # 5. Remove init script
 if [ -f "$INIT_SCRIPT" ]; then
