@@ -391,16 +391,19 @@ func (s *Scheduler) checkAndRefresh() {
 
 // RefreshAll fetches all enabled subscriptions and updates the store's proxy cache.
 // Subscriptions are fetched in parallel goroutines, each with its own 30s timeout.
-// The method waits for all fetches to complete before updating the proxy cache.
+// Each successfully refreshed subscription is committed atomically via
+// ReplaceProxiesForSubscription, so concurrent RefreshOne/HTTP fetch calls
+// cannot lose data.
 func (s *Scheduler) RefreshAll() error {
 	cfg := s.store.GetConfig()
 
 	var (
 		mu         sync.Mutex
-		merged     []*ProxyEntry
+		results    map[string][]*ProxyEntry // sub.ID -> fetched entries
 		anySuccess bool
 		wg         sync.WaitGroup
 	)
+	results = make(map[string][]*ProxyEntry)
 
 	for _, sub := range cfg.Subscriptions {
 		if !sub.Enabled || sub.IsBuiltin {
@@ -437,7 +440,7 @@ func (s *Scheduler) RefreshAll() error {
 			}
 
 			mu.Lock()
-			merged = append(merged, result.Entries...)
+			results[sub.ID] = result.Entries
 			anySuccess = true
 			mu.Unlock()
 		}()
@@ -446,8 +449,14 @@ func (s *Scheduler) RefreshAll() error {
 	wg.Wait()
 
 	if anySuccess {
-		GenerateTags(merged)
-		s.store.SetProxies(merged)
+		// Commit each subscription atomically to avoid losing data to
+		// concurrent RefreshOne/HTTP fetch calls. GenerateTags runs under
+		// the store lock via the transform callback for consistency.
+		for subID, entries := range results {
+			s.store.ReplaceProxiesForSubscription(subID, entries, func(merged []*ProxyEntry) {
+				GenerateTags(merged)
+			})
+		}
 		if s.OnUpdate != nil {
 			s.OnUpdate()
 		}

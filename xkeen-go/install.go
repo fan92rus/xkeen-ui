@@ -310,15 +310,24 @@ func cleanupStaleInitScripts() {
 		"/opt/etc/init.d/S89amnezia-wg-quick",
 	}
 	for _, s := range stale {
-		if _, err := os.Stat(s); err == nil {
-			disabled := s + ".disabled"
-			// Don't clobber an existing .disabled backup
-			if _, err := os.Stat(disabled); err != nil {
-				os.Rename(s, disabled)
-				fmt.Printf("Disabled stale init script: %s (was breaking boot)\n", s)
+		if _, err := os.Stat(s); err != nil {
+			continue // script not present, nothing to do
+		}
+		disabled := s + ".disabled"
+		if _, err := os.Stat(disabled); err != nil {
+			// No existing .disabled — rename the script to .disabled
+			if err := os.Rename(s, disabled); err != nil {
+				fmt.Printf("Warning: failed to disable stale init script %s: %v\n", s, err)
 			} else {
-				os.Remove(s)
-				fmt.Printf("Removed stale init script: %s\n", s)
+				fmt.Printf("Disabled stale init script: %s (was breaking boot)\n", s)
+			}
+		} else {
+			// .disabled already exists from a previous run — just remove
+			// the active script, keeping the original .disabled backup.
+			if err := os.Remove(s); err != nil {
+				fmt.Printf("Warning: failed to remove stale init script %s: %v\n", s, err)
+			} else {
+				fmt.Printf("Removed stale init script: %s (backup at %s)\n", s, disabled)
 			}
 		}
 	}

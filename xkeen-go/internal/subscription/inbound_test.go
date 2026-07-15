@@ -18,8 +18,6 @@ func TestDetectInboundProxy_SOCKS(t *testing.T) {
 	}
 
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	if got != "socks5://127.0.0.1:1080" {
 		t.Errorf("got %q, want socks5://127.0.0.1:1080", got)
 	}
@@ -37,8 +35,6 @@ func TestDetectInboundProxy_HTTP(t *testing.T) {
 	}
 
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	if got != "http://127.0.0.1:1087" {
 		t.Errorf("got %q, want http://127.0.0.1:1087", got)
 	}
@@ -57,8 +53,6 @@ func TestDetectInboundProxy_PrioritySocksOverHTTP(t *testing.T) {
 	}
 
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	if got != "socks5://127.0.0.1:1080" {
 		t.Errorf("got %q, socks5 must take priority", got)
 	}
@@ -67,8 +61,6 @@ func TestDetectInboundProxy_PrioritySocksOverHTTP(t *testing.T) {
 func TestDetectInboundProxy_NoInboundsFile(t *testing.T) {
 	dir := t.TempDir()
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	if got != "" {
 		t.Errorf("got %q, want empty string when no inbounds file", got)
 	}
@@ -86,8 +78,6 @@ func TestDetectInboundProxy_OnlyDokodemoDoor(t *testing.T) {
 	}
 
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	if got != "" {
 		t.Errorf("dokodemo-door should be ignored, got %q", got)
 	}
@@ -105,8 +95,6 @@ func TestDetectInboundProxy_MultipleFiles_FirstWins(t *testing.T) {
 	}
 
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	// 01_ должен победить 02_ по лексикографической сортировке
 	if got != "socks5://127.0.0.1:1080" {
 		t.Errorf("expected first file (01_) to win, got %q", got)
@@ -116,8 +104,6 @@ func TestDetectInboundProxy_MultipleFiles_FirstWins(t *testing.T) {
 func TestDetectInboundProxy_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	got := DetectInboundProxy(dir)
-	if false {
-	}
 	if got != "" {
 		t.Errorf("got %q, want empty for empty dir", got)
 	}
