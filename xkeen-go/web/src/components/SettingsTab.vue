@@ -5,6 +5,7 @@ import { useI18nStore } from '../stores/i18n.js';
 import * as sub from '../services/subscription.js';
 import * as metrics from '../services/metrics.js';
 import * as installApi from '../services/install.js';
+import { checkNetwork } from '../services/diagnostics.js';
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -67,12 +68,33 @@ async function saveAutoApply() {
 
 import { fmtTime as fmtNextRun } from '../utils/format.js';
 
+/* ---- network diagnostics ---- */
+const netCheck = ref({ loading: false, ip: '', source: '', latency: null, error: '', checked: false });
+
+async function runNetworkCheck() {
+  netCheck.value = { loading: true, ip: '', source: '', latency: null, error: '', checked: false };
+  try {
+    const r = await checkNetwork();
+    netCheck.value = {
+      loading: false,
+      ip: r.exit_ip || '',
+      source: r.source || '',
+      latency: r.latency_ms ?? null,
+      error: r.error || '',
+      checked: true,
+    };
+  } catch (e) {
+    netCheck.value = { loading: false, ip: '', source: '', latency: null, error: e.message || String(e), checked: true };
+  }
+}
+
 const sections = [
   { id: 'mode', icon: '⚡', label: i18n.t('settings.mode_section') },
   { id: 'logging', icon: '📋', label: i18n.t('settings.logs_section') },
   { id: 'updates', icon: '🔄', label: i18n.t('settings.update_section') },
   { id: 'security', icon: '🔒', label: i18n.t('settings.security_section') },
   { id: 'autoapply', icon: '📅', label: i18n.t('settings.subs_section') },
+  { id: 'network', icon: '🔍', label: i18n.t('settings.net_section') },
   { id: 'metrics', icon: '📊', label: i18n.t('settings.metrics_section') },
   { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
   { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
@@ -356,6 +378,43 @@ onMounted(() => {
               <button :disabled="autoApplySaving" class="btn btn-primary" @click="saveAutoApply()">
                 {{ autoApplySaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
               </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Network diagnostics -->
+        <section id="network" class="s-section">
+          <h2 class="s-title">🔍 {{ i18n.t('settings.net_section') }}</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.net_check_title') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.net_check_desc') }}</div>
+              </div>
+              <button :disabled="netCheck.loading" class="btn btn-primary" @click="runNetworkCheck()">
+                {{ netCheck.loading ? i18n.t('settings.net_checking') : i18n.t('settings.net_check_btn') }}
+              </button>
+            </div>
+
+            <div v-if="netCheck.checked && !netCheck.loading" class="s-row">
+              <div class="s-row-main">
+                <template v-if="netCheck.error">
+                  <div class="s-row-label" style="color: var(--status-error, #e74c3c)">Error</div>
+                  <div class="s-row-desc">{{ netCheck.error }}</div>
+                </template>
+                <template v-else>
+                  <div class="s-row-label">
+                    {{ i18n.t('settings.net_exit_ip') }}:
+                    <code style="font-size: 14px; font-weight: 600">{{ netCheck.ip }}</code>
+                    <span v-if="netCheck.latency !== null" style="color: var(--text-gray); margin-left: 8px">{{ netCheck.latency }}ms</span>
+                  </div>
+                  <div class="s-row-desc">
+                    <span v-if="netCheck.source === 'direct'" class="badge badge-muted">{{ i18n.t('subs.source_direct') }}</span>
+                    <span v-else class="badge badge-success">VPN</span>
+                    <span style="margin-left: 8px">{{ netCheck.source }}</span>
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </section>

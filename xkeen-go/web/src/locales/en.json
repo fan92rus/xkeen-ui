@@ -182,6 +182,7 @@
     "security_section": "Security",
     "subs_section": "Subscriptions",
     "metrics_section": "Metrics",
+    "net_section": "Network Diagnostics",
     "lang_section": "Language",
     "lang_label": "Interface language",
     "mode": "Mode",
@@ -322,7 +323,11 @@
     "source_direct": "Direct",
     "source_awg": "Local",
     "net_check": "Check IP",
-    "net_check_title": "Check which IP requests go through"
+    "net_check_title": "Check which IP requests go through",
+    "net_check_desc": "The request goes through the same channel as subscription downloads. Shows the real exit IP.",
+    "net_check_btn": "Check",
+    "net_checking": "Checking...",
+    "net_exit_ip": "Exit IP"
   },
   "toast": {
     "copied": "Output copied to clipboard",
