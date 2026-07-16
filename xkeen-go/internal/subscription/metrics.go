@@ -53,12 +53,12 @@ func WriteMetricsConfig(xrayDir string, port int) error {
 		// Write 08_metrics.json with stats + metrics + policy.system
 		metricsJSON := GenerateMetricsJSON(port)
 		if metricsJSON != nil {
-			if err := os.WriteFile(metricsPath, metricsJSON, 0644); err != nil {
+			if err := os.WriteFile(metricsPath, metricsJSON, 0o600); err != nil {
 				return fmt.Errorf("write metrics: %w", err)
 			}
 		}
 	} else {
-		os.Remove(metricsPath)
+		_ = os.Remove(metricsPath)
 	}
 	return nil
 }

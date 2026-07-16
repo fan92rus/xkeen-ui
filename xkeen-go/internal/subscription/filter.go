@@ -45,8 +45,6 @@ func ApplyFilter(proxies []*ProxyEntry, filter *Filter) []*ProxyEntry {
 	return result
 }
 
-// compileRegexes compiles a list of regex pattern strings.
-// Invalid patterns are silently skipped.
 // ValidateRegexes validates all regex patterns in a filter, returning an error describing
 // the first invalid pattern (with which field it came from). Returns nil if all are valid.
 func ValidateRegexes(f *Filter) error {

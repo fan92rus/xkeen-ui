@@ -13,6 +13,8 @@ import (
 // This allows the API to accept both `"interval": 10` and `"interval": "10"`.
 type FlexibleInt int
 
+// UnmarshalJSON implements json.Unmarshaler for FlexibleInt.
+// It accepts both JSON numbers and JSON strings.
 func (fi *FlexibleInt) UnmarshalJSON(data []byte) error {
 	// Try number first
 	var n int

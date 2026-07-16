@@ -31,7 +31,9 @@ func ParseAWGConf(path string) (*AWGConf, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	result := &AWGConf{}
 	var current *AWGConfigSection

@@ -3,7 +3,6 @@
 // Generates a complete config.yaml from the same subscription data (proxies,
 // profiles, strategy) used by the Xray generator. Optionally converts existing
 // Xray routing rules from 05_routing.json into Mihomo rules.
-
 package subscription
 
 import (
@@ -68,7 +67,7 @@ type mihomoRule string
 type mihomoConfig struct {
 	Proxies     []*mihomoProxy     `yaml:"proxies"`
 	ProxyGroups []mihomoProxyGroup `yaml:"proxy-groups"`
-	Rules       []mihomoRule       `yaml:"rules"`
+	Rules       []string           `yaml:"rules"`
 }
 
 // ── Strategy mapping ──
@@ -308,7 +307,7 @@ func applyStreamSettings(proxy *mihomoProxy, ss map[string]interface{}) {
 // The default profile becomes the main "Proxy" group; other profiles
 // become named groups. A "Select" group with DIRECT/REJECT is always added.
 func buildMihomoProxyGroups(proxies []*mihomoProxy, profiles []Profile) []mihomoProxyGroup {
-	var groups []mihomoProxyGroup
+	groups := make([]mihomoProxyGroup, 0, len(profiles)+2)
 	allNames := make([]string, 0, len(proxies))
 	proxyNames := make(map[string]bool)
 	for _, p := range proxies {
@@ -392,7 +391,7 @@ func hasActiveFilter(f Filter) bool {
 		len(f.IncludeRegexes) > 0 || len(f.ExcludeRegexes) > 0 || f.MaxProxies > 0
 }
 
-func matchFilter(name string, f Filter) bool {
+func matchFilter(_ string, f Filter) bool {
 	// Simple stub — real matching uses the same logic as ApplyFilter
 	return true
 }
@@ -413,8 +412,8 @@ func profileGroupName(p Profile) string {
 
 // BuildMihomoRules generates a base set of Mihomo rules.
 // If xrayRouting is non-nil, it converts Xray routing rules to Mihomo format.
-func BuildMihomoRules(xrayRouting []byte) ([]mihomoRule, error) {
-	rules := []mihomoRule{
+func BuildMihomoRules(xrayRouting []byte) ([]string, error) {
+	rules := []string{
 		"GEOSITE,category-ads-all,REJECT",
 		"GEOIP,private,DIRECT",
 		"GEOIP,CN,DIRECT",
@@ -427,14 +426,15 @@ func BuildMihomoRules(xrayRouting []byte) ([]mihomoRule, error) {
 			return nil, fmt.Errorf("failed to convert Xray routing: %w", err)
 		}
 		// Insert converted rules before the MATCH fallback
-		rules = append(converted, rules[len(rules)-1])
+		rules = converted
+		rules = append(rules, "MATCH,Proxy")
 	}
 
 	return rules, nil
 }
 
 // convertXrayRouting converts Xray 05_routing.json rules to Mihomo rules.
-func convertXrayRouting(data []byte) ([]mihomoRule, error) {
+func convertXrayRouting(data []byte) ([]string, error) {
 	var routing struct {
 		Rules     []map[string]interface{} `json:"rules"`
 		Balancers []map[string]interface{} `json:"balancers"`
@@ -452,7 +452,7 @@ func convertXrayRouting(data []byte) ([]mihomoRule, error) {
 		}
 	}
 
-	var rules []mihomoRule
+	var rules []string
 	for _, r := range routing.Rules {
 		converted := convertXrayRule(r, balancerGroup)
 		rules = append(rules, converted...)
@@ -462,7 +462,7 @@ func convertXrayRouting(data []byte) ([]mihomoRule, error) {
 }
 
 // convertXrayRule converts a single Xray rule to one or more Mihomo rules.
-func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]string) []mihomoRule {
+func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]string) []string {
 	outboundTag, _ := rule["outboundTag"].(string)
 	balancerTag, _ := rule["balancerTag"].(string)
 
@@ -486,12 +486,12 @@ func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]strin
 		}
 	}
 
-	var rules []mihomoRule
+	var rules []string
 
 	// Domain rules
 	if domains, ok := getStringSlice(rule, "domain"); ok {
 		for _, d := range domains {
-			rules = append(rules, mihomoRule("DOMAIN-SUFFIX,"+d+","+target))
+			rules = append(rules, "DOMAIN-SUFFIX,"+d+","+target)
 		}
 	}
 
@@ -499,9 +499,9 @@ func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]strin
 	if suffixes, ok := getStringSlice(rule, "domain_suffix"); ok {
 		for _, d := range suffixes {
 			if strings.HasPrefix(d, "geosite:") {
-				rules = append(rules, mihomoRule("GEOSITE,"+strings.TrimPrefix(d, "geosite:")+","+target))
+				rules = append(rules, "GEOSITE,"+strings.TrimPrefix(d, "geosite:")+","+target)
 			} else {
-				rules = append(rules, mihomoRule("DOMAIN-SUFFIX,"+d+","+target))
+				rules = append(rules, "DOMAIN-SUFFIX,"+d+","+target)
 			}
 		}
 	}
@@ -509,14 +509,14 @@ func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]strin
 	// Domain keyword rules
 	if keywords, ok := getStringSlice(rule, "domain_keyword"); ok {
 		for _, k := range keywords {
-			rules = append(rules, mihomoRule("DOMAIN-KEYWORD,"+k+","+target))
+			rules = append(rules, "DOMAIN-KEYWORD,"+k+","+target)
 		}
 	}
 
 	// Domain regex rules
 	if regexes, ok := getStringSlice(rule, "domain_regex"); ok {
 		for _, re := range regexes {
-			rules = append(rules, mihomoRule("DOMAIN-REGEX,"+re+","+target))
+			rules = append(rules, "DOMAIN-REGEX,"+re+","+target)
 		}
 	}
 
@@ -524,9 +524,9 @@ func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]strin
 	if ips, ok := getStringSlice(rule, "ip"); ok {
 		for _, ip := range ips {
 			if strings.HasPrefix(ip, "geoip:") {
-				rules = append(rules, mihomoRule("GEOIP,"+strings.TrimPrefix(ip, "geoip:")+","+target))
+				rules = append(rules, "GEOIP,"+strings.TrimPrefix(ip, "geoip:")+","+target)
 			} else {
-				rules = append(rules, mihomoRule("IP-CIDR,"+ip+","+target))
+				rules = append(rules, "IP-CIDR,"+ip+","+target)
 			}
 		}
 	}
@@ -534,12 +534,12 @@ func convertXrayRule(rule map[string]interface{}, balancerGroup map[string]strin
 	// Port rules
 	if ports, ok := rule["port"]; ok {
 		if portStr, ok := ports.(string); ok {
-			rules = append(rules, mihomoRule("DST-PORT,"+portStr+","+target))
+			rules = append(rules, "DST-PORT,"+portStr+","+target)
 		}
 	}
 	if sourcePorts, ok := rule["source_port"]; ok {
 		if portStr, ok := sourcePorts.(string); ok {
-			rules = append(rules, mihomoRule("SRC-PORT,"+portStr+","+target))
+			rules = append(rules, "SRC-PORT,"+portStr+","+target)
 		}
 	}
 

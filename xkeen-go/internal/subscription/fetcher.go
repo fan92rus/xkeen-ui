@@ -68,7 +68,7 @@ func newDirectTransport() *http.Transport {
 		Timeout: 10 * time.Second,
 		Resolver: &net.Resolver{
 			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			Dial: func(ctx context.Context, _, address string) (net.Conn, error) {
 				return dialDNSServers(ctx, address)
 			},
 		},
@@ -131,7 +131,7 @@ func newProxiedTransport(proxyURL string) (*http.Transport, error) {
 					// Best-effort cleanup if the dial completes late.
 					go func() {
 						if r := <-ch; r.conn != nil {
-							r.conn.Close()
+							_ = r.conn.Close()
 						}
 					}()
 					return nil, ctx.Err()
@@ -229,8 +229,19 @@ func attemptCtx(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, timeout)
 }
 
-func (f *Fetcher) FetchWithCascade(ctx context.Context, url string) (*FetchResult, error) {
-	if url == "" {
+// FetchWithCascade downloads the subscription with a two-stage strategy:
+//
+//	1. If a proxy is configured (see SetProxyURL), try fetching through it
+//	   with a 20s budget. On success, return SourceProxy.
+//	2. On proxy failure (or if no proxy is set), fall back to a direct
+//	   fetch with a 20s budget. On success, return SourceDirect.
+//	3. If both stages fail, return an aggregated error describing both
+//	   attempts so the caller can surface a useful diagnostic.
+//
+// The parent ctx bounds the total operation; each stage also receives its
+// own child timeout so a hung proxy does not consume the entire budget.
+func (f *Fetcher) FetchWithCascade(ctx context.Context, subURL string) (*FetchResult, error) {
+	if subURL == "" {
 		return nil, fmt.Errorf("subscription URL is empty")
 	}
 
@@ -251,7 +262,7 @@ func (f *Fetcher) FetchWithCascade(ctx context.Context, url string) (*FetchResul
 				Transport: transport,
 			}
 		pCtx, pCancel := attemptCtx(ctx)
-			entries, err := f.doFetch(pCtx, client, url)
+			entries, err := f.doFetch(pCtx, client, subURL)
 			pCancel()
 			if err == nil {
 				return &FetchResult{Entries: entries, Source: SourceProxy}, nil
@@ -262,7 +273,7 @@ func (f *Fetcher) FetchWithCascade(ctx context.Context, url string) (*FetchResul
 
 	// Direct attempt — own child context so a proxy timeout doesn't starve it.
 	dCtx, dCancel := attemptCtx(ctx)
-	directEntries, directErr := f.doFetch(dCtx, f.client, url)
+	directEntries, directErr := f.doFetch(dCtx, f.client, subURL)
 	dCancel()
 	if directErr == nil {
 		return &FetchResult{Entries: directEntries, Source: SourceDirect}, nil
@@ -277,8 +288,8 @@ func (f *Fetcher) FetchWithCascade(ctx context.Context, url string) (*FetchResul
 
 // doFetch performs a single HTTP GET using the provided client, decodes
 // base64 if needed, and parses each share URI into a ProxyEntry.
-func (f *Fetcher) doFetch(ctx context.Context, client *http.Client, url string) ([]*ProxyEntry, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (f *Fetcher) doFetch(ctx context.Context, client *http.Client, subURL string) ([]*ProxyEntry, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, subURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -315,8 +326,8 @@ func (f *Fetcher) doFetch(ctx context.Context, client *http.Client, url string) 
 // This is a backward-compatible wrapper around FetchWithCascade: it returns
 // only the entries (the caller loses the source information). New callers
 // should use FetchWithCascade.
-func (f *Fetcher) Fetch(ctx context.Context, url string) ([]*ProxyEntry, error) {
-	result, err := f.FetchWithCascade(ctx, url)
+func (f *Fetcher) Fetch(ctx context.Context, subURL string) ([]*ProxyEntry, error) {
+	result, err := f.FetchWithCascade(ctx, subURL)
 	if err != nil {
 		return nil, err
 	}

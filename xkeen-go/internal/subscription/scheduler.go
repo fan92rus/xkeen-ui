@@ -78,7 +78,7 @@ func (s *Scheduler) SetMetricsPort(port int) {
 			}
 		}
 	} else {
-		os.Remove(metricsPath)
+		_ = os.Remove(metricsPath)
 	}
 }
 
@@ -102,12 +102,12 @@ func (s *Scheduler) WithApplyLock(fn func() error) error {
 // This prevents partial/corrupted files on crash mid-write.
 func atomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		// Clean up the orphaned temp file on rename failure.
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
@@ -232,7 +232,7 @@ func (s *Scheduler) runAutoApply() {
 	if s.RestartCmd != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, "sh", "-c", s.RestartCmd).CombinedOutput()
+		out, err := exec.CommandContext(ctx, "sh", "-c", s.RestartCmd).CombinedOutput() //nolint:gosec // RestartCmd is from config, set by user
 		if err != nil {
 			log.Printf("[subscription] auto-apply: restart failed: %v (%s)", err, string(out))
 		} else {
@@ -277,7 +277,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
@@ -302,7 +302,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 			return fmt.Errorf("write observatory: %w", err)
 		}
 	} else {
-		os.Remove(obsPath)
+		_ = os.Remove(obsPath)
 	}
 
 	// Metrics — GenerateMetricsJSON includes policy.system for traffic stats
@@ -315,7 +315,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 			}
 		}
 	} else {
-		os.Remove(metricsPath)
+		_ = os.Remove(metricsPath)
 	}
 
 	return nil
@@ -453,9 +453,11 @@ func (s *Scheduler) RefreshAll() error {
 		// concurrent RefreshOne/HTTP fetch calls. GenerateTags runs under
 		// the store lock via the transform callback for consistency.
 		for subID, entries := range results {
-			s.store.ReplaceProxiesForSubscription(subID, entries, func(merged []*ProxyEntry) {
+			if err := s.store.ReplaceProxiesForSubscription(subID, entries, func(merged []*ProxyEntry) {
 				GenerateTags(merged)
-			})
+			}); err != nil {
+				log.Printf("[subscription] failed to commit refresh for %q: %v", subID, err)
+			}
 		}
 		if s.OnUpdate != nil {
 			s.OnUpdate()

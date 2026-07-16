@@ -76,7 +76,7 @@ func (s *Store) Save() error {
 // saveConfig writes a config to disk (caller handles locking if needed).
 func (s *Store) saveConfig(cfg *SubscriptionConfig) error {
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -87,12 +87,12 @@ func (s *Store) saveConfig(cfg *SubscriptionConfig) error {
 
 	// Write atomically via temp file.
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
 	if err := os.Rename(tmp, s.path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("failed to rename config: %w", err)
 	}
 
@@ -119,7 +119,9 @@ func (s *Store) initBuiltinSubscriptions() {
 		Enabled:   true,
 		IsBuiltin: true,
 	})
-	s.saveConfig(s.config)
+	if err := s.saveConfig(s.config); err != nil {
+		log.Printf("[store] failed to save init config: %v", err)
+	}
 }
 
 // IsBuiltinSubscription returns true if the subscription ID is a built-in
@@ -190,28 +192,29 @@ func (s *Store) DeleteSubscription(id string) error {
 	defer s.mu.Unlock()
 
 	for i, existing := range s.config.Subscriptions {
-		if existing.ID == id {
-			if existing.IsBuiltin {
-				return fmt.Errorf("cannot delete built-in subscription: %s", id)
-			}
-
-			s.config.Subscriptions = append(
-				s.config.Subscriptions[:i],
-				s.config.Subscriptions[i+1:]...,
-			)
-
-			// Remove proxies belonging to the deleted subscription
-			filtered := make([]*ProxyEntry, 0, len(s.proxies))
-			for _, p := range s.proxies {
-				if p.SubscriptionID != id {
-					filtered = append(filtered, p)
-				}
-			}
-			s.proxies = filtered
-			s.saveProxyCache(s.proxies)
-
-			return s.saveConfig(s.config)
+		if existing.ID != id {
+			continue
 		}
+		if existing.IsBuiltin {
+			return fmt.Errorf("cannot delete built-in subscription: %s", id)
+		}
+
+		s.config.Subscriptions = append(
+			s.config.Subscriptions[:i],
+			s.config.Subscriptions[i+1:]...,
+		)
+
+		// Remove proxies belonging to the deleted subscription
+		filtered := make([]*ProxyEntry, 0, len(s.proxies))
+		for _, p := range s.proxies {
+			if p.SubscriptionID != id {
+				filtered = append(filtered, p)
+			}
+		}
+		s.proxies = filtered
+		s.saveProxyCache(s.proxies)
+
+		return s.saveConfig(s.config)
 	}
 
 	return fmt.Errorf("subscription %s not found", id)
@@ -313,7 +316,11 @@ func (s *Store) GetProfiles() []Profile {
 		return cp
 	}
 	var cp []Profile
-	json.Unmarshal(data, &cp)
+	if err := json.Unmarshal(data, &cp); err != nil {
+		// Fallback: shallow copy
+		cp = make([]Profile, len(s.config.Profiles))
+		copy(cp, s.config.Profiles)
+	}
 	return cp
 }
 
@@ -463,7 +470,9 @@ func (s *Store) migrateProfiles() {
 	// Clear legacy fields
 	s.config.Filters = nil
 	s.config.Strategy = nil
-	s.saveConfig(s.config)
+	if err := s.saveConfig(s.config); err != nil {
+		log.Printf("[store] failed to clear legacy config: %v", err)
+	}
 }
 
 // migrateRegexFields converts legacy single-string regex fields to string slices.
@@ -494,7 +503,9 @@ func (s *Store) migrateRegexFields() {
 		}
 	}
 	if dirty {
-		s.saveConfig(s.config)
+		if err := s.saveConfig(s.config); err != nil {
+			log.Printf("[store] failed to save regex migration: %v", err)
+		}
 	}
 }
 
@@ -508,7 +519,7 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp) // cleanup on rename failure
+		_ = os.Remove(tmp) // cleanup on rename failure
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 	return nil
@@ -537,7 +548,7 @@ func (s *Store) loadProxyCache() {
 func (s *Store) saveProxyCache(proxies []*ProxyEntry) {
 	cachePath := s.proxyCachePath()
 	if len(proxies) == 0 {
-		os.Remove(cachePath) // clean up empty cache
+		_ = os.Remove(cachePath) // clean up empty cache
 		return
 	}
 	data, err := json.Marshal(proxies)
@@ -545,7 +556,7 @@ func (s *Store) saveProxyCache(proxies []*ProxyEntry) {
 		log.Printf("[store] failed to marshal proxy cache: %v", err)
 		return
 	}
-	if err := atomicWriteFile(cachePath, data, 0644); err != nil {
+	if err := atomicWriteFile(cachePath, data, 0o600); err != nil {
 		log.Printf("[store] failed to write proxy cache: %v", err)
 	}
 }
@@ -658,6 +669,9 @@ func cloneConfig(cfg *SubscriptionConfig) *SubscriptionConfig {
 		return &cp
 	}
 	var cp SubscriptionConfig
-	json.Unmarshal(data, &cp)
+	if err := json.Unmarshal(data, &cp); err != nil {
+		// Fallback: shallow copy
+		cp = *cfg
+	}
 	return &cp
 }

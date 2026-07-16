@@ -3,6 +3,7 @@ package subscription
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,7 +47,7 @@ func WriteAWGMeta(awgDir, name string, meta AWGMeta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(metaPath, data, 0600)
+	return os.WriteFile(metaPath, data, 0o600)
 }
 
 // ScanAWGConfigs scans awgDir for *.conf files and returns the list of
@@ -184,7 +185,9 @@ func (s *Store) RemoveAWGConfig(name string) (mark int, ok bool) {
 		if c.Name == name {
 			mark = c.Mark
 			s.config.AWGConfigs = append(s.config.AWGConfigs[:i], s.config.AWGConfigs[i+1:]...)
-			s.saveConfig(s.config)
+			if err := s.saveConfig(s.config); err != nil {
+				log.Printf("[awg] failed to save config after removing %q: %v", name, err)
+			}
 			return mark, true
 		}
 	}

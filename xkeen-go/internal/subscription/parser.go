@@ -31,7 +31,7 @@ func ParseURI(rawURI string) (*ProxyEntry, error) {
 	}
 }
 
-// --- VLESS ---
+// VLESS parser
 
 func parseVless(rawURI string) (*ProxyEntry, error) {
 	// vless://uuid@host:port?params#fragment
@@ -232,7 +232,7 @@ func buildTLSSettings(params url.Values) map[string]interface{} {
 	return tls
 }
 
-// --- TROJAN ---
+// TROJAN parser
 
 func parseTrojan(rawURI string) (*ProxyEntry, error) {
 	// trojan://password@host:port?params#fragment
@@ -372,7 +372,7 @@ func buildTrojanOutbound(password, host string, port int, params url.Values, tag
 	return data, nil
 }
 
-// --- HYSTERIA2 ---
+// HYSTERIA2 parser
 
 func parseHysteria2(rawURI string) (*ProxyEntry, error) {
 	// hysteria2://password@host:port?params#fragment
@@ -569,8 +569,8 @@ func extractCountry(remarks string) string {
 		if isRegionalIndicator(r) && i+size <= len(remarks) {
 			r2, _ := utf8.DecodeRuneInString(remarks[i+size:])
 			if isRegionalIndicator(r2) {
-				c1 := rune(r - 0x1F1E6 + 'A')
-				c2 := rune(r2 - 0x1F1E6 + 'A')
+				c1 := r - 0x1F1E6 + 'A'
+				c2 := r2 - 0x1F1E6 + 'A'
 				return string([]rune{c1, c2})
 			}
 		}
@@ -594,7 +594,7 @@ func parseHostPort(s string) (host, port string, err error) {
 		}
 		host = s[1:closeBracket]
 		rest := s[closeBracket+1:]
-		if len(rest) == 0 || rest[0] != ':' {
+		if rest == "" || rest[0] != ':' {
 			return "", "", fmt.Errorf("missing port after IPv6 address")
 		}
 		port = rest[1:]
@@ -636,21 +636,6 @@ func base64Decode(s string) ([]byte, error) {
 	return base64.URLEncoding.DecodeString(paddedURL)
 }
 
-// jsonInt extracts an integer from a JSON number that might be string or float.
-func jsonInt(v any) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case string:
-		if i, err := strconv.Atoi(n); err == nil {
-			return i
-		}
-	case int:
-		return n
-	}
-	return 0
-}
-
 // extractRemarks decodes the fragment portion of a URI.
 func extractRemarks(fragment string) string {
 	if fragment == "" {
@@ -681,7 +666,7 @@ func ParseSubscriptionContent(data []byte) ([]*ProxyEntry, error) {
 	}
 
 	lines := strings.Split(content, "\n")
-	var entries []*ProxyEntry
+	entries := make([]*ProxyEntry, 0, len(lines))
 	var errors []string
 
 	for _, line := range lines {
@@ -711,7 +696,7 @@ func ParseSubscriptionContent(data []byte) ([]*ProxyEntry, error) {
 
 // ParseProxiesFromURIs parses a list of share URIs (not base64-encoded).
 func ParseProxiesFromURIs(uris []string) ([]*ProxyEntry, error) {
-	var entries []*ProxyEntry
+	entries := make([]*ProxyEntry, 0, len(uris))
 	var parseErrors int
 	for _, uri := range uris {
 		uri = strings.TrimSpace(uri)
