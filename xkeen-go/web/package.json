@@ -9,8 +9,7 @@
         "test:e2e": "node test/subscription-ui.test.js",
         "test:profiles": "node test/profiles-ui.test.js",
         "test": "vitest run",
-        "test:watch": "vitest",
-        "prepare": "cd .. && husky xkeen-go/web/.husky || sh scripts/setup-hooks.sh"
+        "test:watch": "vitest"
     },
     "dependencies": {
         "@codemirror/lang-json": "^6.0.1",
@@ -31,8 +30,6 @@
         "@vitest/coverage-v8": "^4.1.9",
         "@vue/test-utils": "^2.4.11",
         "happy-dom": "^20.10.6",
-        "husky": "^9.1.7",
-        "lint-staged": "^15.2.0",
         "puppeteer": "^25.1.0",
         "vite": "^6.3.0",
         "vitest": "^4.1.9"

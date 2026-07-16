@@ -1,13 +1,17 @@
-# golangci-lint configuration for xkeen-go
+# golangci-lint v2 configuration for xkeen-go
 # Docs: https://golangci-lint.run/usage/configuration/
+# v2 format requires explicit version field and uses modules-based layout
+
+version: "2"
 
 run:
   timeout: 5m
   go: "1.26.5"
 
 linters:
+  # --- Baseline (enabled by default) ---
+  default: none
   enable:
-    # --- Baseline (enabled by default in golangci-lint) ---
     - errcheck      # Detect unchecked errors (critical for robustness)
     - gosimple      # Simplifications
     - govet         # go vet checks
@@ -28,8 +32,6 @@ linters:
 
 linters-settings:
   errcheck:
-    # Don't ignore type assertions in goroutines (common bug source)
-    check-type-assertions: false
     # Allow blank identifier for known-ignored errors
     check-blank: false
     # Exclude these functions from requiring error checks
@@ -94,7 +96,6 @@ issues:
       linters:
         - gosec       # Security checks relaxed in tests
         - errcheck    # Don't require error handling in every test assertion
-        - goconst     # Don't complain about magic numbers in tests
         - prealloc    # Don't require slice preallocation in tests
 
     # testutil package: mocks don't need full error handling
@@ -103,10 +104,7 @@ issues:
         - errcheck
         - gosec
 
-    # Main package: allow Some unused (install/uninstall commands)
+    # Main package: allow some things (install/uninstall commands)
     - path: main\.go
       linters:
         - gosec       # Allow os.Exec for install commands
-
-  # Don't auto-exclude these patterns
-  exclude-use-default: false
