@@ -108,11 +108,15 @@ jobs:
 
       # golangci-lint is installed via the official action which handles
       # caching and version pinning automatically.
+      # install-mode: goinstall — build from source using the Go version
+      # installed above (Go 1.26), required because the prebuilt binary
+      # (built with Go 1.24) can't analyze Go 1.26.5 code.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1
           working-directory: xkeen-go
+          install-mode: goinstall
 
   security:
     name: Security Scan (Semgrep)
