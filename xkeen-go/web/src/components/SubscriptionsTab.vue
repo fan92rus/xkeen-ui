@@ -420,8 +420,6 @@ onMounted(async () => {
             <span class="dot" :class="s.enabled ? 'on' : 'off'" />
             <span class="name">{{ s.name || i18n.t('subs.unnamed') }}</span>
             <span v-if="s.proxy_count" class="badge">{{ s.proxy_count }}</span>
-            <span v-if="s.last_source === 'xray-proxy'" class="badge src" :title="i18n.t('subs.source_proxy')">VPN</span>
-            <span v-else-if="s.last_source === 'awg-local'" class="badge src" :title="i18n.t('subs.source_awg')">{{ i18n.t('subs.source_awg') }}</span>
             <span v-if="s.last_fetch && s.last_fetch !== '0001-01-01T00:00:00Z'" class="meta">{{ fmtTime(s.last_fetch) }}</span>
             <span v-if="s.last_error" class="err" :title="s.last_error">!</span>
             <span class="acts">
