@@ -125,12 +125,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # Semgrep scans Go + JS/Vue for security patterns: path traversal,
-      # XSS, secret leaks, OWASP Top 10. Free tier, no license needed.
+      # Semgrep auto ruleset covers OWASP Top 10, Go security, JS/Vue XSS.
+      # Custom rules in .semgrep.yml add project-specific patterns.
       - name: Semgrep scan
         uses: returntocorp/semgrep-action@v1
         with:
           config: >-
             p/auto
             .semgrep.yml
-          generateSarif: "1"

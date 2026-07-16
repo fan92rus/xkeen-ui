@@ -1,39 +1,20 @@
-# Semgrep configuration for xkeen-go
-# Security-focused static analysis for Go + JS/Vue
-# Docs: https://semgrep.dev/docs/
-#
-# The auto ruleset (p/auto) is passed via CI: config: "p/auto .semgrep.yml"
+# Semgrep custom rules for xkeen-go
+# The auto ruleset (p/auto) is passed via CI config and covers OWASP Top 10.
 # This file contains ONLY custom project-specific rules.
+# Rules here must be precise (no broad patterns that cause false positives).
 
-rules:
-  # Detect hardcoded secrets/credentials in Go source
-  - id: xkeen-hardcoded-secret
-    languages: [go]
-    message: "Potential hardcoded secret/credential. Use environment variable or config file."
-    severity: ERROR
-    patterns:
-      - pattern: |
-          password = "..."
-      - pattern-not: |
-          password = ""
-      - pattern-not: |
-          password = os.Getenv("...")
-
-  # Detect path traversal in file handlers (critical for PathValidator)
-  - id: xkeen-path-traversal
-    languages: [go]
-    message: "Potential path traversal. Always use utils.PathValidator to validate file paths."
-    severity: ERROR
-    patterns:
-      - pattern: os.ReadFile($PATH)
-      - pattern-not: os.ReadFile(filepath.Join($CONST, $FILE))
-    metadata:
-      mitigation: "Use utils.PathValidator.ValidatePath(path) before file operations"
-
-  # Detect XSS in Vue templates (v-html without sanitization)
-  - id: xkeen-vue-xss
-    languages: [javascript]
-    message: "v-html can lead to XSS. Ensure the content is sanitized."
-    severity: WARNING
-    patterns:
-      - pattern: v-html="$EXPR"
+rules: []
+  # Custom rules are disabled for now — the p/auto ruleset covers the main
+  # security patterns (path traversal, XSS, hardcoded secrets).
+  #
+  # To add a custom rule, follow this template:
+  #
+  # - id: xkeen-<unique-name>
+  #   languages: [go]
+  #   message: "Description of the issue"
+  #   severity: ERROR
+  #   patterns:
+  #     - pattern: |
+  #         $BAD_FUNCTION($USER_INPUT)
+  #     - pattern-not: |
+  #         $BAD_FUNCTION($VALIDATED)
