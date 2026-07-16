@@ -1,14 +1,11 @@
 # Semgrep configuration for xkeen-go
 # Security-focused static analysis for Go + JS/Vue
 # Docs: https://semgrep.dev/docs/
+#
+# The auto ruleset (p/auto) is passed via CI: config: "p/auto .semgrep.yml"
+# This file contains ONLY custom project-specific rules.
 
 rules:
-  # --- Use Semgrep auto rules (curated by r2c) ---
-  # Includes OWASP Top 10, Go security best practices, and JS/Vue XSS detection
-  - config: p/auto
-
-  # --- Custom project-specific rules ---
-
   # Detect hardcoded secrets/credentials in Go source
   - id: xkeen-hardcoded-secret
     languages: [go]
@@ -40,11 +37,3 @@ rules:
     severity: WARNING
     patterns:
       - pattern: v-html="$EXPR"
-
-paths:
-  exclude:
-    - "node_modules"
-    - "web/static/dist"
-    - "vendor"
-    - "build"
-    - ".pi-subagents"
