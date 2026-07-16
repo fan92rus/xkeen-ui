@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"bufio"
 	"context"
 	"crypto/sha256"
@@ -77,16 +78,16 @@ func parseSSEEvents(t *testing.T, body io.Reader) []map[string]interface{} {
 // mockGitHubAPI creates a mock GitHub API server.
 // stableHandler handles /repos/{owner}/{repo}/releases/latest
 // listHandler handles /repos/{owner}/{repo}/releases (can be nil)
-func mockGitHubAPI(t *testing.T, stableHandler http.HandlerFunc, listHandler http.HandlerFunc) *httptest.Server {
+func mockGitHubAPI(t *testing.T, stableHandler, listHandler http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	mux := http.NewServeMux()
+	serveMux := http.NewServeMux()
 	if stableHandler != nil {
-		mux.HandleFunc("/repos/fan92rus/xkeen-ui/releases/latest", stableHandler)
+		serveMux.HandleFunc("/repos/fan92rus/xkeen-ui/releases/latest", stableHandler)
 	}
 	if listHandler != nil {
-		mux.HandleFunc("/repos/fan92rus/xkeen-ui/releases", listHandler)
+		serveMux.HandleFunc("/repos/fan92rus/xkeen-ui/releases", listHandler)
 	}
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Download endpoint
 		if strings.Contains(r.URL.Path, "/releases/download/") {
 			// Serve a dummy binary file (must be >1MB for size check)
@@ -100,31 +101,7 @@ func mockGitHubAPI(t *testing.T, stableHandler http.HandlerFunc, listHandler htt
 		}
 		http.NotFound(w, r)
 	})
-	return httptest.NewServer(mux)
-}
-
-// createLargeFile creates a file of the given size with random-ish content.
-func createLargeFile(t *testing.T, path string, size int64) {
-	t.Helper()
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatalf("failed to create file: %v", err)
-	}
-	defer f.Close()
-	chunk := make([]byte, 4096)
-	for i := range chunk {
-		chunk[i] = byte(i % 256)
-	}
-	var written int64
-	for written < size {
-		remaining := size - written
-		n := int64(len(chunk))
-		if remaining < n {
-			n = remaining
-		}
-		f.Write(chunk[:n])
-		written += n
-	}
+	return httptest.NewServer(serveMux)
 }
 
 // ---------- Tests ----------
@@ -147,7 +124,7 @@ func TestNewUpdateHandler(t *testing.T) {
 
 func TestCheckUpdate_WithMockServer(t *testing.T) {
 	// Mock GitHub stable release endpoint
-	stableHandler := func(w http.ResponseWriter, r *http.Request) {
+	stableHandler := func(w http.ResponseWriter, _ *http.Request) {
 		release := GitHubRelease{
 			TagName:     "v99.0.0",
 			Name:        "v99.0.0",
@@ -168,7 +145,7 @@ func TestCheckUpdate_WithMockServer(t *testing.T) {
 	// For now test that the handler properly parses a valid response
 
 	router := newUpdateRouter(h)
-	req := httptest.NewRequest("GET", "/update/check", nil)
+	req := httptest.NewRequest("GET", "/update/check", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -194,12 +171,12 @@ func TestCheckUpdate_WithMockServer(t *testing.T) {
 func TestCheckUpdate_ErrorResponse(t *testing.T) {
 	// Test that when GitHub API fails, handler returns error in response (not HTTP error)
 	h := newUpdateHandler(t)
-	// Override to use an unreachable URL by using a cancelled context
+	// Override to use an unreachable URL by using a canceled context
 	router := newUpdateRouter(h)
 
 	// The handler will try to hit the real GitHub API which may or may not succeed.
 	// But the response format should always be consistent.
-	req := httptest.NewRequest("GET", "/update/check", nil)
+	req := httptest.NewRequest("GET", "/update/check", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -226,7 +203,7 @@ func TestCheckUpdate_DevChannel(t *testing.T) {
 	h := newUpdateHandler(t)
 	router := newUpdateRouter(h)
 
-	req := httptest.NewRequest("GET", "/update/check?prerelease=true", nil)
+	req := httptest.NewRequest("GET", "/update/check?prerelease=true", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -486,7 +463,7 @@ func TestDownloadWithChecksum_NoChecksumFile(t *testing.T) {
 func TestDownloadWithChecksum_DownloadError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -508,7 +485,7 @@ func TestDownloadWithChecksum_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(make([]byte, 1024))
 	}))
 	defer server.Close()
@@ -518,7 +495,7 @@ func TestDownloadWithChecksum_ContextCancelled(t *testing.T) {
 
 	err := h.downloadWithChecksum(ctx, binaryPath, server.URL+"/download/binary")
 	if err == nil {
-		t.Fatal("expected error with cancelled context")
+		t.Fatal("expected error with canceled context")
 	}
 }
 
@@ -546,13 +523,13 @@ func TestDownloadFile_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read downloaded file: %v", err)
 	}
-	if string(data) != string(content) {
+	if !bytes.Equal(data, content) {
 		t.Errorf("downloaded content mismatch: got %q, want %q", string(data), string(content))
 	}
 }
 
 func TestDownloadFile_HTTPError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -586,7 +563,7 @@ func TestStartUpdate_SSEHeaders(t *testing.T) {
 
 	// StartUpdate will try to download and fail, sending error SSE event
 	// We use a mock server that returns 404 for downloads
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -596,7 +573,7 @@ func TestStartUpdate_SSEHeaders(t *testing.T) {
 	h.downloadURL = server.URL + "/download/binary"
 
 	router := newUpdateRouter(h)
-	req := httptest.NewRequest("POST", "/update/start", nil)
+	req := httptest.NewRequest("POST", "/update/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -620,7 +597,7 @@ func TestStartUpdate_SSEHeaders(t *testing.T) {
 
 func TestStartUpdate_DownloadFail_SendsErrorEvent(t *testing.T) {
 	// When download fails, should send SSE error event
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -629,7 +606,7 @@ func TestStartUpdate_DownloadFail_SendsErrorEvent(t *testing.T) {
 	h.downloadURL = server.URL + "/download/binary"
 
 	router := newUpdateRouter(h)
-	req := httptest.NewRequest("POST", "/update/start", nil)
+	req := httptest.NewRequest("POST", "/update/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -675,7 +652,7 @@ func TestStartUpdate_Prerelease_UsesDevTag(t *testing.T) {
 	// Can't fully test download, but verify the URL construction logic
 	// by checking the handler starts properly with prerelease flag
 	router := newUpdateRouter(h)
-	req := httptest.NewRequest("POST", "/update/start?prerelease=true", nil)
+	req := httptest.NewRequest("POST", "/update/start?prerelease=true", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -705,7 +682,7 @@ func TestStartUpdate_FileTooSmall(t *testing.T) {
 	h.downloadURL = server.URL + "/download/binary"
 
 	router := newUpdateRouter(h)
-	req := httptest.NewRequest("POST", "/update/start", nil)
+	req := httptest.NewRequest("POST", "/update/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -905,7 +882,7 @@ func TestRegisterUpdateRoutes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.method+"_"+tc.path, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req := httptest.NewRequest(tc.method, tc.path, http.NoBody)
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 			// Should not return 405 (method not allowed) or 404
@@ -922,7 +899,7 @@ func TestRegisterUpdateRoutes(t *testing.T) {
 func TestGetLatestPrerelease_FallbackToStable(t *testing.T) {
 	// When no dev prerelease exists, should fall back to stable
 	stableCalled := false
-	stableHandler := func(w http.ResponseWriter, r *http.Request) {
+	stableHandler := func(w http.ResponseWriter, _ *http.Request) {
 		stableCalled = true
 		release := GitHubRelease{
 			TagName:    "v1.0.0",
@@ -932,7 +909,7 @@ func TestGetLatestPrerelease_FallbackToStable(t *testing.T) {
 	}
 
 	// All releases are stable (no dev prerelease)
-	listHandler := func(w http.ResponseWriter, r *http.Request) {
+	listHandler := func(w http.ResponseWriter, _ *http.Request) {
 		releases := []GitHubRelease{
 			{TagName: "v1.0.0", Prerelease: false},
 			{TagName: "v0.9.0", Prerelease: false},
@@ -1053,7 +1030,7 @@ func TestGetLatestStableRelease_Success(t *testing.T) {
 }
 
 func TestGetLatestStableRelease_HTTPError(t *testing.T) {
-	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(`{"message":"server error"}`))
 	})
@@ -1068,7 +1045,7 @@ func TestGetLatestStableRelease_HTTPError(t *testing.T) {
 }
 
 func TestGetLatestStableRelease_MalformedJSON(t *testing.T) {
-	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`not json at all`))
 	})
@@ -1084,7 +1061,7 @@ func TestGetLatestStableRelease_MalformedJSON(t *testing.T) {
 
 func TestGetLatestPrerelease_SuccessFound(t *testing.T) {
 	// Server returns a list that includes a dev prerelease.
-	h := mockAPIHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	h := mockAPIHandler(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]GitHubRelease{
 			{TagName: "v1.0.0-dev.1700000000", Prerelease: true},

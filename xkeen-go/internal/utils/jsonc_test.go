@@ -80,7 +80,7 @@ func TestJSONCtoJSON_TrailingComments(t *testing.T) {
 }
 
 func TestJSONCtoJSON_CommentsInURLPreserved(t *testing.T) {
-	// CRITICAL: // inside a string must NOT be treated as a comment
+	// Verify that // inside a string is NOT treated as a comment
 	input := `{"url": "http://example.com"}`
 	result, err := JSONCtoJSON([]byte(input))
 	if err != nil {

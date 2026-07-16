@@ -26,7 +26,7 @@ func newTestAWGHandler(t *testing.T) (*AWGHandler, *mux.Router, string) {
 	tmpDir := t.TempDir()
 	storePath := filepath.Join(tmpDir, "subscriptions.json")
 	awgDir := filepath.Join(tmpDir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	cfg := &config.Config{AWGConfigDir: awgDir}
 
@@ -47,7 +47,7 @@ func newTestAWGHandler(t *testing.T) (*AWGHandler, *mux.Router, string) {
 func TestAWGListInterfaces_Empty(t *testing.T) {
 	_, router, _ := newTestAWGHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/interfaces", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/interfaces", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -83,13 +83,13 @@ PublicKey = pP0oO1iI2uU3yY4tT5rR6eE7wW8qQ9zZ0xX1cC2vV3bB4nN5mM=
 AllowedIPs = 0.0.0.0/0
 Endpoint = 162.159.192.192:2408
 `
-	os.WriteFile(filepath.Join(awgDir, "warp1.conf"), []byte(confContent), 0644)
-	os.WriteFile(filepath.Join(awgDir, "warp2.conf"), []byte(confContent), 0644)
+	os.WriteFile(filepath.Join(awgDir, "warp1.conf"), []byte(confContent), 0o644)
+	os.WriteFile(filepath.Join(awgDir, "warp2.conf"), []byte(confContent), 0o644)
 
 	// Register configs in store
 	handler.store.ScanAWGConfigs(awgDir)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/interfaces", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/interfaces", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -143,7 +143,7 @@ func TestValidateAWGName(t *testing.T) {
 		{"with_hyphen", "my-config", true},
 		{"with_underscore", "my_config", true},
 		{"alphanumeric", "warp123", true},
-		{"with_dots", "config.v1", false},  // dots not allowed by validateAWGName
+		{"with_dots", "config.v1", false}, // dots not allowed by validateAWGName
 		{"path_traversal", "../etc", false},
 		{"with_slash", "a/b", false},
 		{"with_backslash", "a\\b", false},
@@ -202,7 +202,7 @@ func TestAWGDownInterface_Validation(t *testing.T) {
 func TestAWGDeleteConfig_NotFound(t *testing.T) {
 	_, router, _ := newTestAWGHandler(t)
 
-	req := httptest.NewRequest(http.MethodDelete, "/awg/config/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/awg/config/nonexistent", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -334,7 +334,7 @@ func TestReadAWGParams(t *testing.T) {
 				"Jc":         "1",
 				"Jmin":       "20",
 				"ListenPort": "443", // not an AWG param — must be excluded
-				"PrivateKey": "xxx",  // not an AWG param — must be excluded
+				"PrivateKey": "xxx", // not an AWG param — must be excluded
 			},
 		},
 	}
@@ -410,7 +410,7 @@ func TestRewriteEndpointPort(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "client.conf")
-			if err := os.WriteFile(path, []byte(tc.input), 0600); err != nil {
+			if err := os.WriteFile(path, []byte(tc.input), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if err := rewriteEndpointPort(path, tc.port); err != nil {
@@ -428,23 +428,23 @@ func TestRewriteEndpointPort_NoOpCases(t *testing.T) {
 	// port <= 0 → no-op, file untouched.
 	path := filepath.Join(t.TempDir(), "client.conf")
 	orig := []byte("Endpoint = 1.2.3.4:443\n")
-	os.WriteFile(path, orig, 0600)
+	os.WriteFile(path, orig, 0o600)
 	if err := rewriteEndpointPort(path, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got, _ := os.ReadFile(path)
-	if string(got) != string(orig) {
+	if !bytes.Equal(got, orig) {
 		t.Errorf("port=0 should be a no-op, got %s", string(got))
 	}
 	// No Endpoint line → no-op.
 	path2 := filepath.Join(t.TempDir(), "noep.conf")
 	orig2 := []byte("[Interface]\nPrivateKey = k\n\n[Peer]\nPublicKey = p\n")
-	os.WriteFile(path2, orig2, 0600)
+	os.WriteFile(path2, orig2, 0o600)
 	if err := rewriteEndpointPort(path2, 443); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got2, _ := os.ReadFile(path2)
-	if string(got2) != string(orig2) {
+	if !bytes.Equal(got2, orig2) {
 		t.Errorf("file without Endpoint should be unchanged, got %s", string(got2))
 	}
 }
@@ -456,12 +456,12 @@ func TestRewriteEndpointPort_NoOpCases(t *testing.T) {
 func writeTestConfigs(t *testing.T, awgDir, serverConf, clientConf string) (serverPath, clientPath string) {
 	t.Helper()
 	serverPath = filepath.Join(awgDir, "server.conf")
-	if err := os.WriteFile(serverPath, []byte(serverConf), 0600); err != nil {
+	if err := os.WriteFile(serverPath, []byte(serverConf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	clientPath = filepath.Join(awgDir, "clients", "server-10.8.0.2.conf")
-	os.MkdirAll(filepath.Dir(clientPath), 0755)
-	if err := os.WriteFile(clientPath, []byte(clientConf), 0600); err != nil {
+	os.MkdirAll(filepath.Dir(clientPath), 0o755)
+	if err := os.WriteFile(clientPath, []byte(clientConf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return
@@ -561,8 +561,8 @@ func TestSyncClientWithServer_MissingServerLeavesClientUntouched(t *testing.T) {
 	handler, _, awgDir := newTestAWGHandler(t)
 	client := "[Interface]\nPrivateKey = ckey\nJc = 2\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
 	clientPath := filepath.Join(awgDir, "clients", "server-10.8.0.2.conf")
-	os.MkdirAll(filepath.Dir(clientPath), 0755)
-	os.WriteFile(clientPath, []byte(client), 0600)
+	os.MkdirAll(filepath.Dir(clientPath), 0o755)
+	os.WriteFile(clientPath, []byte(client), 0o600)
 	// No server.conf written.
 
 	handler.syncClientWithServer("server", clientPath)
@@ -608,7 +608,7 @@ func TestGetPeerConfig_ReturnsSyncedConfig(t *testing.T) {
 	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 2\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
 	writeTestConfigs(t, awgDir, server, client)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -788,7 +788,7 @@ func TestAllocatePeerIP_SubnetExhausted(t *testing.T) {
 	}
 	conf := &subscription.AWGConf{
 		Interface: &subscription.AWGConfigSection{Values: map[string]string{}},
-		Peers: peers,
+		Peers:     peers,
 	}
 	_, err := h.allocatePeerIP(conf)
 	if err == nil {
@@ -830,7 +830,7 @@ func TestBuildPeerSection_NoLabel(t *testing.T) {
 func writeServerConf(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "server.conf")
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -924,10 +924,10 @@ func TestMaskKey(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"", "***"},         // empty
-		{"abcd", "***"},      // short (≤8)
-		{"abcdefgh", "***"},  // exactly 8
-		{"abcdefghi", "abcd...fghi"},  // 9 → first4...last4
+		{"", "***"},                         // empty
+		{"abcd", "***"},                     // short (≤8)
+		{"abcdefgh", "***"},                 // exactly 8
+		{"abcdefghi", "abcd...fghi"},        // 9 → first4...last4
 		{"0123456789abcdef", "0123...cdef"}, // 16
 	}
 	for _, tc := range cases {
@@ -1032,15 +1032,15 @@ func TestUpdateClientConfigsObfuscation(t *testing.T) {
 	_, _, awgDir := newTestAWGHandler(t)
 	h := &AWGHandler{awgDir: awgDir}
 	clientsDir := filepath.Join(awgDir, "clients")
-	os.MkdirAll(clientsDir, 0755)
+	os.MkdirAll(clientsDir, 0o755)
 
 	// Two client configs for "server", one unrelated file (different server name).
 	serverClient := "[Interface]\nPrivateKey = c1\nJc = 1\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
 	serverClient2 := "[Interface]\nPrivateKey = c2\nJc = 1\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
 	unrelated := "[Interface]\nPrivateKey = cu\nJc = 1\n\n[Peer]\nPublicKey = upub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
-	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(serverClient), 0600)
-	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.3.conf"), []byte(serverClient2), 0600)
-	os.WriteFile(filepath.Join(clientsDir, "other-10.0.0.2.conf"), []byte(unrelated), 0600)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(serverClient), 0o600)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.3.conf"), []byte(serverClient2), 0o600)
+	os.WriteFile(filepath.Join(clientsDir, "other-10.0.0.2.conf"), []byte(unrelated), 0o600)
 
 	params := map[string]string{"Jc": "5", "H1": "1", "H2": "2", "H3": "3", "H4": "4"}
 	h.updateClientConfigsObfuscation("server", params)
@@ -1058,8 +1058,6 @@ func TestUpdateClientConfigsObfuscation_NoClientsDir(t *testing.T) {
 	h.updateClientConfigsObfuscation("server", map[string]string{"Jc": "5"})
 	// Reaching here without panic is the pass condition.
 }
-
-
 
 // ---------- ListPeers ----------
 
@@ -1081,13 +1079,13 @@ AllowedIPs = 10.8.0.2/32
 PublicKey = PUBKEY2
 AllowedIPs = 10.8.0.3/32
 `
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(serverConf), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(serverConf), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Register configs in store so parse works
 	handler.store.ScanAWGConfigs(awgDir)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peers/server", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peers/server", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1147,11 +1145,11 @@ func TestAWGListPeers_EmptyPeers(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
 	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peers/server", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peers/server", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1181,7 +1179,7 @@ func TestAWGListPeers_EmptyPeers(t *testing.T) {
 func TestAWGListPeers_NotFound(t *testing.T) {
 	_, router, _ := newTestAWGHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peers/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peers/nonexistent", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1205,7 +1203,7 @@ func TestAWGListPeers_InvalidName(t *testing.T) {
 	for _, invalid := range []string{"test@invalid", "a@b"} {
 		t.Run(invalid, func(t *testing.T) {
 			path := "/awg/peers/" + invalid
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 			if w.Code != http.StatusBadRequest {
@@ -1222,15 +1220,15 @@ func TestAWGGetPeerConfig_Exists(t *testing.T) {
 
 	// Write server.conf (needed by syncClientWithServer)
 	server := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(server), 0600)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(server), 0o600)
 
 	// Write stored client config
 	client := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
 	clientsDir := filepath.Join(awgDir, "clients")
-	os.MkdirAll(clientsDir, 0755)
-	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(client), 0600)
+	os.MkdirAll(clientsDir, 0o755)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(client), 0o600)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1256,7 +1254,7 @@ func TestAWGGetPeerConfig_Exists(t *testing.T) {
 func TestAWGGetPeerConfig_MissingClient(t *testing.T) {
 	_, router, _ := newTestAWGHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server?ip=10.8.0.2", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1268,7 +1266,7 @@ func TestAWGGetPeerConfig_MissingClient(t *testing.T) {
 func TestAWGGetPeerConfig_MissingIP(t *testing.T) {
 	_, router, _ := newTestAWGHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/server", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1294,7 +1292,7 @@ AllowedIPs = 10.8.0.2/32
 PublicKey = PUB2
 AllowedIPs = 10.8.0.3/32
 `
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1346,7 +1344,7 @@ AllowedIPs = 10.8.0.2/32
 PublicKey = PUB2
 AllowedIPs = 10.8.0.3/32
 `
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1392,7 +1390,7 @@ AllowedIPs = 10.8.0.3/32
 PublicKey = PUB3
 AllowedIPs = 10.8.0.4/32
 `
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1425,9 +1423,9 @@ AllowedIPs = 10.8.0.4/32
 func TestAWGDeletePeer_MissingBody(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
-	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n"), 0600)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n"), 0o600)
 
-	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/server", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/awg/peers/server", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1463,11 +1461,11 @@ func TestAWGGetObfuscation_FullPreset(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
 	conf := "[Interface]\nPrivateKey = skey\nJc = 8\nJmin = 50\nJmax = 100\nS1 = 30\nS2 = 20\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nI1 = 0\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/server", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/server", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1496,11 +1494,11 @@ func TestAWGGetObfuscation_Plain(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
 	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/server", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/server", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1520,7 +1518,7 @@ func TestAWGGetObfuscation_Plain(t *testing.T) {
 func TestAWGGetObfuscation_MissingConfig(t *testing.T) {
 	_, router, _ := newTestAWGHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/nonexistent", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1543,7 +1541,7 @@ func TestAWGGetObfuscation_InvalidName(t *testing.T) {
 	// gorilla/mux redirects path-traversal sequences to canonical form.
 	// Use invalid characters that pass through the router but fail
 	// validateAWGName.
-	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/test@invalid", nil)
+	req := httptest.NewRequest(http.MethodGet, "/awg/obfuscation/test@invalid", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1557,7 +1555,7 @@ func TestAWGGetObfuscation_InvalidName(t *testing.T) {
 // testApplyObfuscationBody is a helper to send an ApplyObfuscation request and check success.
 func testApplyObfuscationBody(t *testing.T, router *mux.Router, name, preset string) *httptest.ResponseRecorder {
 	t.Helper()
-	body := fmt.Sprintf(`{"preset":"%s"}`, preset)
+	body := fmt.Sprintf(`{"preset":%q}`, preset)
 	req := httptest.NewRequest(http.MethodPost, "/awg/obfuscation/"+name, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -1570,7 +1568,7 @@ func TestAWGApplyObfuscation_Full(t *testing.T) {
 
 	// Start with a plain conf (no AWG params)
 	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1601,7 +1599,7 @@ func TestAWGApplyObfuscation_Minimal(t *testing.T) {
 
 	// Start with plain conf
 	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1619,7 +1617,7 @@ func TestAWGApplyObfuscation_Plain(t *testing.T) {
 
 	// Start with a conf that has AWG params
 	conf := "[Interface]\nPrivateKey = skey\nJc = 8\nJmin = 50\nJmax = 100\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1648,7 +1646,7 @@ func TestAWGApplyObfuscation_Random(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
 	conf := "[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1673,7 +1671,7 @@ func TestAWGApplyObfuscation_Random(t *testing.T) {
 func TestAWGApplyObfuscation_UnknownPreset(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
-	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"), 0600)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"), 0o600)
 
 	w := testApplyObfuscationBody(t, router, "server", "nonexistent")
 	if w.Code != http.StatusBadRequest {
@@ -1694,7 +1692,7 @@ func TestAWGApplyObfuscation_MissingConfig(t *testing.T) {
 func TestAWGApplyObfuscation_InvalidBody(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
-	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"), 0600)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = skey\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"), 0o600)
 
 	req := httptest.NewRequest(http.MethodPost, "/awg/obfuscation/server", strings.NewReader("not-json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -1711,13 +1709,13 @@ func TestAWGApplyObfuscation_UpdateStoredClient(t *testing.T) {
 
 	// Server with AWG params
 	serverConf := "[Interface]\nPrivateKey = skey\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nListenPort = 443\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\n"
-	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(serverConf), 0600)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte(serverConf), 0o600)
 
 	// Stored client config
 	clientConf := "[Interface]\nPrivateKey = ckey\nAddress = 10.8.0.2/32\nJc = 1\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = spub\nEndpoint = 1.2.3.4:443\nAllowedIPs = 0.0.0.0/0\n"
 	clientsDir := filepath.Join(awgDir, "clients")
-	os.MkdirAll(clientsDir, 0755)
-	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(clientConf), 0600)
+	os.MkdirAll(clientsDir, 0o755)
+	os.WriteFile(filepath.Join(clientsDir, "server-10.8.0.2.conf"), []byte(clientConf), 0o600)
 
 	// Apply full preset (Jc=8)
 	w := testApplyObfuscationBody(t, router, "server", "full")
@@ -1866,7 +1864,7 @@ func TestAWGUploadConfig_Duplicate(t *testing.T) {
 	_, router, awgDir := newTestAWGHandler(t)
 
 	// Pre-create a config
-	os.WriteFile(filepath.Join(awgDir, "existing.conf"), []byte("[Interface]\nPrivateKey = k\n\n[Peer]\nPublicKey = p\nAllowedIPs = 0.0.0.0/0\n"), 0600)
+	os.WriteFile(filepath.Join(awgDir, "existing.conf"), []byte("[Interface]\nPrivateKey = k\n\n[Peer]\nPublicKey = p\nAllowedIPs = 0.0.0.0/0\n"), 0o600)
 
 	// Upload the same name again
 	var buf bytes.Buffer

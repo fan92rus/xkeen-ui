@@ -103,20 +103,21 @@ func ApplyFullTunnelFirewall(p AWGFirewallParams) {
 		p.Iface, port, p.Subnet, p.LANIface, p.WANIface)
 
 	// INPUT: allow incoming UDP on listen port
-	runIPTables("-I", "INPUT", "-p", "udp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT")
+	_ = runIPTables("-I", "INPUT", "-p", "udp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT")
 
 	// FORWARD: allow traffic between AWG interface and LAN
-	runIPTables("-I", "FORWARD", "-i", p.Iface, "-o", p.LANIface, "-j", "ACCEPT")
-	runIPTables("-I", "FORWARD", "-i", p.LANIface, "-o", p.Iface, "-j", "ACCEPT")
+	_ = runIPTables("-I", "FORWARD", "-i", p.Iface, "-o", p.LANIface, "-j", "ACCEPT")
+	_ = runIPTables("-I", "FORWARD", "-i", p.LANIface, "-o", p.Iface, "-j", "ACCEPT")
 
 	// FORWARD: allow traffic between AWG interface and WAN (internet)
-	runIPTables("-I", "FORWARD", "-i", p.Iface, "-o", p.WANIface, "-j", "ACCEPT")
-	runIPTables("-I", "FORWARD", "-i", p.WANIface, "-o", p.Iface, "-j", "ACCEPT")
+	_ = runIPTables("-I", "FORWARD", "-i", p.Iface, "-o", p.WANIface, "-j", "ACCEPT")
+	_ = runIPTables("-I", "FORWARD", "-i", p.WANIface, "-o", p.Iface, "-j", "ACCEPT")
 
 	// NAT: masquerade tunnel traffic going out
-	runIPTables("-t", "nat", "-A", "POSTROUTING", "-s", p.Subnet, "-j", "MASQUERADE")
+	_ = runIPTables("-t", "nat", "-A", "POSTROUTING", "-s", p.Subnet, "-j", "MASQUERADE")
 
 	// Route: tunnel subnet via this interface
+	//nolint:gosec // AWG config validated in handler
 	if err := exec.Command("ip", "route", "add", p.Subnet, "dev", p.Iface).Run(); err != nil {
 		log.Printf("[awg] ip route add %s dev %s: %v (may already exist)", p.Subnet, p.Iface, err)
 	}
@@ -145,21 +146,21 @@ func RemoveFullTunnelFirewall(p AWGFirewallParams) {
 	// Best-effort: ignore errors (rules may not exist).
 
 	// Remove route
-	exec.Command("ip", "route", "del", p.Subnet, "dev", p.Iface).Run()
+	_ = exec.Command("ip", "route", "del", p.Subnet, "dev", p.Iface).Run() //nolint:gosec // subnet/iface from validated config
 
 	// NAT
-	runIPTables("-t", "nat", "-D", "POSTROUTING", "-s", p.Subnet, "-j", "MASQUERADE")
+	_ = runIPTables("-t", "nat", "-D", "POSTROUTING", "-s", p.Subnet, "-j", "MASQUERADE")
 
 	// FORWARD WAN
-	runIPTables("-D", "FORWARD", "-i", p.WANIface, "-o", p.Iface, "-j", "ACCEPT")
-	runIPTables("-D", "FORWARD", "-i", p.Iface, "-o", p.WANIface, "-j", "ACCEPT")
+	_ = runIPTables("-D", "FORWARD", "-i", p.WANIface, "-o", p.Iface, "-j", "ACCEPT")
+	_ = runIPTables("-D", "FORWARD", "-i", p.Iface, "-o", p.WANIface, "-j", "ACCEPT")
 
 	// FORWARD LAN
-	runIPTables("-D", "FORWARD", "-i", p.LANIface, "-o", p.Iface, "-j", "ACCEPT")
-	runIPTables("-D", "FORWARD", "-i", p.Iface, "-o", p.LANIface, "-j", "ACCEPT")
+	_ = runIPTables("-D", "FORWARD", "-i", p.LANIface, "-o", p.Iface, "-j", "ACCEPT")
+	_ = runIPTables("-D", "FORWARD", "-i", p.Iface, "-o", p.LANIface, "-j", "ACCEPT")
 
 	// INPUT
-	runIPTables("-D", "INPUT", "-p", "udp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT")
+	_ = runIPTables("-D", "INPUT", "-p", "udp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT")
 }
 
 // RestoreAWGServerFirewalls re-applies firewall rules for all active server configs.
@@ -188,7 +189,7 @@ func (h *AWGHandler) RestoreAWGServerFirewalls() {
 
 // RestoreFirewall is an HTTP handler that re-applies firewall rules for all active servers.
 // POST /api/awg/restore-firewall — used by watchdog/cron.
-func (h *AWGHandler) RestoreFirewall(w http.ResponseWriter, r *http.Request) {
+func (h *AWGHandler) RestoreFirewall(w http.ResponseWriter, _ *http.Request) {
 	h.RestoreAWGServerFirewalls()
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
@@ -231,6 +232,7 @@ func (h *AWGHandler) applyClientFwmarkRouting(iface string, mark int) {
 	// Add routing rule if not already present
 	checkOut, _ := exec.Command("ip", "rule", "show").Output()
 	if !strings.Contains(string(checkOut), fmt.Sprintf("fwmark %d", mark)) {
+		//nolint:gosec // mark/iface from validated AWG config
 		ruleCmd := exec.Command("ip", "rule", "add", "fwmark", fmt.Sprintf("%d", mark),
 			"table", fmt.Sprintf("%d", mark), "priority", fmt.Sprintf("%d", priority))
 		if out, err := ruleCmd.CombinedOutput(); err != nil {
@@ -239,8 +241,10 @@ func (h *AWGHandler) applyClientFwmarkRouting(iface string, mark int) {
 	}
 
 	// Add routing table entry if not already present
+	//nolint:gosec // iface/mark from validated AWG config
 	routeOut, _ := exec.Command("ip", "route", "show", "table", fmt.Sprintf("%d", mark)).Output()
 	if !strings.Contains(string(routeOut), "default") {
+		//nolint:gosec // iface/mark from validated AWG config
 		addRoute := exec.Command("ip", "route", "add", "default", "dev", iface,
 			"table", fmt.Sprintf("%d", mark))
 		if out, err := addRoute.CombinedOutput(); err != nil {
@@ -251,7 +255,9 @@ func (h *AWGHandler) applyClientFwmarkRouting(iface string, mark int) {
 
 // removeClientFwmarkRouting tears down fwmark routing for a client interface.
 func (h *AWGHandler) removeClientFwmarkRouting(iface string, mark int) {
-	exec.Command("ip", "route", "del", "default", "dev", iface,
+	//nolint:gosec // iface/mark from validated AWG config
+	_ = exec.Command("ip", "route", "del", "default", "dev", iface,
 		"table", fmt.Sprintf("%d", mark)).Run()
-	exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", mark)).Run()
+	//nolint:gosec // mark from validated AWG config
+	_ = exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", mark)).Run()
 }

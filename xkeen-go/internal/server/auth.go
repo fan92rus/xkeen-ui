@@ -56,7 +56,7 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +215,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, &messageResponse{OK: true, Message: "Password changed successfully"})
 }
 
-func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) indexPage(w http.ResponseWriter, _ *http.Request) {
 	// Serve the main web interface from embedded FS
 	data, err := fs.ReadFile(s.webFS, "index.html")
 	if err != nil {
@@ -223,5 +223,5 @@ func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
+	_, _ = w.Write(data)
 }

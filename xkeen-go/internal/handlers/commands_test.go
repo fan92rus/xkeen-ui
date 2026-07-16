@@ -25,7 +25,7 @@ func testCommandsRegistry(t *testing.T) *CommandRegistry {
 	})
 }
 
-// emptyRegistry builds a registry whose loader returns an empty set, modelling
+// emptyRegistry builds a registry whose loader returns an empty set, modeling
 // the "xkeen not installed / -help failed" case.
 func emptyRegistry() *CommandRegistry {
 	return newCommandRegistryWithLoader(func() (map[string]CommandConfig, error) {
@@ -57,7 +57,7 @@ func TestNewCommandsHandler(t *testing.T) {
 func TestGetCommands_ReturnsOK(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -69,7 +69,7 @@ func TestGetCommands_ReturnsOK(t *testing.T) {
 func TestGetCommands_ContentTypeJSON(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -83,7 +83,7 @@ func TestGetCommands_ReturnsAllParsedCommands(t *testing.T) {
 	h := newTestCommandsHandler(t)
 	expected := h.registry.Count()
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -99,7 +99,7 @@ func TestGetCommands_ReturnsAllParsedCommands(t *testing.T) {
 func TestGetCommands_EachCommandHasRequiredFields(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -126,7 +126,7 @@ func TestGetCommands_EachCommandHasRequiredFields(t *testing.T) {
 func TestGetCommands_DangerousFlagsPresent(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -154,7 +154,7 @@ func TestGetCommands_DangerousFlagsPresent(t *testing.T) {
 func TestGetCommands_SpecificDangerousCommands(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -183,7 +183,7 @@ func TestGetCommands_SpecificDangerousCommands(t *testing.T) {
 func TestGetCommands_SpecificSafeCommands(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -211,7 +211,7 @@ func TestGetCommands_SpecificSafeCommands(t *testing.T) {
 func TestGetCommands_NoDuplicateCommands(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -231,7 +231,7 @@ func TestGetCommands_NoDuplicateCommands(t *testing.T) {
 func TestGetCommands_TimeoutNotExposedInAPI(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -252,7 +252,7 @@ func TestGetCommands_TimeoutNotExposedInAPI(t *testing.T) {
 func TestGetCommands_EmptyWhenXkeenUnavailable(t *testing.T) {
 	h := NewCommandsHandler(emptyRegistry())
 
-	req := httptest.NewRequest("GET", "/api/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.GetCommands(rec, req)
 
@@ -275,7 +275,7 @@ func TestRegisterCommandsRoutes(t *testing.T) {
 	router := mux.NewRouter()
 	RegisterCommandsRoutes(router, h)
 
-	req := httptest.NewRequest("GET", "/xkeen/commands", nil)
+	req := httptest.NewRequest("GET", "/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -289,7 +289,7 @@ func TestRegisterCommandsRoutes(t *testing.T) {
 func TestRefreshCommands_ReturnsOK(t *testing.T) {
 	h := newTestCommandsHandler(t)
 
-	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.RefreshCommands(rec, req)
 
@@ -303,7 +303,7 @@ func TestRefreshCommands_ReturnsSameCommandsAsGet(t *testing.T) {
 	expected := h.registry.Count()
 
 	// Refresh
-	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.RefreshCommands(rec, req)
 
@@ -337,7 +337,7 @@ func TestRefreshCommands_ReturnsSameCommandsAsGet(t *testing.T) {
 func TestRefreshCommands_EmptyRegistry(t *testing.T) {
 	h := NewCommandsHandler(emptyRegistry())
 
-	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/commands/refresh", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.RefreshCommands(rec, req)
 
@@ -363,7 +363,7 @@ func TestRefreshCommands_RouteRegistered(t *testing.T) {
 	router := mux.NewRouter()
 	RegisterCommandsRoutes(router, h)
 
-	req := httptest.NewRequest("POST", "/xkeen/commands/refresh", nil)
+	req := httptest.NewRequest("POST", "/xkeen/commands/refresh", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -377,7 +377,7 @@ func TestRegisterCommandsRoutes_MethodNotAllowed(t *testing.T) {
 	router := mux.NewRouter()
 	RegisterCommandsRoutes(router, h)
 
-	req := httptest.NewRequest("POST", "/xkeen/commands", nil)
+	req := httptest.NewRequest("POST", "/xkeen/commands", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

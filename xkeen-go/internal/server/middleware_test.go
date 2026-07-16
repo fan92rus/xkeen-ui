@@ -32,11 +32,11 @@ func (m *mockSessionManager) GetCSRFToken(sessionToken string) string {
 	return m.sessions[sessionToken]
 }
 
-func (m *mockSessionManager) CreateSession() (string, string, error) {
-	token := "session-token-123"
-	csrf := "csrf-token-456"
-	m.sessions[token] = csrf
-	return token, csrf, nil
+func (m *mockSessionManager) CreateSession() (sessionID, csrfToken string, err error) {
+	sessionID = "session-token-123"
+	csrfToken = "csrf-token-456"
+	m.sessions[sessionID] = csrfToken
+	return sessionID, csrfToken, nil
 }
 
 func (m *mockSessionManager) DestroySession(sessionToken string) {
@@ -166,7 +166,7 @@ func TestRateLimiter_RemainingLockTimeZeroIfNotLocked(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_StopIsIdempotent(t *testing.T) {
+func TestRateLimiter_StopIsIdempotent(_ *testing.T) {
 	rl := NewRateLimiter(5, 5*time.Minute)
 	rl.Stop()
 	rl.Stop() // should not panic
@@ -175,11 +175,11 @@ func TestRateLimiter_StopIsIdempotent(t *testing.T) {
 // --- SecurityHeadersMiddleware Tests ---
 
 func TestSecurityHeadersMiddleware_SetsHeaders(t *testing.T) {
-	handler := SecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "/test", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -209,7 +209,7 @@ func TestSecurityHeadersMiddleware_SetsHeaders(t *testing.T) {
 	// <style> elements and inline styles for syntax highlighting, themes, and
 	// editor chrome. These cannot be pre-compiled into bundle.css — they're
 	// generated at runtime by the codemirror/view and @codemirror/theme-* packages.
-	// script-src 'self' remains as the primary XSS defence. This is a local router
+	// script-src 'self' remains as the primary XSS defense. This is a local router
 	// admin interface, so the CSS exfiltration threat is negligible.
 	if !strings.Contains(csp, "style-src 'self'") {
 		t.Errorf("CSP missing style-src 'self': %s", csp)
@@ -224,12 +224,12 @@ func TestSecurityHeadersMiddleware_SetsHeaders(t *testing.T) {
 
 func TestSecurityHeadersMiddleware_PassesThrough(t *testing.T) {
 	called := false
-	handler := SecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "/test", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -244,11 +244,11 @@ func TestAuthMiddleware_RejectsNoCookie(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -262,11 +262,11 @@ func TestAuthMiddleware_RejectsInvalidSession(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "invalid-token"})
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
@@ -284,7 +284,7 @@ func TestAuthMiddleware_AcceptsValidSession(t *testing.T) {
 	sessions.sessions["valid-token"] = "csrf-abc"
 
 	called := false
-	handler := mw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		called = true
 		// Verify context values
 		session := GetSessionToken(r.Context())
@@ -297,7 +297,7 @@ func TestAuthMiddleware_AcceptsValidSession(t *testing.T) {
 		}
 	}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "valid-token"})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -311,11 +311,11 @@ func TestAuthMiddleware_ClearsInvalidCookie(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "bogus"})
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
@@ -338,11 +338,11 @@ func TestAuthMiddleware_RedirectsHTMLRequests(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
-	req := httptest.NewRequest("GET", "/dashboard", nil)
+	req := httptest.NewRequest("GET", "/dashboard", http.NoBody)
 	req.Header.Set("Accept", "text/html")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -363,11 +363,11 @@ func TestCSRFMiddleware_SkipsGETRequests(t *testing.T) {
 	defer mw.Stop()
 
 	called := false
-	handler := mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -380,13 +380,13 @@ func TestCSRFMiddleware_RejectsPOSTWithoutToken(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
 	// Need CSRF in context (set by AuthMiddleware)
 	ctx := context.WithValue(context.Background(), CSRFTokenKey, "expected-csrf")
-	req := httptest.NewRequest("POST", "/api/test", nil).WithContext(ctx)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -399,12 +399,12 @@ func TestCSRFMiddleware_RejectsWrongToken(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
 	ctx := context.WithValue(context.Background(), CSRFTokenKey, "expected-csrf")
-	req := httptest.NewRequest("POST", "/api/test", nil).WithContext(ctx)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody).WithContext(ctx)
 	req.Header.Set("X-CSRF-Token", "wrong-token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -419,12 +419,12 @@ func TestCSRFMiddleware_AcceptsValidToken(t *testing.T) {
 	defer mw.Stop()
 
 	called := false
-	handler := mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 
 	ctx := context.WithValue(context.Background(), CSRFTokenKey, "correct-token")
-	req := httptest.NewRequest("POST", "/api/test", nil).WithContext(ctx)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody).WithContext(ctx)
 	req.Header.Set("X-CSRF-Token", "correct-token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -439,7 +439,7 @@ func TestCSRFMiddleware_AcceptsFormValue(t *testing.T) {
 	defer mw.Stop()
 
 	called := false
-	handler := mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 
@@ -459,11 +459,11 @@ func TestCSRFMiddleware_NoCSRFinContext(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	}))
 
-	req := httptest.NewRequest("POST", "/api/test", nil)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody)
 	// No CSRFTokenKey in context
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -480,7 +480,7 @@ func TestRateLimitMiddleware_PassesWhenNotLocked(t *testing.T) {
 	defer mw.Stop()
 
 	called := false
-	handler := mw.RateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.RateLimitMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		called = true
 		// Check that IP is in context
 		ip := GetClientIP(r.Context())
@@ -489,7 +489,7 @@ func TestRateLimitMiddleware_PassesWhenNotLocked(t *testing.T) {
 		}
 	}))
 
-	req := httptest.NewRequest("POST", "/api/auth/login", nil)
+	req := httptest.NewRequest("POST", "/api/auth/login", http.NoBody)
 	req.RemoteAddr = "192.168.1.100:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -510,11 +510,11 @@ func TestRateLimitMiddleware_BlocksWhenLocked(t *testing.T) {
 	mw.rateLimit.RecordAttempt("192.168.1.200")
 	mw.rateLimit.RecordAttempt("192.168.1.200") // 5th = locked
 
-	handler := mw.RateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.RateLimitMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler when locked")
 	}))
 
-	req := httptest.NewRequest("POST", "/api/auth/login", nil)
+	req := httptest.NewRequest("POST", "/api/auth/login", http.NoBody)
 	req.RemoteAddr = "192.168.1.200:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -534,12 +534,12 @@ func TestRateLimitMiddleware_BlocksWhenLocked(t *testing.T) {
 func TestCORSMiddleware_SetsHeadersForAllowedOrigin(t *testing.T) {
 	called := false
 	handler := CORSMiddleware([]string{"http://localhost:3000"})(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			called = true
 		}),
 	)
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.Header.Set("Origin", "http://localhost:3000")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -554,10 +554,10 @@ func TestCORSMiddleware_SetsHeadersForAllowedOrigin(t *testing.T) {
 
 func TestCORSMiddleware_Wildcard(t *testing.T) {
 	handler := CORSMiddleware([]string{"*"})(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}),
 	)
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.Header.Set("Origin", "http://any-origin.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -569,12 +569,12 @@ func TestCORSMiddleware_Wildcard(t *testing.T) {
 
 func TestCORSMiddleware_HandlesPreflight(t *testing.T) {
 	handler := CORSMiddleware([]string{"http://localhost:3000"})(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			t.Error("Should not call handler for OPTIONS")
 		}),
 	)
 
-	req := httptest.NewRequest("OPTIONS", "/api/test", nil)
+	req := httptest.NewRequest("OPTIONS", "/api/test", http.NoBody)
 	req.Header.Set("Origin", "http://localhost:3000")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -587,12 +587,12 @@ func TestCORSMiddleware_HandlesPreflight(t *testing.T) {
 func TestCORSMiddleware_SkipsWhenNoOrigins(t *testing.T) {
 	called := false
 	handler := CORSMiddleware([]string{})(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			called = true
 		}),
 	)
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.Header.Set("Origin", "http://evil.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -607,10 +607,10 @@ func TestCORSMiddleware_SkipsWhenNoOrigins(t *testing.T) {
 
 func TestCORSMiddleware_BlocksDisallowedOrigin(t *testing.T) {
 	handler := CORSMiddleware([]string{"http://localhost:3000"})(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}),
 	)
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.Header.Set("Origin", "http://evil.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -625,7 +625,7 @@ func TestCORSMiddleware_BlocksDisallowedOrigin(t *testing.T) {
 func TestGetRealIP_XForwardedFor(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	mw.SetTrustProxyHeaders(true)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 
 	ip := mw.getRealIP(req)
@@ -637,7 +637,7 @@ func TestGetRealIP_XForwardedFor(t *testing.T) {
 func TestGetRealIP_XRealIP(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	mw.SetTrustProxyHeaders(true)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("X-Real-IP", "9.8.7.6")
 
 	ip := mw.getRealIP(req)
@@ -648,7 +648,7 @@ func TestGetRealIP_XRealIP(t *testing.T) {
 
 func TestGetRealIP_RemoteAddr(t *testing.T) {
 	mw, _ := newTestMiddleware()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.RemoteAddr = "10.0.0.1:54321"
 
 	ip := mw.getRealIP(req)
@@ -660,7 +660,7 @@ func TestGetRealIP_RemoteAddr(t *testing.T) {
 func TestGetRealIP_PrefersForwardedOverRemote(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	mw.SetTrustProxyHeaders(true)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("X-Forwarded-For", "1.1.1.1")
 	req.RemoteAddr = "10.0.0.1:54321"
 
@@ -673,7 +673,7 @@ func TestGetRealIP_PrefersForwardedOverRemote(t *testing.T) {
 func TestGetRealIP_IgnoresXFFWhenNotTrusted(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	// trustProxyHeaders defaults to false
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("X-Forwarded-For", "1.1.1.1")
 	req.RemoteAddr = "192.168.1.1:1234"
 
@@ -686,7 +686,7 @@ func TestGetRealIP_IgnoresXFFWhenNotTrusted(t *testing.T) {
 func TestGetRealIP_IgnoresXRealIPWhenNotTrusted(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	// trustProxyHeaders defaults to false
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("X-Real-IP", "10.0.0.1")
 	req.RemoteAddr = "192.168.1.100:8080"
 
@@ -698,7 +698,7 @@ func TestGetRealIP_IgnoresXRealIPWhenNotTrusted(t *testing.T) {
 
 func TestGetRealIP_IPv6RemoteAddr(t *testing.T) {
 	mw, _ := newTestMiddleware()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.RemoteAddr = "[::1]:54321"
 
 	ip := mw.getRealIP(req)
@@ -709,7 +709,7 @@ func TestGetRealIP_IPv6RemoteAddr(t *testing.T) {
 
 // --- Middleware Stop ---
 
-func TestMiddleware_StopIdempotent(t *testing.T) {
+func TestMiddleware_StopIdempotent(_ *testing.T) {
 	mw, _ := newTestMiddleware()
 	mw.Stop()
 	mw.Stop() // should not panic
@@ -760,11 +760,11 @@ func TestFullChain_ValidSessionAndCSRF(t *testing.T) {
 	sessions.sessions["good-session"] = "good-csrf"
 
 	called := false
-	handler := mw.AuthMiddleware(mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	})))
 
-	req := httptest.NewRequest("POST", "/api/test", nil)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "good-session"})
 	req.Header.Set("X-CSRF-Token", "good-csrf")
 	rec := httptest.NewRecorder()
@@ -781,11 +781,11 @@ func TestFullChain_ValidSessionBadCSRF(t *testing.T) {
 
 	sessions.sessions["good-session"] = "good-csrf"
 
-	handler := mw.AuthMiddleware(mw.CSRFMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.AuthMiddleware(mw.CSRFMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("Should not reach handler")
 	})))
 
-	req := httptest.NewRequest("POST", "/api/test", nil)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "good-session"})
 	req.Header.Set("X-CSRF-Token", "bad-csrf")
 	rec := httptest.NewRecorder()
@@ -847,9 +847,9 @@ func TestAuthMiddleware_ErrorMessage(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	handler := mw.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -867,13 +867,13 @@ func TestLoggingMiddleware(t *testing.T) {
 	defer mw.Stop()
 
 	called := false
-	handler := mw.LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte("ok"))
 	}))
 
-	req := httptest.NewRequest("POST", "/api/test", nil)
+	req := httptest.NewRequest("POST", "/api/test", http.NoBody)
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -894,11 +894,11 @@ func TestLoggingMiddleware_DefaultStatus(t *testing.T) {
 	mw, _ := newTestMiddleware()
 	defer mw.Stop()
 
-	handler := mw.LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw.LoggingMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		// Don't call WriteHeader — should default to 200
 	}))
 
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest("GET", "/api/test", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

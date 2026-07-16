@@ -20,9 +20,9 @@ import (
 
 // AWGHandler handles AWG interface management.
 type AWGHandler struct {
-	store   *subscription.Store
-	awgDir  string
-	cfg     *config.Config // for lan/wan interface settings
+	store  *subscription.Store
+	awgDir string
+	cfg    *config.Config // for lan/wan interface settings
 }
 
 // NewAWGHandler creates a new AWGHandler.
@@ -63,7 +63,7 @@ type awgActionResponse struct {
 
 // ListInterfaces returns all AWG interfaces and their status.
 // GET /api/awg/interfaces
-func (h *AWGHandler) ListInterfaces(w http.ResponseWriter, r *http.Request) {
+func (h *AWGHandler) ListInterfaces(w http.ResponseWriter, _ *http.Request) {
 	// Scan for .conf files
 	configs, err := h.store.ScanAWGConfigs(h.awgDir)
 	if err != nil {
@@ -270,15 +270,15 @@ func (h *AWGHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	// Get mark before removing
 	if mark, ok := h.store.RemoveAWGConfig(name); ok {
 		// Remove routing rule + route
-		exec.Command("ip", "route", "del", "default", "dev", name,
+		_ = exec.Command("ip", "route", "del", "default", "dev", name,
 			"table", fmt.Sprintf("%d", mark)).Run()
-		exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", mark)).Run()
+		_ = exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", mark)).Run() //nolint:gosec // mark from validated AWG config
 		messages = append(messages, fmt.Sprintf("freed mark %d", mark))
 	}
 
 	// Bring down interface — use full config path, same as DownInterface.
 	// 'awg-quick down <name>' searches the default directory, not h.awgDir.
-	exec.Command("awg-quick", "down", confPath).Run()
+	_ = exec.Command("awg-quick", "down", confPath).Run()
 	messages = append(messages, "interface down")
 
 	// Remove config file
@@ -324,7 +324,7 @@ func (h *AWGHandler) UploadConfig(w http.ResponseWriter, r *http.Request) {
 
 	name := header.Filename
 	if !strings.HasSuffix(name, ".conf") {
-		name = name + ".conf"
+		name += ".conf"
 	}
 	// Sanitize name: only allow alphanumeric, dash, underscore
 	name = strings.Map(func(r rune) rune {
@@ -347,7 +347,7 @@ func (h *AWGHandler) UploadConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(h.awgDir, 0755); err != nil {
+	if err := os.MkdirAll(h.awgDir, 0o750); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create AWG dir: %v", err))
 		return
 	}
@@ -367,7 +367,7 @@ func (h *AWGHandler) UploadConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(destPath, content, 0600); err != nil {
+	if err := os.WriteFile(destPath, content, 0o600); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config: %v", err))
 		return
 	}
@@ -447,8 +447,8 @@ func validateAWGName(name string) bool {
 		return false
 	}
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '-' && r != '_' {
 			return false
 		}
 	}
@@ -456,8 +456,6 @@ func validateAWGName(name string) bool {
 }
 
 // ---------- Route registration ----------
-
-
 
 // RegisterAWGRoutes registers AWG management routes.
 func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {

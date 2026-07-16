@@ -15,35 +15,35 @@ import (
 )
 
 // setupConfigTest creates a temporary directory structure and ConfigHandler for testing.
-func setupConfigTest(t *testing.T) (*ConfigHandler, string, string) {
+func setupConfigTest(t *testing.T) (h *ConfigHandler, dir, backupDir string) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
 
 	// Create directory structure mimicking router
 	configDir := filepath.Join(tmpDir, "configs")
-	backupDir := filepath.Join(tmpDir, "backups")
-	os.MkdirAll(configDir, 0755)
-	os.MkdirAll(backupDir, 0755)
+	backupDir = filepath.Join(tmpDir, "backups")
+	os.MkdirAll(configDir, 0o755)
+	os.MkdirAll(backupDir, 0o755)
 
 	// Create sample config files
-	os.WriteFile(filepath.Join(configDir, "01_log.json"), []byte(`{"log":{"loglevel":"warning"}}`), 0644)
-	os.WriteFile(filepath.Join(configDir, "02_dns.json"), []byte(`{"dns":{"servers":["8.8.8.8"]}}`), 0644)
-	os.WriteFile(filepath.Join(configDir, "03_inbounds.json"), []byte(`{"inbounds":[{"tag":"tun-in"}]}`), 0644)
+	os.WriteFile(filepath.Join(configDir, "01_log.json"), []byte(`{"log":{"loglevel":"warning"}}`), 0o644)
+	os.WriteFile(filepath.Join(configDir, "02_dns.json"), []byte(`{"dns":{"servers":["8.8.8.8"]}}`), 0o644)
+	os.WriteFile(filepath.Join(configDir, "03_inbounds.json"), []byte(`{"inbounds":[{"tag":"tun-in"}]}`), 0o644)
 	os.WriteFile(filepath.Join(configDir, "04_outbounds.jsonc"), []byte(`{
 		// Outbound configuration
 		"outbounds": [{"tag":"proxy"}]
-	}`), 0644)
+	}`), 0o644)
 
 	// Create a YAML file for mihomo mode testing
 	mihomoDir := filepath.Join(tmpDir, "mihomo")
-	os.MkdirAll(mihomoDir, 0755)
-	os.WriteFile(filepath.Join(mihomoDir, "config.yaml"), []byte("proxy:\n  name: test\n"), 0644)
+	os.MkdirAll(mihomoDir, 0o755)
+	os.WriteFile(filepath.Join(mihomoDir, "config.yaml"), []byte("proxy:\n  name: test\n"), 0o644)
 
 	// Config file path (for mode saving)
 	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
-	os.MkdirAll(filepath.Dir(configPath), 0755)
-	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0644)
+	os.MkdirAll(filepath.Dir(configPath), 0o755)
+	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0o644)
 
 	handler := NewConfigHandler(
 		[]string{tmpDir},
@@ -55,7 +55,9 @@ func setupConfigTest(t *testing.T) (*ConfigHandler, string, string) {
 		"xray",
 	)
 
-	return handler, tmpDir, backupDir
+	dir = tmpDir
+	h = handler
+	return h, dir, backupDir
 }
 
 // --- ListFiles Tests ---
@@ -63,7 +65,7 @@ func setupConfigTest(t *testing.T) (*ConfigHandler, string, string) {
 func TestListFiles_DefaultPath(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/files", nil)
+	req := httptest.NewRequest("GET", "/api/config/files", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFiles(rec, req)
 
@@ -89,7 +91,7 @@ func TestListFiles_DefaultPath(t *testing.T) {
 func TestListFiles_SpecificPath(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/files?path="+filepath.Join(tmpDir, "configs"), nil)
+	req := httptest.NewRequest("GET", "/api/config/files?path="+filepath.Join(tmpDir, "configs"), http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFiles(rec, req)
 
@@ -101,7 +103,7 @@ func TestListFiles_SpecificPath(t *testing.T) {
 func TestListFiles_InvalidPath(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/files?path=/etc/passwd", nil)
+	req := httptest.NewRequest("GET", "/api/config/files?path=/etc/passwd", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFiles(rec, req)
 
@@ -113,7 +115,7 @@ func TestListFiles_InvalidPath(t *testing.T) {
 func TestListFiles_NonExistentDir(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/files?path="+filepath.Join(tmpDir, "nonexistent"), nil)
+	req := httptest.NewRequest("GET", "/api/config/files?path="+filepath.Join(tmpDir, "nonexistent"), http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFiles(rec, req)
 
@@ -125,7 +127,7 @@ func TestListFiles_NonExistentDir(t *testing.T) {
 func TestListFiles_MihomoMode(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/files?path="+filepath.Join(tmpDir, "mihomo")+"&mode=mihomo", nil)
+	req := httptest.NewRequest("GET", "/api/config/files?path="+filepath.Join(tmpDir, "mihomo")+"&mode=mihomo", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFiles(rec, req)
 
@@ -152,7 +154,7 @@ func TestReadFile_ValidJSON(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
 	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
-	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ReadFile(rec, req)
 
@@ -175,7 +177,7 @@ func TestReadFile_JSONCFile(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
 	filePath := filepath.Join(tmpDir, "configs", "04_outbounds.jsonc")
-	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ReadFile(rec, req)
 
@@ -194,7 +196,7 @@ func TestReadFile_JSONCFile(t *testing.T) {
 func TestReadFile_NoPath(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/file", nil)
+	req := httptest.NewRequest("GET", "/api/config/file", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ReadFile(rec, req)
 
@@ -207,7 +209,7 @@ func TestReadFile_NotFound(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
 	filePath := filepath.Join(tmpDir, "configs", "nonexistent.json")
-	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ReadFile(rec, req)
 
@@ -219,7 +221,7 @@ func TestReadFile_NotFound(t *testing.T) {
 func TestReadFile_OutsideRoot(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/file?path=/etc/passwd", nil)
+	req := httptest.NewRequest("GET", "/api/config/file?path=/etc/passwd", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ReadFile(rec, req)
 
@@ -366,7 +368,7 @@ func TestWriteFile_ConflictOnStaleMtime(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
 
 	// Read file first to get its mtime
-	readReq := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	readReq := httptest.NewRequest("GET", "/api/config/file?path="+filePath, http.NoBody)
 	readRec := httptest.NewRecorder()
 	handler.ReadFile(readRec, readReq)
 	if readRec.Code != http.StatusOK {
@@ -384,7 +386,7 @@ func TestWriteFile_ConflictOnStaleMtime(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 
 	// Modify file on disk directly (simulates external change)
-	if err := os.WriteFile(filePath, []byte(`{"external": true}`), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(`{"external": true}`), 0o644); err != nil {
 		t.Fatalf("failed to modify file: %v", err)
 	}
 
@@ -441,7 +443,7 @@ func TestReadFile_ReturnsModified(t *testing.T) {
 
 	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
 
-	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/file?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ReadFile(rec, req)
 
@@ -679,7 +681,7 @@ func TestRenameFile_DestinationExists(t *testing.T) {
 func TestGetMode(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/mode", nil)
+	req := httptest.NewRequest("GET", "/api/config/mode", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetMode(rec, req)
 
@@ -733,7 +735,7 @@ func TestListBackups(t *testing.T) {
 	handler, tmpDir, _ := setupConfigTest(t)
 
 	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
-	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListBackups(rec, req)
 
@@ -755,7 +757,7 @@ func TestListBackups_AfterWrite(t *testing.T) {
 	handler.WriteFile(rec, req)
 
 	// Now list backups
-	req = httptest.NewRequest("GET", "/api/config/backups?path="+filePath, nil)
+	req = httptest.NewRequest("GET", "/api/config/backups?path="+filePath, http.NoBody)
 	rec = httptest.NewRecorder()
 	handler.ListBackups(rec, req)
 
@@ -830,7 +832,7 @@ func TestRegisterConfigRoutes(t *testing.T) {
 	RegisterConfigRoutes(r, handler)
 
 	// Verify routes exist by making a request
-	req := httptest.NewRequest("GET", "/config/mode", nil)
+	req := httptest.NewRequest("GET", "/config/mode", http.NoBody)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -905,9 +907,9 @@ func TestGetBackupContent_ValidBackup(t *testing.T) {
 	backupContent := `{"log":{"loglevel":"warning"}}`
 	backupName := "01_log.json.20260101-120000.bak"
 	backupPath := filepath.Join(backupDir, backupName)
-	os.WriteFile(backupPath, []byte(backupContent), 0644)
+	os.WriteFile(backupPath, []byte(backupContent), 0o644)
 
-	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path="+backupPath, nil)
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path="+backupPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetBackupContent(rec, req)
 
@@ -932,7 +934,7 @@ func TestGetBackupContent_ValidBackup(t *testing.T) {
 func TestGetBackupContent_MissingParam(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/backups/content", nil)
+	req := httptest.NewRequest("GET", "/api/config/backups/content", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetBackupContent(rec, req)
 
@@ -945,7 +947,7 @@ func TestGetBackupContent_NotFound(t *testing.T) {
 	handler, _, backupDir := setupConfigTest(t)
 
 	backupPath := filepath.Join(backupDir, "nonexistent.bak")
-	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path="+backupPath, nil)
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path="+backupPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetBackupContent(rec, req)
 
@@ -957,7 +959,7 @@ func TestGetBackupContent_NotFound(t *testing.T) {
 func TestGetBackupContent_PathTraversal(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path=../../../etc/passwd", nil)
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path=../../../etc/passwd", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetBackupContent(rec, req)
 
@@ -969,7 +971,7 @@ func TestGetBackupContent_PathTraversal(t *testing.T) {
 func TestGetBackupContent_ExternalPath(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path=/etc/passwd", nil)
+	req := httptest.NewRequest("GET", "/api/config/backups/content?backup_path=/etc/passwd", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetBackupContent(rec, req)
 
@@ -987,7 +989,7 @@ func TestRestoreBackup_ValidBackup(t *testing.T) {
 	backupContent := `{"log":{"loglevel":"debug"}}`
 	backupName := "01_log.json.20260101-120000.bak"
 	backupPath := filepath.Join(backupDir, backupName)
-	os.WriteFile(backupPath, []byte(backupContent), 0644)
+	os.WriteFile(backupPath, []byte(backupContent), 0o644)
 
 	body := map[string]string{"backup_path": backupPath}
 	req := httptest.NewRequest("POST", "/api/config/restore", marshalBody(t, body))
@@ -1044,7 +1046,7 @@ func TestRestoreBackup_InvalidBackupFilename(t *testing.T) {
 
 	// Create a backup file with wrong name pattern (no .20 timestamp)
 	backupPath := filepath.Join(backupDir, "bad_backup.bak")
-	os.WriteFile(backupPath, []byte(`{}`), 0644)
+	os.WriteFile(backupPath, []byte(`{}`), 0o644)
 
 	body := map[string]string{"backup_path": backupPath}
 	req := httptest.NewRequest("POST", "/api/config/restore", marshalBody(t, body))
@@ -1356,7 +1358,7 @@ func TestWriteFile_CreatesParentDir(t *testing.T) {
 func TestListBackups_NoPathParam(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/backups", nil)
+	req := httptest.NewRequest("GET", "/api/config/backups", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListBackups(rec, req)
 
@@ -1369,7 +1371,7 @@ func TestListBackups_EmptyBackupDir(t *testing.T) {
 	handler, tmpDir, backupDir := setupConfigTest(t)
 
 	file := filepath.Join(tmpDir, "configs", "01_log.json")
-	req := httptest.NewRequest("GET", "/api/config/backups?path="+file, nil)
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+file, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListBackups(rec, req)
 
@@ -1401,14 +1403,14 @@ func TestListBackups_MultipleBackups(t *testing.T) {
 	content2 := `{"log":"newer"}`
 	bp1 := filepath.Join(backupDir, "01_log.json.20260101-100000.bak")
 	bp2 := filepath.Join(backupDir, "01_log.json.20260101-110000.bak")
-	os.WriteFile(bp1, []byte(content1), 0644)
-	os.WriteFile(bp2, []byte(content2), 0644)
+	os.WriteFile(bp1, []byte(content1), 0o644)
+	os.WriteFile(bp2, []byte(content2), 0o644)
 
 	// Also create a backup for a different file (should not appear)
-	os.WriteFile(filepath.Join(backupDir, "02_dns.json.20260101-100000.bak"), []byte(`{}`), 0644)
+	os.WriteFile(filepath.Join(backupDir, "02_dns.json.20260101-100000.bak"), []byte(`{}`), 0o644)
 
 	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
-	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListBackups(rec, req)
 
@@ -1432,7 +1434,7 @@ func TestListBackups_NonexistentBackupDir(t *testing.T) {
 	handler.backupDir = filepath.Join(tmpDir, "no-backups-dir")
 
 	filePath := filepath.Join(tmpDir, "configs", "01_log.json")
-	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, nil)
+	req := httptest.NewRequest("GET", "/api/config/backups?path="+filePath, http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListBackups(rec, req)
 
@@ -1647,7 +1649,7 @@ func TestDeleteFile_InvalidBody(t *testing.T) {
 func TestGetMode_Availability(t *testing.T) {
 	handler, _, _ := setupConfigTest(t)
 
-	req := httptest.NewRequest("GET", "/api/config/mode", nil)
+	req := httptest.NewRequest("GET", "/api/config/mode", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetMode(rec, req)
 
@@ -1669,7 +1671,7 @@ func TestGetMode_MihomoUnavailable(t *testing.T) {
 	// Remove mihomo dir
 	os.RemoveAll(filepath.Join(tmpDir, "mihomo"))
 
-	req := httptest.NewRequest("GET", "/api/config/mode", nil)
+	req := httptest.NewRequest("GET", "/api/config/mode", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetMode(rec, req)
 
@@ -1691,10 +1693,10 @@ func TestListFilesGrouped_AllThreeDirs(t *testing.T) {
 
 	// Create awg dir with a .conf file (setupConfigTest creates xray+mihomo but not awg)
 	awgDir := handler.awgConfigDir
-	os.MkdirAll(awgDir, 0755)
-	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = k\n"), 0644)
+	os.MkdirAll(awgDir, 0o755)
+	os.WriteFile(filepath.Join(awgDir, "server.conf"), []byte("[Interface]\nPrivateKey = k\n"), 0o644)
 
-	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFilesGrouped(rec, req)
 
@@ -1765,7 +1767,7 @@ func TestListFilesGrouped_OnlyXray(t *testing.T) {
 	// Remove mihomo dir; awg dir never created by setupConfigTest
 	os.RemoveAll(filepath.Join(tmpDir, "mihomo"))
 
-	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFilesGrouped(rec, req)
 
@@ -1799,18 +1801,18 @@ func TestListFilesGrouped_EmptyDirs(t *testing.T) {
 	awgDir := filepath.Join(tmpDir, "awg")
 	backupDir := filepath.Join(tmpDir, "backups")
 
-	os.MkdirAll(xrayDir, 0755)
-	os.MkdirAll(mihomoDir, 0755)
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(xrayDir, 0o755)
+	os.MkdirAll(mihomoDir, 0o755)
+	os.MkdirAll(awgDir, 0o755)
 
 	// Create a file that won't match any filter (e.g., .txt in xray dir)
-	os.WriteFile(filepath.Join(xrayDir, "notes.txt"), []byte("ignored"), 0644)
-	os.WriteFile(filepath.Join(mihomoDir, "notes.txt"), []byte("ignored"), 0644)
-	os.WriteFile(filepath.Join(awgDir, "notes.txt"), []byte("ignored"), 0644)
+	os.WriteFile(filepath.Join(xrayDir, "notes.txt"), []byte("ignored"), 0o644)
+	os.WriteFile(filepath.Join(mihomoDir, "notes.txt"), []byte("ignored"), 0o644)
+	os.WriteFile(filepath.Join(awgDir, "notes.txt"), []byte("ignored"), 0o644)
 
 	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
-	os.MkdirAll(filepath.Dir(configPath), 0755)
-	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0644)
+	os.MkdirAll(filepath.Dir(configPath), 0o755)
+	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0o644)
 
 	handler := NewConfigHandler(
 		[]string{tmpDir},
@@ -1822,7 +1824,7 @@ func TestListFilesGrouped_EmptyDirs(t *testing.T) {
 		"xray",
 	)
 
-	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFilesGrouped(rec, req)
 
@@ -1851,11 +1853,11 @@ func TestListFilesGrouped_NoDirsExist(t *testing.T) {
 	// All dir paths point to nonexistent directories
 	nonexistentDir := filepath.Join(tmpDir, "nonexistent")
 	backupDir := filepath.Join(tmpDir, "backups")
-	os.MkdirAll(backupDir, 0755)
+	os.MkdirAll(backupDir, 0o755)
 
 	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
-	os.MkdirAll(filepath.Dir(configPath), 0755)
-	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0644)
+	os.MkdirAll(filepath.Dir(configPath), 0o755)
+	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0o644)
 
 	handler := NewConfigHandler(
 		[]string{tmpDir},
@@ -1867,7 +1869,7 @@ func TestListFilesGrouped_NoDirsExist(t *testing.T) {
 		"xray",
 	)
 
-	req := httptest.NewRequest("GET", "/api/config/files/grouped", nil)
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ListFilesGrouped(rec, req)
 
@@ -1894,7 +1896,7 @@ func TestListFilesGrouped_RouteRegistered(t *testing.T) {
 	r := mux.NewRouter()
 	RegisterConfigRoutes(r, handler)
 
-	req := httptest.NewRequest("GET", "/config/files/grouped", nil)
+	req := httptest.NewRequest("GET", "/config/files/grouped", http.NoBody)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -1913,7 +1915,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	for i := 0; i < 7; i++ {
 		name := fmt.Sprintf("%s.2026010%d-120000.bak", baseName, i+1)
 		path := filepath.Join(backupDir, name)
-		os.WriteFile(path, []byte(`{}`), 0644)
+		os.WriteFile(path, []byte(`{}`), 0o644)
 		// Small delay to ensure different mod times
 		time.Sleep(10 * time.Millisecond)
 	}

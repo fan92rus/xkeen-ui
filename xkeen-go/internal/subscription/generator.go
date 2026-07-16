@@ -205,7 +205,7 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 	}
 
 	// Generate balancers for each enabled profile.
-	var balancers []map[string]interface{}
+	var balancers []map[string]interface{} //nolint:prealloc // nil slice required for JSON omitempty semantics
 	for _, profile := range profiles {
 		if !profile.Enabled {
 			continue

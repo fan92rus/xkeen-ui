@@ -19,7 +19,7 @@ import (
 // cascade (try proxy → fallback direct) одинакова для всех схем прокси.
 func startTestHTTPProxy(t *testing.T) string {
 	t.Helper()
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Standard HTTP CONNECT / proxy behavior is handled by httptest itself
 		// when using HandlerFunc with non-CONNECT requests: serve directly.
 		w.Write([]byte(simpleSubContent()))
@@ -35,7 +35,7 @@ func simpleSubContent() string {
 }
 
 func TestFetchWithCascade_DirectOnly_WhenNoProxy(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(simpleSubContent()))
 	}))
 	defer server.Close()
@@ -59,7 +59,7 @@ func TestFetchWithCascade_ProxySuccess(t *testing.T) {
 	proxyURL := startTestHTTPProxy(t)
 
 	// Целевой сервер (для URL, к которому обращаемся)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		// Если запрос пришёл сюда напрямую (мимо прокси) — это ошибка логики
 		t.Errorf("direct target should not be hit when proxy succeeds")
 	}))
@@ -85,7 +85,7 @@ func TestFetchWithCascade_ProxySuccess(t *testing.T) {
 
 func TestFetchWithCascade_FallbackToDirect_WhenProxyDown(t *testing.T) {
 	// Целевой сервер (доступен напрямую)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(simpleSubContent()))
 	}))
 	defer target.Close()
@@ -125,7 +125,7 @@ func TestFetchWithCascade_BothFail_ReturnsAggregatedError(t *testing.T) {
 }
 
 func TestFetchWithCascade_ResetProxy(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(simpleSubContent()))
 	}))
 	defer server.Close()
@@ -147,7 +147,7 @@ func TestFetchWithCascade_ResetProxy(t *testing.T) {
 }
 
 func TestFetchWithCascade_PreservesBackwardCompat_Fetch(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(simpleSubContent()))
 	}))
 	defer server.Close()
@@ -165,7 +165,7 @@ func TestFetchWithCascade_PreservesBackwardCompat_Fetch(t *testing.T) {
 
 func TestFetchWithCascade_ProxyTimeout_FallsBackToDirect(t *testing.T) {
 	// Целевой сервер отвечает быстро напрямую
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(simpleSubContent()))
 	}))
 	defer target.Close()

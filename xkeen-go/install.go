@@ -45,7 +45,7 @@ func install() error {
 		filepath.Dir(installLogFile),
 	}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
@@ -58,7 +58,7 @@ func install() error {
 		// Remove old binary if exists (only if running from different location)
 		if _, err := os.Stat(targetBin); err == nil {
 			fmt.Println("Removing old binary...")
-			os.Remove(targetBin)
+			_ = os.Remove(targetBin)
 		}
 
 		// Copy binary to /opt/bin
@@ -67,7 +67,8 @@ func install() error {
 		if err != nil {
 			return fmt.Errorf("failed to read binary: %w", err)
 		}
-		if err := os.WriteFile(targetBin, data, 0755); err != nil {
+		//nolint:gosec // binary needs execute permission
+		if err := os.WriteFile(targetBin, data, 0o755); err != nil {
 			return fmt.Errorf("failed to copy binary: %w", err)
 		}
 	} else {
@@ -87,8 +88,8 @@ func install() error {
 		}
 
 		// Create config with default credentials and force password change
-		configContent := strings.Replace(defaultConfigJSON, `"session_secret": ""`, fmt.Sprintf(`"session_secret": "%s"`, secret), 1)
-		configContent = strings.Replace(configContent, `"password_hash": ""`, fmt.Sprintf(`"password_hash": "%s"`, string(passwordHash)), 1)
+		configContent := strings.Replace(defaultConfigJSON, `"session_secret": ""`, fmt.Sprintf(`"session_secret": %q`, secret), 1)
+		configContent = strings.Replace(configContent, `"password_hash": ""`, fmt.Sprintf(`"password_hash": %q`, string(passwordHash)), 1)
 
 		// Add force_password_change flag for default credentials
 		var configMap map[string]interface{}
@@ -103,7 +104,7 @@ func install() error {
 			return fmt.Errorf("failed to marshal config: %w", err)
 		}
 
-		if err := os.WriteFile(installConfig, configBytes, 0600); err != nil {
+		if err := os.WriteFile(installConfig, configBytes, 0o600); err != nil {
 			return fmt.Errorf("failed to create config: %w", err)
 		}
 		fmt.Println()
@@ -119,23 +120,25 @@ func install() error {
 	// Create init script
 	fmt.Printf("Creating init script at %s...\n", installInitScript)
 	initDir := filepath.Dir(installInitScript)
-	if err := os.MkdirAll(initDir, 0755); err != nil {
+	if err := os.MkdirAll(initDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create init directory: %w", err)
 	}
-	if err := os.WriteFile(installInitScript, []byte(getInitScript(binaryName)), 0755); err != nil {
+	//nolint:gosec // init script needs execute
+	if err := os.WriteFile(installInitScript, []byte(getInitScript(binaryName)), 0o755); err != nil {
 		return fmt.Errorf("failed to create init script: %w", err)
 	}
 
 	// Create symlink for easy access
 	fmt.Printf("Creating symlink at %s...\n", installSymlink)
-	os.Remove(installSymlink) // Remove existing symlink if any
+	_ = os.Remove(installSymlink) // Remove existing symlink if any
 	if err := os.Symlink(installInitScript, installSymlink); err != nil {
 		fmt.Printf("Warning: failed to create symlink: %v\n", err)
 	}
 
 	// Create update script
 	fmt.Printf("Creating update script at %s...\n", installUpdateScript)
-	if err := os.WriteFile(installUpdateScript, []byte(updateScript), 0755); err != nil {
+	//nolint:gosec // update script needs execute
+	if err := os.WriteFile(installUpdateScript, []byte(updateScript), 0o755); err != nil {
 		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
@@ -144,21 +147,21 @@ func install() error {
 	// that may return non-zero and abort the rc.unslung boot sequence.
 	fmt.Println("Enabling autostart...")
 	// Remove legacy S99 symlink if upgrading from an older xkeen-ui version
-	os.Remove(installOldAutoStart)
-	os.Remove(installAutoStart)
+	_ = os.Remove(installOldAutoStart)
+	_ = os.Remove(installAutoStart)
 	if err := os.Symlink(installInitScript, installAutoStart); err != nil {
 		fmt.Printf("Warning: failed to create autostart symlink: %v\n", err)
 	}
 	// Also create in rc.d/ for Entware variants that use it.
 	// Clean both S70 and legacy S99 links before creating new ones.
 	rcDir := "/opt/etc/init.d/rc.d"
-	os.MkdirAll(rcDir, 0755)
+	_ = os.MkdirAll(rcDir, 0o750)
 	for _, suffix := range []string{"S70xkeen-ui", "S99xkeen-ui"} {
-		os.Remove(filepath.Join(rcDir, suffix))
+		_ = os.Remove(filepath.Join(rcDir, suffix))
 	}
-	os.Remove(filepath.Join(rcDir, "K01xkeen-ui"))
-	os.Symlink(installInitScript, filepath.Join(rcDir, "S70xkeen-ui"))
-	os.Symlink(installInitScript, filepath.Join(rcDir, "K01xkeen-ui"))
+	_ = os.Remove(filepath.Join(rcDir, "K01xkeen-ui"))
+	_ = os.Symlink(installInitScript, filepath.Join(rcDir, "S70xkeen-ui"))
+	_ = os.Symlink(installInitScript, filepath.Join(rcDir, "K01xkeen-ui"))
 
 	// Clean up stale init scripts from older xkeen-ui versions that can
 	// break boot on some Keenetic setups (non-zero exit aborts rc.unslung).
@@ -171,16 +174,16 @@ func install() error {
 		"* * * * * root %s check || %s start >> %s 2>&1\n",
 		installSymlink, installSymlink, installLogFile,
 	)
-	if err := os.MkdirAll(cronDir, 0755); err != nil {
+	if err := os.MkdirAll(cronDir, 0o750); err != nil {
 		fmt.Printf("Warning: failed to create cron directory: %v\n", err)
-	} else if err := os.WriteFile(cronFile, []byte(cronContent), 0644); err != nil {
+	} else if err := os.WriteFile(cronFile, []byte(cronContent), 0o600); err != nil {
 		fmt.Printf("Warning: failed to create cron watchdog: %v\n", err)
 	} else {
 		fmt.Println("Cron watchdog created (checks every minute, restart if down)")
 	}
 
 	// Restart cron to pick up new watchdog
-	exec.Command("killall", "-HUP", "crond").Run()
+	_ = exec.Command("killall", "-HUP", "crond").Run()
 
 	fmt.Println()
 	fmt.Println("===================================")
@@ -229,7 +232,8 @@ func uninstall() error {
 
 	// Write uninstall script to temp location
 	tmpScript := "/tmp/xkeen-ui-uninstall.sh"
-	if err := os.WriteFile(tmpScript, []byte(uninstallScript), 0755); err != nil {
+	//nolint:gosec // uninstall script needs execute
+	if err := os.WriteFile(tmpScript, []byte(uninstallScript), 0o755); err != nil {
 		return fmt.Errorf("failed to create uninstall script: %w", err)
 	}
 
@@ -252,7 +256,7 @@ func stopProcess() {
 	pids := findProcessPIDs()
 	for _, pidStr := range pids {
 		var pid int
-		fmt.Sscanf(pidStr, "%d", &pid)
+		_, _ = fmt.Sscanf(pidStr, "%d", &pid)
 		if pid == myPID {
 			continue
 		}
@@ -261,13 +265,13 @@ func stopProcess() {
 	}
 
 	// Wait a moment
-	exec.Command("sleep", "1").Run()
+	_ = exec.Command("sleep", "1").Run()
 
 	// Force kill if still running
 	pids = findProcessPIDs()
 	for _, pidStr := range pids {
 		var pid int
-		fmt.Sscanf(pidStr, "%d", &pid)
+		_, _ = fmt.Sscanf(pidStr, "%d", &pid)
 		if pid == myPID {
 			continue
 		}

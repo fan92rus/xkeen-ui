@@ -32,16 +32,17 @@ import (
 // Uncompressed Go binary with embedded frontend is ~6.4MB; UPX-compressed is ~1.9MB.
 const minBinarySize = 2_000_000
 
+// UpdateShutdownCh is used to signal the main process to shut down for updates.
 var UpdateShutdownCh = make(chan struct{}, 1)
 
 // UpdateHandler handles application update operations.
 type UpdateHandler struct {
-	githubRepo    string
-	binaryName    string
-	installPath   string
-	initScript    string
-	updateScript  string
-	downloadURL   string
+	githubRepo   string
+	binaryName   string
+	installPath  string
+	initScript   string
+	updateScript string
+	downloadURL  string
 
 	// httpClient is the HTTP client for GitHub API calls.
 	// Defaults to http.DefaultClient; overridable in tests.
@@ -51,7 +52,7 @@ type UpdateHandler struct {
 	// Defaults to "https://api.github.com"; overridable in tests.
 	apiBaseURL string
 
-	mu             sync.Mutex
+	mu            sync.Mutex
 	devReleaseTag string // Latest dev release tag for download
 }
 
@@ -141,8 +142,7 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 
 // getLatestStableRelease fetches the latest stable release from GitHub.
 func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRelease, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/repos/%s/releases/latest", h.apiBaseURL, h.githubRepo), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/repos/%s/releases/latest", h.apiBaseURL, h.githubRepo), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -171,8 +171,7 @@ func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRele
 
 // getLatestPrerelease fetches the latest dev prerelease from GitHub.
 func (h *UpdateHandler) getLatestPrerelease(ctx context.Context) (*GitHubRelease, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/repos/%s/releases?per_page=100", h.apiBaseURL, h.githubRepo), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/repos/%s/releases?per_page=100", h.apiBaseURL, h.githubRepo), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
@@ -359,7 +358,8 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2: Set permissions
 	sendEvent("progress", ProgressData{Percent: 45, Status: "setting permissions"})
-	if err := os.Chmod(tmpFile, 0755); err != nil {
+	//nolint:gosec // binary needs execute permission
+	if err := os.Chmod(tmpFile, 0o755); err != nil {
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to set permissions: %v", err)})
 		return
 	}
@@ -392,7 +392,7 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	updateCmd := exec.Command("sh", "-c", shellCmd)
 	if err := updateCmd.Run(); err != nil {
 		// Clean up temp file on error
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to start update script: %v", err)})
 		return
 	}
@@ -420,7 +420,7 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 // downloadFile downloads a file from URL to path.
 func (h *UpdateHandler) downloadFile(ctx context.Context, path, url string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -441,7 +441,7 @@ func (h *UpdateHandler) downloadFile(ctx context.Context, path, url string) erro
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	_, err = io.Copy(out, resp.Body)
 	return err
@@ -492,19 +492,18 @@ func (h *UpdateHandler) downloadWithChecksum(ctx context.Context, binaryPath, bi
 	// 5. Verify checksum (constant-time comparison)
 	if subtle.ConstantTimeCompare([]byte(expectedChecksum), []byte(actualChecksum)) != 1 {
 		// Remove corrupted binary
-		os.Remove(binaryPath)
-		os.Remove(checksumPath)
+		_ = os.Remove(binaryPath)
+		_ = os.Remove(checksumPath)
 		return fmt.Errorf("checksum verification failed: expected %s, got %s", expectedChecksum, actualChecksum)
 	}
 
 	log.Printf("Checksum verified successfully: %s", actualChecksum[:16]+"...")
 
 	// 6. Clean up checksum file
-	os.Remove(checksumPath)
+	_ = os.Remove(checksumPath)
 
 	return nil
 }
-
 
 func (h *UpdateHandler) setDevReleaseTag(tag string) {
 	h.mu.Lock()

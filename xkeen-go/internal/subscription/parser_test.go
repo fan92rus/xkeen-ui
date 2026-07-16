@@ -668,7 +668,7 @@ func TestHysteria2_BasicStructure(t *testing.T) {
 		t.Errorf("streamSettings.security: got %v, want tls", ss["security"])
 	}
 
-	// hysteriaSettings.auth = password
+	// hysteriaSettings should contain the password
 	hsRaw, hasHS := ss["hysteriaSettings"]
 	if !hasHS {
 		t.Fatal("streamSettings missing hysteriaSettings")
@@ -681,7 +681,7 @@ func TestHysteria2_BasicStructure(t *testing.T) {
 		t.Errorf("hysteriaSettings.auth: got %v, want my-password", hs["auth"])
 	}
 
-	// tlsSettings.serverName = sni
+	// tlsSettings should contain the SNI
 	tlsRaw, hasTLS := ss["tlsSettings"]
 	if !hasTLS {
 		t.Fatal("streamSettings missing tlsSettings")

@@ -60,9 +60,6 @@ type mihomoProxyGroup struct {
 	Lazy       bool     `yaml:"lazy,omitempty"`
 }
 
-// mihomoRule is a single traffic routing rule.
-type mihomoRule string
-
 // mihomoConfig is the top-level Clash/Mihomo YAML structure.
 type mihomoConfig struct {
 	Proxies     []*mihomoProxy     `yaml:"proxies"`
@@ -391,7 +388,7 @@ func hasActiveFilter(f Filter) bool {
 		len(f.IncludeRegexes) > 0 || len(f.ExcludeRegexes) > 0 || f.MaxProxies > 0
 }
 
-func matchFilter(_ string, f Filter) bool {
+func matchFilter(_ string, _ Filter) bool {
 	// Simple stub — real matching uses the same logic as ApplyFilter
 	return true
 }

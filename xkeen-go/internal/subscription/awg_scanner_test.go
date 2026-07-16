@@ -9,7 +9,7 @@ import (
 func TestScanAWGConfigs_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	awgDir := filepath.Join(dir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	store, _ := NewStore(filepath.Join(dir, "subs.json"))
 	configs, err := store.ScanAWGConfigs(awgDir)
@@ -24,7 +24,7 @@ func TestScanAWGConfigs_EmptyDir(t *testing.T) {
 func TestScanAWGConfigs_SingleConfig(t *testing.T) {
 	dir := t.TempDir()
 	awgDir := filepath.Join(dir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	confContent := `[Interface]
 PrivateKey = aA1bB2cC3dD4eE5fF6gG7hH8iI9jJ0kK1lL2mM3nN4oO=
@@ -37,7 +37,7 @@ AllowedIPs = 0.0.0.0/0
 Endpoint = 162.159.192.192:2408
 `
 
-	os.WriteFile(filepath.Join(awgDir, "warp.conf"), []byte(confContent), 0644)
+	os.WriteFile(filepath.Join(awgDir, "warp.conf"), []byte(confContent), 0o644)
 
 	store, _ := NewStore(filepath.Join(dir, "subs.json"))
 	configs, err := store.ScanAWGConfigs(awgDir)
@@ -58,7 +58,7 @@ Endpoint = 162.159.192.192:2408
 func TestScanAWGConfigs_IncrementalMarks(t *testing.T) {
 	dir := t.TempDir()
 	awgDir := filepath.Join(dir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	confContent := `[Interface]
 PrivateKey = aA1bB2cC3dD4eE5fF6gG7hH8iI9jJ0kK1lL2mM3nN4oO=
@@ -70,9 +70,9 @@ AllowedIPs = 0.0.0.0/0
 Endpoint = 162.159.192.192:2408
 `
 
-	os.WriteFile(filepath.Join(awgDir, "warp1.conf"), []byte(confContent), 0644)
-	os.WriteFile(filepath.Join(awgDir, "warp2.conf"), []byte(confContent), 0644)
-	os.WriteFile(filepath.Join(awgDir, "warp3.conf"), []byte(confContent), 0644)
+	os.WriteFile(filepath.Join(awgDir, "warp1.conf"), []byte(confContent), 0o644)
+	os.WriteFile(filepath.Join(awgDir, "warp2.conf"), []byte(confContent), 0o644)
+	os.WriteFile(filepath.Join(awgDir, "warp3.conf"), []byte(confContent), 0o644)
 
 	store, _ := NewStore(filepath.Join(dir, "subs.json"))
 	configs, err := store.ScanAWGConfigs(awgDir)
@@ -99,7 +99,7 @@ Endpoint = 162.159.192.192:2408
 func TestScanAWGConfigs_PreservesExistingMarks(t *testing.T) {
 	dir := t.TempDir()
 	awgDir := filepath.Join(dir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	confContent := `[Interface]
 PrivateKey = aA1bB2cC3dD4eE5fF6gG7hH8iI9jJ0kK1lL2mM3nN4oO=
@@ -111,7 +111,7 @@ AllowedIPs = 0.0.0.0/0
 Endpoint = 162.159.192.192:2408
 `
 
-	os.WriteFile(filepath.Join(awgDir, "warp.conf"), []byte(confContent), 0644)
+	os.WriteFile(filepath.Join(awgDir, "warp.conf"), []byte(confContent), 0o644)
 
 	store, _ := NewStore(filepath.Join(dir, "subs.json"))
 	configs, _ := store.ScanAWGConfigs(awgDir)
@@ -181,7 +181,7 @@ func TestGenerateAWGProxies_MultipleConfigs(t *testing.T) {
 func TestRemoveAWGConfig(t *testing.T) {
 	dir := t.TempDir()
 	awgDir := filepath.Join(dir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	confContent := `[Interface]
 PrivateKey = aA1bB2cC3dD4eE5fF6gG7hH8iI9jJ0kK1lL2mM3nN4oO=
@@ -192,8 +192,8 @@ PublicKey = pP0oO1iI2uU3yY4tT5rR6eE7wW8qQ9zZ0xX1cC2vV3bB4nN5mM=
 AllowedIPs = 0.0.0.0/0
 Endpoint = 162.159.192.192:2408
 `
-	os.WriteFile(filepath.Join(awgDir, "warp1.conf"), []byte(confContent), 0644)
-	os.WriteFile(filepath.Join(awgDir, "warp2.conf"), []byte(confContent), 0644)
+	os.WriteFile(filepath.Join(awgDir, "warp1.conf"), []byte(confContent), 0o644)
+	os.WriteFile(filepath.Join(awgDir, "warp2.conf"), []byte(confContent), 0o644)
 
 	store, _ := NewStore(filepath.Join(dir, "subs.json"))
 	store.ScanAWGConfigs(awgDir)
@@ -226,7 +226,7 @@ Endpoint = 162.159.192.192:2408
 func TestListAWGConfigs(t *testing.T) {
 	dir := t.TempDir()
 	awgDir := filepath.Join(dir, "awg")
-	os.MkdirAll(awgDir, 0755)
+	os.MkdirAll(awgDir, 0o755)
 
 	confContent := `[Interface]
 PrivateKey = aA1bB2cC3dD4eE5fF6gG7hH8iI9jJ0kK1lL2mM3nN4oO=
@@ -237,7 +237,7 @@ PublicKey = pP0oO1iI2uU3yY4tT5rR6eE7wW8qQ9zZ0xX1cC2vV3bB4nN5mM=
 AllowedIPs = 0.0.0.0/0
 Endpoint = 162.159.192.192:2408
 `
-	os.WriteFile(filepath.Join(awgDir, "warp.conf"), []byte(confContent), 0644)
+	os.WriteFile(filepath.Join(awgDir, "warp.conf"), []byte(confContent), 0o644)
 
 	store, _ := NewStore(filepath.Join(dir, "subs.json"))
 	store.ScanAWGConfigs(awgDir)

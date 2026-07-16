@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -132,7 +133,7 @@ func TestRefreshOne_BadURL(t *testing.T) {
 // ---------- RefreshAll ----------
 
 func TestRefreshAll(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp&security=reality#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -176,7 +177,7 @@ func TestRefreshAll(t *testing.T) {
 // ---------- OnUpdate callback ----------
 
 func TestOnUpdate_CalledOnRefreshOne(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp&security=reality#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -209,7 +210,7 @@ func TestOnUpdate_CalledOnRefreshOne(t *testing.T) {
 // ---------- Integration: Fetcher with custom client + scheduler ----------
 
 func TestScheduler_FetchWithCustomClient(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp&security=reality#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -334,7 +335,7 @@ func TestScheduler_SetXrayDir(t *testing.T) {
 
 func TestScheduler_RunAutoApply_Success(t *testing.T) {
 	// Create a test server that returns vless proxies
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#%F0%9F%87%A9%F0%9F%87%AA%20Standard"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -393,7 +394,7 @@ func TestScheduler_RunAutoApply_Success(t *testing.T) {
 }
 
 func TestScheduler_RunAutoApply_WithObservatory(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#%F0%9F%87%A9%F0%9F%87%AA%20Standard"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -444,7 +445,7 @@ func TestScheduler_RunAutoApply_NoProxies(t *testing.T) {
 }
 
 func TestScheduler_RunAutoApply_WriteError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -469,7 +470,7 @@ func TestScheduler_RunAutoApply_WriteError(t *testing.T) {
 }
 
 func TestScheduler_RunAutoApply_RemovesObservatory(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -504,7 +505,7 @@ func TestScheduler_RunAutoApply_RemovesObservatory(t *testing.T) {
 }
 
 func TestScheduler_RunAutoApply_SetsGeneratedAt(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -530,7 +531,7 @@ func TestScheduler_RunAutoApply_SetsGeneratedAt(t *testing.T) {
 }
 
 func TestScheduler_RunAutoApply_OnUpdateCallback(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -557,7 +558,7 @@ func TestScheduler_RunAutoApply_OnUpdateCallback(t *testing.T) {
 }
 
 func TestScheduler_RunAutoApply_AllFilteredOut(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#%E2%9A%A1%20Fast"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -600,7 +601,7 @@ func TestScheduler_WriteConfigFiles_PreservesExistingRouting(t *testing.T) {
 		},
 	}
 	routingJSON, _ := json.MarshalIndent(existingRouting, "", "  ")
-	os.WriteFile(filepath.Join(dir, "05_routing.json"), routingJSON, 0644)
+	os.WriteFile(filepath.Join(dir, "05_routing.json"), routingJSON, 0o644)
 
 	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
 	proxies := []*ProxyEntry{
@@ -698,7 +699,7 @@ func TestScheduler_WriteConfigFiles_NoXrayDir(t *testing.T) {
 // ---------- Concurrent refresh ----------
 
 func TestScheduler_ConcurrentRefresh(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -755,7 +756,7 @@ func TestScheduler_ConcurrentRefresh(t *testing.T) {
 // ---------- Interval checker ----------
 
 func TestScheduler_IntervalChecker(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -892,7 +893,7 @@ func TestScheduler_UpdateAutoApply_CronSwap(t *testing.T) {
 
 func TestScheduler_RefreshAll_FailureContinues(t *testing.T) {
 	var callCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		callCount.Add(1)
 		if callCount.Load() <= 1 {
 			// First request fails
@@ -926,7 +927,7 @@ func TestScheduler_RefreshAll_FailureContinues(t *testing.T) {
 }
 
 func TestScheduler_RefreshAll_SkipsDisabled(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -960,7 +961,7 @@ func TestScheduler_RefreshAll_SkipsDisabled(t *testing.T) {
 
 func TestScheduler_FetcherContextCancellation(t *testing.T) {
 	// Server that sleeps forever
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		time.Sleep(10 * time.Second)
 	}))
 	defer server.Close()
@@ -1076,7 +1077,7 @@ func TestAtomicWrite_CreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
-	if string(content) != string(data) {
+	if !bytes.Equal(content, data) {
 		t.Errorf("content mismatch: got %q, want %q", string(content), string(data))
 	}
 
@@ -1091,7 +1092,7 @@ func TestAtomicWrite_ReplacesExistingFile(t *testing.T) {
 	path := dir + "/test.json"
 
 	// Write initial content
-	os.WriteFile(path, []byte("old"), 0644)
+	os.WriteFile(path, []byte("old"), 0o644)
 
 	// Atomic-write new content
 	newData := []byte(`{"new":"data"}`)
@@ -1100,7 +1101,7 @@ func TestAtomicWrite_ReplacesExistingFile(t *testing.T) {
 	}
 
 	content, _ := os.ReadFile(path)
-	if string(content) != string(newData) {
+	if !bytes.Equal(content, newData) {
 		t.Errorf("expected new content, got %q", string(content))
 	}
 }
@@ -1293,7 +1294,7 @@ func TestScheduler_Start_WithoutCron(t *testing.T) {
 // ---------- SubscriptionID tracking ----------
 
 func TestRefreshOne_SetsSubscriptionID(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp&security=reality#%F0%9F%87%A9%F0%9F%87%AA%20Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -1323,7 +1324,7 @@ func TestRefreshOne_SetsSubscriptionID(t *testing.T) {
 
 func TestRefreshOne_ReplacesOldProxies(t *testing.T) {
 	var callCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		callCount.Add(1)
 		var lines string
 		if callCount.Load() == 1 {
@@ -1363,7 +1364,7 @@ func TestRefreshOne_ReplacesOldProxies(t *testing.T) {
 }
 
 func TestRefreshOne_KeepsOtherSubscriptionProxies(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp#Proxy"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -1407,7 +1408,7 @@ func TestRefreshOne_KeepsOtherSubscriptionProxies(t *testing.T) {
 }
 
 func TestRefreshOne_CleansOrphanedProxies(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp#Proxy"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -1441,7 +1442,7 @@ func TestRefreshOne_CleansOrphanedProxies(t *testing.T) {
 }
 
 func TestRefreshAll_SetsSubscriptionID(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://uuid@1.2.3.4:443?type=tcp#Proxy"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
 		w.Write([]byte(encoded))
@@ -1474,7 +1475,7 @@ func TestRefreshAll_SetsSubscriptionID(t *testing.T) {
 func TestRefreshAll_TagCollisionBetweenSubscriptions(t *testing.T) {
 	// Two subscriptions, both with a DE proxy.
 	// They should NOT produce duplicate tags.
-	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// DE proxy pointing to server 1.2.3.4
 		lines := "vless://uuid1@1.2.3.4:443?type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20ServerA"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
@@ -1482,7 +1483,7 @@ func TestRefreshAll_TagCollisionBetweenSubscriptions(t *testing.T) {
 	}))
 	defer server1.Close()
 
-	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// DE proxy pointing to server 5.6.7.8
 		lines := "vless://uuid2@5.6.7.8:443?type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20ServerB"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))
@@ -1537,7 +1538,6 @@ func TestRefreshAll_TagCollisionBetweenSubscriptions(t *testing.T) {
 	}
 }
 
-
 // --- Parallel execution ---
 
 func TestRefreshAll_ParallelExecution(t *testing.T) {
@@ -1547,7 +1547,7 @@ func TestRefreshAll_ParallelExecution(t *testing.T) {
 	//   parallel:   ~200-400ms (max sleep + overhead)
 	sleepTime := 200 * time.Millisecond
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(sleepTime)
 		lines := "vless://uuid@1.2.3.4:443?type=tcp#Test"
 		encoded := base64.StdEncoding.EncodeToString([]byte(lines))

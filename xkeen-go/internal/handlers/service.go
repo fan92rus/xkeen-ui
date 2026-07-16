@@ -43,7 +43,7 @@ func (e *realExecutor) Execute(ctx context.Context, name string, args ...string)
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return string(output), fmt.Errorf("command timed out")
 		}
-		return string(output), fmt.Errorf("command cancelled: %w", ctx.Err())
+		return string(output), fmt.Errorf("command canceled: %w", ctx.Err())
 	}
 
 	if err != nil {
@@ -55,7 +55,6 @@ func (e *realExecutor) Execute(ctx context.Context, name string, args ...string)
 
 // ServiceHandler handles xkeen service operations.
 type ServiceHandler struct {
-	mu              sync.RWMutex
 	allowedCommands map[string]string
 	executor        CommandExecutor
 	statusTrigger   chan struct{}
@@ -244,7 +243,7 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send initial status immediately
-	h.sendStatusEvent(r.Context(), w, flusher)
+	_ = h.sendStatusEvent(r.Context(), w, flusher)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -303,7 +302,7 @@ func (h *ServiceHandler) sendStatusEvent(ctx context.Context, w http.ResponseWri
 // Start starts the xkeen service.
 // POST /api/xkeen/start
 // Runs asynchronously to avoid blocking the request.
-func (h *ServiceHandler) Start(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) Start(w http.ResponseWriter, _ *http.Request) {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
@@ -332,7 +331,7 @@ func (h *ServiceHandler) Start(w http.ResponseWriter, r *http.Request) {
 // Stop stops the xkeen service.
 // POST /api/xkeen/stop
 // Runs asynchronously to avoid blocking the request.
-func (h *ServiceHandler) Stop(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) Stop(w http.ResponseWriter, _ *http.Request) {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
@@ -384,7 +383,7 @@ func (h *ServiceHandler) RestartService() {
 // Restart restarts the xkeen service.
 // POST /api/xkeen/restart
 // Runs restart asynchronously to avoid blocking the request.
-func (h *ServiceHandler) Restart(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) Restart(w http.ResponseWriter, _ *http.Request) {
 	h.RestartService()
 
 	// Return immediately
@@ -402,4 +401,3 @@ func RegisterServiceRoutes(r *mux.Router, handler *ServiceHandler) {
 	r.HandleFunc("/xkeen/stop", handler.Stop).Methods("POST")
 	r.HandleFunc("/xkeen/restart", handler.Restart).Methods("POST")
 }
-

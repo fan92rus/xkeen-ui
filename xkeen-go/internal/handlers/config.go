@@ -266,7 +266,7 @@ type ListFilesGroupedResponse struct {
 
 // ListFilesGrouped returns files grouped by config directory (xray, mihomo, awg).
 // GET /api/config/files/grouped
-func (h *ConfigHandler) ListFilesGrouped(w http.ResponseWriter, r *http.Request) {
+func (h *ConfigHandler) ListFilesGrouped(w http.ResponseWriter, _ *http.Request) {
 	groups := []GroupedFile{}
 
 	// Xray files
@@ -307,7 +307,7 @@ func (h *ConfigHandler) ListFilesGrouped(w http.ResponseWriter, r *http.Request)
 
 // GetMode returns current mode and availability.
 // GET /api/config/mode
-func (h *ConfigHandler) GetMode(w http.ResponseWriter, r *http.Request) {
+func (h *ConfigHandler) GetMode(w http.ResponseWriter, _ *http.Request) {
 	xrayAvailable := h.dirExists(h.xrayConfigDir)
 	mihomoAvailable := h.dirExists(h.mihomoConfigDir)
 
@@ -384,7 +384,7 @@ func (h *ConfigHandler) saveModeToConfig(mode string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(h.configPath, newData, 0644); err != nil {
+	if err := os.WriteFile(h.configPath, newData, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -438,7 +438,7 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isYAMLFile(cleanPath):
 		// YAML files - basic validation (non-empty)
-		isValid = len(strings.TrimSpace(string(data))) > 0
+		isValid = strings.TrimSpace(string(data)) != ""
 	case isConfFile(cleanPath):
 		// AWG/WireGuard conf files - always valid (plain text)
 		isValid = true
@@ -513,7 +513,7 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		}
 	case isConfFile(cleanPath):
 		// AWG/WireGuard conf files - any text is valid
-		if len(req.Content) == 0 {
+		if req.Content == "" {
 			respondError(w, http.StatusBadRequest, "content cannot be empty")
 			return
 		}
@@ -539,13 +539,13 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure parent directory exists
 	parentDir := filepath.Dir(cleanPath)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0o750); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
 		return
 	}
 
 	// Write file
-	if err := os.WriteFile(cleanPath, []byte(req.Content), 0644); err != nil {
+	if err := os.WriteFile(cleanPath, []byte(req.Content), 0o600); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write file: %v", err))
 		return
 	}
@@ -570,7 +570,7 @@ func (h *ConfigHandler) createBackup(filePath string) (string, error) {
 		return "", nil
 	}
 
-	if err := os.MkdirAll(h.backupDir, 0755); err != nil {
+	if err := os.MkdirAll(h.backupDir, 0o750); err != nil {
 		return "", fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
@@ -584,7 +584,7 @@ func (h *ConfigHandler) createBackup(filePath string) (string, error) {
 		return "", fmt.Errorf("failed to read file for backup: %w", err)
 	}
 
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	if err := os.WriteFile(backupPath, data, 0o600); err != nil {
 		return "", fmt.Errorf("failed to write backup file: %w", err)
 	}
 
@@ -623,7 +623,7 @@ func (h *ConfigHandler) cleanupOldBackups(filePath string, keep int) {
 	// Remove old backups beyond keep limit
 	for i := keep; i < len(backups); i++ {
 		backupPath := filepath.Join(h.backupDir, backups[i].Name())
-		os.Remove(backupPath)
+		_ = os.Remove(backupPath)
 	}
 }
 
@@ -732,7 +732,7 @@ func (h *ConfigHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure parent directory exists for destination
 	parentDir := filepath.Dir(newCleanPath)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0o750); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
 		return
 	}
@@ -786,13 +786,13 @@ func (h *ConfigHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure parent directory exists
 	parentDir := filepath.Dir(cleanPath)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0o750); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
 		return
 	}
 
 	// Write file
-	if err := os.WriteFile(cleanPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(cleanPath, []byte(content), 0o600); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create file: %v", err))
 		return
 	}

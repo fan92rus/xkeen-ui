@@ -23,11 +23,11 @@ import (
 // ---------- Helpers ----------
 
 // newTestHandler creates a SubscriptionHandler with a temp store for testing.
-func newTestHandler(t *testing.T) (*SubscriptionHandler, string) {
+func newTestHandler(t *testing.T) (h *SubscriptionHandler, xrayDir string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	storePath := filepath.Join(tmpDir, "subscriptions.json")
-	xrayDir := filepath.Join(tmpDir, "xray-configs")
+	xrayDir = filepath.Join(tmpDir, "xray-configs")
 
 	store, err := subscription.NewStore(storePath)
 	if err != nil {
@@ -38,7 +38,8 @@ func newTestHandler(t *testing.T) (*SubscriptionHandler, string) {
 	t.Cleanup(func() { scheduler.Stop() })
 
 	handler := NewSubscriptionHandler(store, fetcher, scheduler, xrayDir, "", "", "xray")
-	return handler, xrayDir
+	h = handler
+	return h, xrayDir
 }
 
 // newTestRouter creates a mux.Router with subscription routes.
@@ -897,7 +898,7 @@ func TestRegisterSubscriptionRoutes(t *testing.T) {
 	}
 
 	for _, route := range expectedRoutes {
-		req, _ := http.NewRequest(route.method, route.path, nil)
+		req, _ := http.NewRequest(route.method, route.path, http.NoBody)
 		match := &mux.RouteMatch{}
 		if !r.Match(req, match) {
 			t.Errorf("route %s %s not registered", route.method, route.path)
@@ -955,7 +956,7 @@ func TestApply_EmptyBody(t *testing.T) {
 	addTestSubscriptionWithProxies(t, h.store, 2)
 
 	// Apply with empty body (no restart field)
-	req, _ := http.NewRequest("POST", "/subscriptions/apply", nil)
+	req, _ := http.NewRequest("POST", "/subscriptions/apply", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -977,7 +978,7 @@ func TestFetchSubscription_WithMockServer(t *testing.T) {
 	vlessURI := "vless://a1b2c3d4-e5f6-0012-abcd-ef1234567890@1.2.3.4:443?encryption=none&flow=xtls-rprx-vision&type=tcp&security=reality&sni=example.com&fp=chrome&pbk=testkey&sid=abcd1234#TestNode"
 
 	// Use a real httptest.Server for the mock
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		encoded := base64.StdEncoding.EncodeToString([]byte(vlessURI))
 		w.Write([]byte(encoded))
@@ -1019,7 +1020,7 @@ func TestApply_RoutingPreservesExisting(t *testing.T) {
 	router := newTestRouter(h)
 
 	// Pre-create xray dir with existing routing
-	os.MkdirAll(xrayDir, 0755)
+	os.MkdirAll(xrayDir, 0o755)
 	existingRouting := map[string]interface{}{
 		"routing": map[string]interface{}{
 			"domainStrategy": "AsIs",
@@ -1038,7 +1039,7 @@ func TestApply_RoutingPreservesExisting(t *testing.T) {
 		},
 	}
 	routingData, _ := json.MarshalIndent(existingRouting, "", "  ")
-	os.WriteFile(filepath.Join(xrayDir, "05_routing.json"), routingData, 0644)
+	os.WriteFile(filepath.Join(xrayDir, "05_routing.json"), routingData, 0o644)
 
 	addTestSubscriptionWithProxies(t, h.store, 2)
 
@@ -1072,7 +1073,7 @@ func TestFetchSubscription_UpdatesProxyCount(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	vlessURI := "vless://uuid@1.2.3.4:443?encryption=none&type=tcp&security=reality#Node1\nvless://uuid@5.6.7.8:443?encryption=none&type=tcp&security=reality#Node2"
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(base64.StdEncoding.EncodeToString([]byte(vlessURI))))
 	}))
@@ -1664,7 +1665,7 @@ func TestRegisterSubscriptionRoutes_Profiles(t *testing.T) {
 	}
 
 	for _, route := range profileRoutes {
-		req, _ := http.NewRequest(route.method, route.path, nil)
+		req, _ := http.NewRequest(route.method, route.path, http.NoBody)
 		match := &mux.RouteMatch{}
 		if !r.Match(req, match) {
 			t.Errorf("route %s %s not registered", route.method, route.path)
@@ -1718,8 +1719,7 @@ func TestPreview_FiltersAffectOutput(t *testing.T) {
 	for _, p := range profiles {
 		if p.IsDefault {
 			filtered := subscription.ApplyFilter(allProxies, &p.Filter)
-			if len(filtered) != 0 {
-			}
+			_ = filtered
 		}
 	}
 
@@ -1731,7 +1731,8 @@ func TestPreview_FiltersAffectOutput(t *testing.T) {
 	t.Logf("AFTER filter: proxy_count=%.0f, filtered_proxy_count=%.0f", afterProxyCount, afterFilteredCount)
 
 	// After fix: filtered_proxy_count should be 0 (all proxies filtered out)
-	if afterFilteredCount != 0 {
+	if afterFilteredCount == 0 {
+		t.Log("all proxies filtered out as expected")
 	}
 
 	// proxy_count still shows total (5)
@@ -1828,7 +1829,7 @@ func TestPreview_NonDefaultProfile_FilterAffectsBalancer(t *testing.T) {
 
 // containsSubstring checks if s contains substr.
 func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
+	return len(s) >= len(substr) && (s == substr || s != "" && containsStr(s, substr))
 }
 
 func containsStr(s, substr string) bool {

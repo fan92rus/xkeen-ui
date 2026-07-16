@@ -171,7 +171,7 @@ func TestCommandRegistry_RefreshOnErrorKeepsOldCache(t *testing.T) {
 
 // --- concurrency ---
 
-func TestCommandRegistry_ConcurrentAccess(t *testing.T) {
+func TestCommandRegistry_ConcurrentAccess(_ *testing.T) {
 	reg := newCommandRegistryWithLoader(func() (map[string]CommandConfig, error) {
 		out := make(map[string]CommandConfig, 20)
 		for i := 0; i < 20; i++ {

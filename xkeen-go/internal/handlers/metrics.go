@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -157,7 +156,7 @@ func NewMetricsHandlerHTTPOnly(baseURL string, timeout time.Duration) *MetricsHa
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 4096,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+		CheckOrigin:     func(_ *http.Request) bool { return true },
 	}
 
 	return h
@@ -270,7 +269,7 @@ func (h *MetricsHandler) getHistory() []MetricsSnapshot {
 }
 
 // fetchVars fetches /debug/vars from Xray, using cache if fresh.
-func (h *MetricsHandler) fetchVars() ([]byte, bool, error) {
+func (h *MetricsHandler) fetchVars() (data []byte, cached bool, err error) {
 	h.mu.RLock()
 	if h.cached != nil && time.Since(h.cachedAt) < h.cacheTTL {
 		data := h.cached
@@ -322,23 +321,24 @@ func (h *MetricsHandler) collectSnapshot() MetricsSnapshot {
 
 	// Parse stats
 	statsRaw, statsKeyExists := vars["stats"]
-	if !statsKeyExists {
+	switch {
+	case !statsKeyExists:
 		snap.Inbound = nil
 		snap.Outbound = nil
-	} else if statsRaw == nil {
+	case statsRaw == nil:
 		snap.Inbound = map[string]interface{}{}
 		snap.Outbound = map[string]interface{}{}
-	} else {
+	default:
 		var stats struct {
 			Inbound  map[string]map[string]interface{} `json:"inbound"`
 			Outbound map[string]map[string]interface{} `json:"outbound"`
 		}
 		switch v := statsRaw.(type) {
 		case string:
-			json.Unmarshal([]byte(v), &stats)
+			_ = json.Unmarshal([]byte(v), &stats)
 		default:
 			b, _ := json.Marshal(v)
-			json.Unmarshal(b, &stats)
+			_ = json.Unmarshal(b, &stats)
 		}
 		snap.Inbound = stats.Inbound
 		snap.Outbound = stats.Outbound
@@ -349,10 +349,10 @@ func (h *MetricsHandler) collectSnapshot() MetricsSnapshot {
 		var observatory map[string]interface{}
 		switch v := obsRaw.(type) {
 		case string:
-			json.Unmarshal([]byte(v), &observatory)
+			_ = json.Unmarshal([]byte(v), &observatory)
 		default:
 			b, _ := json.Marshal(v)
-			json.Unmarshal(b, &observatory)
+			_ = json.Unmarshal(b, &observatory)
 		}
 		snap.Observable = observatory
 	}
@@ -410,7 +410,7 @@ func (h *MetricsHandler) sendToClients(msg WSMessage) {
 	h.clientsMu.RLock()
 	var dead []*websocket.Conn
 	for client := range h.clients {
-		client.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = client.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		if err := client.WriteJSON(msg); err != nil {
 			dead = append(dead, client)
 		}
@@ -420,7 +420,7 @@ func (h *MetricsHandler) sendToClients(msg WSMessage) {
 	if len(dead) > 0 {
 		h.clientsMu.Lock()
 		for _, c := range dead {
-			c.Close()
+			_ = c.Close()
 			delete(h.clients, c)
 		}
 		h.clientsMu.Unlock()
@@ -446,7 +446,7 @@ func (h *MetricsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("MetricsHandler: WebSocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	h.clientsMu.Lock()
 	h.clients[conn] = true
@@ -458,7 +458,7 @@ func (h *MetricsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	// Send history on connect
 	history := h.getHistory()
 	if len(history) > 0 {
-		conn.WriteJSON(WSMessage{
+		_ = conn.WriteJSON(WSMessage{
 			Type:    "history",
 			History: history,
 		})
@@ -507,7 +507,7 @@ func (h *MetricsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 
 // GetStats returns inbound/outbound traffic statistics from Xray.
 // GET /api/metrics/stats
-func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+func (h *MetricsHandler) GetStats(w http.ResponseWriter, _ *http.Request) {
 	snap := h.collectSnapshot()
 	if !snap.Available {
 		respondJSON(w, http.StatusServiceUnavailable, StatsResponse{
@@ -526,7 +526,7 @@ func (h *MetricsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 // GetObservatory returns observatory (proxy latency/health) data from Xray.
 // GET /api/metrics/observatory
-func (h *MetricsHandler) GetObservatory(w http.ResponseWriter, r *http.Request) {
+func (h *MetricsHandler) GetObservatory(w http.ResponseWriter, _ *http.Request) {
 	snap := h.collectSnapshot()
 	if !snap.Available {
 		respondJSON(w, http.StatusServiceUnavailable, ObservatoryResponse{
@@ -557,15 +557,15 @@ func (h *MetricsHandler) UpdateProxyNames(names map[string]string) {
 
 // GetProxyNames returns the tag→remarks mapping as JSON.
 // GET /api/metrics/proxy-names
-func (h *MetricsHandler) GetProxyNames(w http.ResponseWriter, r *http.Request) {
+func (h *MetricsHandler) GetProxyNames(w http.ResponseWriter, _ *http.Request) {
 	h.pnMu.RLock()
-	copy := make(map[string]string, len(h.proxyNames))
+	pnCopy := make(map[string]string, len(h.proxyNames))
 	for k, v := range h.proxyNames {
-		copy[k] = v
+		pnCopy[k] = v
 	}
 	h.pnMu.RUnlock()
 
-	respondJSON(w, http.StatusOK, copy)
+	respondJSON(w, http.StatusOK, pnCopy)
 }
 
 // RegisterMetricsRoutes registers metrics API routes (HTTP).
@@ -580,13 +580,4 @@ func RegisterMetricsWSRoute(r *mux.Router, handler *MetricsHandler, authMiddlewa
 	wsRouter := r.PathPrefix("/ws").Subrouter()
 	wsRouter.Use(authMiddleware)
 	wsRouter.HandleFunc("/metrics", handler.WebSocket).Methods("GET")
-}
-
-func sortedKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

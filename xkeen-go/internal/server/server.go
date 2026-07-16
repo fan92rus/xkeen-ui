@@ -201,7 +201,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 
 	// Log registered routes
 	log.Println("Registered routes:")
-	s.router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+	_ = s.router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		_ = router
+		_ = ancestors
 		path, _ := route.GetPathTemplate()
 		methods, _ := route.GetMethods()
 		log.Printf("  %v %s", methods, path)
@@ -289,7 +291,7 @@ type healthResponse struct {
 }
 
 // healthCheck returns server health status.
-func (s *Server) healthCheck(w http.ResponseWriter, r *http.Request) {
+func (s *Server) healthCheck(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, &healthResponse{OK: true, Status: "healthy", Version: "1.0.0"})
 }
 

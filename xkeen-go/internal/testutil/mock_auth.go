@@ -218,7 +218,7 @@ func (h *AuthTestHelper) UnauthenticatedRequest(method, path string, body io.Rea
 
 // RequestWithCookies makes a request with specific cookies.
 func (h *AuthTestHelper) RequestWithCookies(method, path string, cookies []*http.Cookie) (*http.Response, error) {
-	req, err := http.NewRequest(method, h.baseURL+path, nil)
+	req, err := http.NewRequest(method, h.baseURL+path, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

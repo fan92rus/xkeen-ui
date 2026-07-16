@@ -53,7 +53,7 @@ func TestFetcher_PlainTextResponse(t *testing.T) {
 	lines := "vless://uuid1@1.2.3.4:443?encryption=none&type=tcp&security=none#Test1\n" +
 		"vless://uuid2@5.6.7.8:443?encryption=none&type=tcp&security=none#Test2\n"
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(lines))
 	}))
 	defer server.Close()
@@ -70,7 +70,7 @@ func TestFetcher_PlainTextResponse(t *testing.T) {
 }
 
 func TestFetcher_HTTPError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 	}))
 	defer server.Close()
@@ -91,7 +91,7 @@ func TestFetcher_EmptyURL(t *testing.T) {
 }
 
 func TestFetcher_ContextCancellation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(5 * time.Second)
 		w.Write([]byte("ok"))
 	}))
@@ -125,7 +125,7 @@ func TestDialDNSServers_PerAttemptTimeout(t *testing.T) {
 }
 
 func TestFetcher_InvalidSubscriptionContent(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("this is not a valid subscription"))
 	}))
 	defer server.Close()
@@ -143,7 +143,7 @@ func TestFetcher_MixedProtocols(t *testing.T) {
 		"hysteria2://password@9.10.11.12:443?sni=host#HY2\n" + // parsed as hysteria2
 		"invalid-protocol://something\n" // should be skipped
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(lines))
 	}))
 	defer server.Close()
@@ -175,7 +175,7 @@ func TestFetcher_WithURLSafeBase64(t *testing.T) {
 	// Use URL-safe base64 (no +/ with -_)
 	content := base64.URLEncoding.EncodeToString([]byte(lines))
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(content))
 	}))
 	defer server.Close()

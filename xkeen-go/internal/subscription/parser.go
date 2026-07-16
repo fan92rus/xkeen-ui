@@ -34,7 +34,7 @@ func ParseURI(rawURI string) (*ProxyEntry, error) {
 // VLESS parser
 
 func parseVless(rawURI string) (*ProxyEntry, error) {
-	// vless://uuid@host:port?params#fragment
+	// vless URI scheme: uuid@host:port with query params and fragment
 	withoutFragment := rawURI
 	fragment := ""
 	if idx := strings.LastIndex(rawURI, "#"); idx != -1 {
@@ -235,7 +235,7 @@ func buildTLSSettings(params url.Values) map[string]interface{} {
 // TROJAN parser
 
 func parseTrojan(rawURI string) (*ProxyEntry, error) {
-	// trojan://password@host:port?params#fragment
+	// trojan URI scheme: password@host:port with query params and fragment
 	withoutFragment := rawURI
 	fragment := ""
 	if idx := strings.LastIndex(rawURI, "#"); idx != -1 {
@@ -375,7 +375,7 @@ func buildTrojanOutbound(password, host string, port int, params url.Values, tag
 // HYSTERIA2 parser
 
 func parseHysteria2(rawURI string) (*ProxyEntry, error) {
-	// hysteria2://password@host:port?params#fragment
+	// hysteria2 URI scheme: password@host:port with query params and fragment
 	withoutFragment := rawURI
 	fragment := ""
 	if idx := strings.LastIndex(rawURI, "#"); idx != -1 {

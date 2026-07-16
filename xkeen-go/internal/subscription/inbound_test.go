@@ -13,7 +13,7 @@ func TestDetectInboundProxy_SOCKS(t *testing.T) {
 			{"port": 1080, "protocol": "socks", "settings": {"auth": "noauth"}}
 		]
 	}`
-	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte(config), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -30,7 +30,7 @@ func TestDetectInboundProxy_HTTP(t *testing.T) {
 			{"port": 1087, "protocol": "http", "settings": {}}
 		]
 	}`
-	if err := os.WriteFile(filepath.Join(dir, "03_inbounds.json"), []byte(config), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "03_inbounds.json"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,7 +48,7 @@ func TestDetectInboundProxy_PrioritySocksOverHTTP(t *testing.T) {
 			{"port": 1080, "protocol": "socks"}
 		]
 	}`
-	if err := os.WriteFile(filepath.Join(dir, "99_inbounds.json"), []byte(config), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "99_inbounds.json"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -73,7 +73,7 @@ func TestDetectInboundProxy_OnlyDokodemoDoor(t *testing.T) {
 			{"port": 12345, "protocol": "dokodemo-door"}
 		]
 	}`
-	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte(config), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -87,10 +87,10 @@ func TestDetectInboundProxy_MultipleFiles_FirstWins(t *testing.T) {
 	dir := t.TempDir()
 	socksConfig := `{"inbounds": [{"port": 1080, "protocol": "socks"}]}`
 	httpConfig := `{"inbounds": [{"port": 1087, "protocol": "http"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte(socksConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte(socksConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "02_inbounds.json"), []byte(httpConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "02_inbounds.json"), []byte(httpConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,7 +111,7 @@ func TestDetectInboundProxy_EmptyDir(t *testing.T) {
 
 func TestDetectInboundProxy_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte("{not json}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "01_inbounds.json"), []byte("{not json}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

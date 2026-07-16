@@ -56,7 +56,7 @@ func TestGetStats_Success(t *testing.T) {
 
 	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetStats(w, req)
 
@@ -96,7 +96,7 @@ func TestGetStats_Cache(t *testing.T) {
 	handler := NewMetricsHandlerHTTPOnly(wrapped.URL, 5*time.Second)
 
 	// First request — should hit the server
-	req1 := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req1 := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w1 := httptest.NewRecorder()
 	handler.GetStats(w1, req1)
 
@@ -105,7 +105,7 @@ func TestGetStats_Cache(t *testing.T) {
 	}
 
 	// Second request immediately — should use cache
-	req2 := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req2 := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w2 := httptest.NewRecorder()
 	handler.GetStats(w2, req2)
 
@@ -123,7 +123,7 @@ func TestGetStats_XrayUnavailable(t *testing.T) {
 	// Create a handler pointing to a non-existent server
 	handler := NewMetricsHandler("http://127.0.0.1:59999", 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetStats(w, req)
 
@@ -151,7 +151,7 @@ func TestGetObservatory_Success(t *testing.T) {
 
 	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/observatory", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/observatory", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetObservatory(w, req)
 
@@ -182,7 +182,7 @@ func TestGetObservatory_Success(t *testing.T) {
 func TestGetObservatory_XrayUnavailable(t *testing.T) {
 	handler := NewMetricsHandler("http://127.0.0.1:59998", 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/observatory", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/observatory", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetObservatory(w, req)
 
@@ -204,7 +204,7 @@ func TestGetStats_ExpvarStringFormat(t *testing.T) {
 
 	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetStats(w, req)
 
@@ -241,7 +241,7 @@ func TestGetStats_NullStats(t *testing.T) {
 
 	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetStats(w, req)
 
@@ -287,7 +287,7 @@ func TestGetStats_NoStatsKey(t *testing.T) {
 
 	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/stats", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/stats", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetStats(w, req)
 
@@ -318,7 +318,7 @@ func TestGetObservatory_ExpvarStringFormat(t *testing.T) {
 
 	handler := NewMetricsHandlerHTTPOnly(server.URL, 5*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/observatory", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/observatory", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetObservatory(w, req)
 
@@ -427,7 +427,7 @@ func TestCollectSnapshot_Unavailable(t *testing.T) {
 	}
 }
 
-func TestNewMetricsHandler_Close(t *testing.T) {
+func TestNewMetricsHandler_Close(_ *testing.T) {
 	server := mockXrayMetricsServer(xrayFullResponse)
 	defer server.Close()
 
@@ -445,7 +445,7 @@ func TestNewMetricsHandler_Close(t *testing.T) {
 func TestGetProxyNames_Empty(t *testing.T) {
 	handler := NewMetricsHandlerHTTPOnly("http://127.0.0.1:1", 1*time.Second)
 
-	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetProxyNames(w, req)
 
@@ -473,7 +473,7 @@ func TestGetProxyNames_WithData(t *testing.T) {
 		"direct":     "",
 	})
 
-	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetProxyNames(w, req)
 
@@ -512,7 +512,7 @@ func TestGetProxyNames_UpdateOverwrites(t *testing.T) {
 		"proxy-US-1": "USA Node",
 	})
 
-	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", nil)
+	req := httptest.NewRequest("GET", "/api/metrics/proxy-names", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.GetProxyNames(w, req)
 
@@ -574,7 +574,7 @@ func TestMetricsHandler_SendToClients_DeadClientRemoved(t *testing.T) {
 		broadcast: make(chan WSMessage, 64),
 		cancel:    cancel,
 		upgrader: websocket.Upgrader{
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			CheckOrigin:     func(_ *http.Request) bool { return true },
 			WriteBufferSize: 1,
 		},
 	}

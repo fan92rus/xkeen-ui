@@ -91,6 +91,7 @@ type subScheduleResponse struct {
 }
 
 
+// SubscriptionHandler handles subscription management endpoints.
 type SubscriptionHandler struct {
 	store       *subscription.Store
 	fetcher     *subscription.Fetcher
@@ -131,7 +132,7 @@ func (h *SubscriptionHandler) Stop() {
 
 // ListSubscriptions returns all subscriptions, filters, and strategy.
 // GET /api/subscriptions
-func (h *SubscriptionHandler) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) ListSubscriptions(w http.ResponseWriter, _ *http.Request) {
 	cfg := h.store.GetConfig()
 	respondJSON(w, http.StatusOK, &listSubscriptionsResponse{
 		Subscriptions: cfg.Subscriptions,
@@ -272,7 +273,7 @@ func (h *SubscriptionHandler) FetchSubscription(w http.ResponseWriter, r *http.R
 }
 
 // fetchAWG handles fetching for the built-in AWG subscription — scans .conf files.
-func (h *SubscriptionHandler) fetchAWG(w http.ResponseWriter, r *http.Request, sub *subscription.Subscription) {
+func (h *SubscriptionHandler) fetchAWG(w http.ResponseWriter, _ *http.Request, sub *subscription.Subscription) {
 	configs, err := h.store.ScanAWGConfigs(h.awgDir)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan AWG configs: %v", err))
@@ -314,7 +315,7 @@ func (h *SubscriptionHandler) fetchAWG(w http.ResponseWriter, r *http.Request, s
 
 // GetProxies returns all cached proxies.
 // GET /api/subscriptions/proxies
-func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, _ *http.Request) {
 	allProxies := h.store.GetProxies()
 
 	respondJSON(w, http.StatusOK, &subProxiesResponse{Total: len(allProxies), Proxies: allProxies})
@@ -324,7 +325,7 @@ func (h *SubscriptionHandler) GetProxies(w http.ResponseWriter, r *http.Request)
 
 // GetFilters returns current filter rules.
 // GET /api/subscriptions/filters
-func (h *SubscriptionHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) GetFilters(w http.ResponseWriter, _ *http.Request) {
 	filters := h.store.GetFilters()
 	respondJSON(w, http.StatusOK, filters)
 }
@@ -355,7 +356,7 @@ func (h *SubscriptionHandler) UpdateFilters(w http.ResponseWriter, r *http.Reque
 
 // GetStrategy returns current routing strategy.
 // GET /api/subscriptions/strategy
-func (h *SubscriptionHandler) GetStrategy(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) GetStrategy(w http.ResponseWriter, _ *http.Request) {
 	strategy := h.store.GetStrategy()
 	respondJSON(w, http.StatusOK, strategy)
 }
@@ -460,7 +461,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if err := os.MkdirAll(h.xrayDir, 0755); err != nil {
+		if err := os.MkdirAll(h.xrayDir, 0o750); err != nil {
 			return fmt.Errorf("failed to create config directory: %v", err)
 		}
 
@@ -482,7 +483,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if observatoryJSON == nil {
-		os.Remove(observatoryPath)
+		_ = os.Remove(observatoryPath)
 	}
 
 	_ = h.store.SetGeneratedAt(time.Now())
@@ -509,7 +510,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyMihomo generates and writes a Mihomo config.yaml from subscription data.
-func (h *SubscriptionHandler) applyMihomo(w http.ResponseWriter, r *http.Request, proxies []*subscription.ProxyEntry, profiles []subscription.Profile, convertRouting, restart bool) {
+func (h *SubscriptionHandler) applyMihomo(w http.ResponseWriter, _ *http.Request, proxies []*subscription.ProxyEntry, profiles []subscription.Profile, convertRouting, restart bool) {
 	configPath := h.mihomoDir + "/config.yaml"
 
 	var (
@@ -542,11 +543,11 @@ func (h *SubscriptionHandler) applyMihomo(w http.ResponseWriter, r *http.Request
 		}
 		finalYAML = merged
 
-		if err := os.MkdirAll(h.mihomoDir, 0755); err != nil {
+		if err := os.MkdirAll(h.mihomoDir, 0o750); err != nil {
 			return fmt.Errorf("failed to create Mihomo config directory: %v", err)
 		}
 
-		if err := os.WriteFile(configPath, []byte(finalYAML), 0644); err != nil {
+		if err := os.WriteFile(configPath, []byte(finalYAML), 0o600); err != nil {
 			return fmt.Errorf("failed to write Mihomo config: %v", err)
 		}
 		return nil
@@ -573,7 +574,7 @@ func (h *SubscriptionHandler) applyMihomo(w http.ResponseWriter, r *http.Request
 
 // Preview returns a dry-run of what Apply would generate, without writing files.
 // GET /api/subscriptions/preview
-func (h *SubscriptionHandler) Preview(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) Preview(w http.ResponseWriter, _ *http.Request) {
 	allProxies := h.store.GetProxies()
 	profiles := h.store.GetProfiles()
 
@@ -639,10 +640,10 @@ func atomicWriteAll(files map[string][]byte) error {
 
 	for path, data := range files {
 		tmpPath := path + ".tmp"
-		if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 			// Clean up all tmp files
 			for _, tf := range tmpFiles {
-				os.Remove(tf)
+				_ = os.Remove(tf)
 			}
 			return fmt.Errorf("failed to write %s: %w", tmpPath, err)
 		}
@@ -651,7 +652,7 @@ func atomicWriteAll(files map[string][]byte) error {
 		if err := os.Rename(tmpPath, path); err != nil {
 			// Clean up all tmp files
 			for _, tf := range tmpFiles {
-				os.Remove(tf)
+				_ = os.Remove(tf)
 			}
 			return fmt.Errorf("failed to rename %s -> %s: %w", tmpPath, path, err)
 		}
@@ -664,7 +665,7 @@ func atomicWriteAll(files map[string][]byte) error {
 
 // ListProfiles returns all profiles with proxy counts.
 // GET /api/subscriptions/profiles
-func (h *SubscriptionHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) ListProfiles(w http.ResponseWriter, _ *http.Request) {
 	profiles := h.store.GetProfiles()
 	allProxies := h.store.GetProxies()
 
@@ -744,7 +745,7 @@ func (h *SubscriptionHandler) DeleteProfile(w http.ResponseWriter, r *http.Reque
 
 // GetAutoApply returns the current auto-apply configuration.
 // GET /api/subscriptions/auto-apply
-func (h *SubscriptionHandler) GetAutoApply(w http.ResponseWriter, r *http.Request) {
+func (h *SubscriptionHandler) GetAutoApply(w http.ResponseWriter, _ *http.Request) {
 	enabled, cronExpr := h.store.GetAutoApply()
 	nextRun := h.scheduler.GetNextRun()
 

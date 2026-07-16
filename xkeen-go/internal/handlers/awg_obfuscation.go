@@ -113,6 +113,7 @@ func getAWGObfuscationPresets() []AWGObfuscationPreset {
 //
 // H1-H4 must be >= 1 (Keenetic kernel rejects H=0, handshake fails).
 // Default is 1,2,3,4; we randomize in 1-100 range for per-server uniqueness.
+//nolint:gosec // non-crypto randomness for AWG DPI obfuscation (safe by design)
 func generateRandomObfuscationParams() map[string]string {
 	jmin := 30 + rand.IntN(20)        // 30-49
 	jmax := jmin + 20 + rand.IntN(20) // 50-88 (always > jmin)
@@ -160,7 +161,7 @@ func applyObfuscationToConfig(confPath string, params map[string]string) error {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	var result []string
+	var result = make([]string, 0, len(lines))
 	inInterface := false
 	inserted := false
 
@@ -199,7 +200,7 @@ func applyObfuscationToConfig(confPath string, params map[string]string) error {
 	}
 
 	output := strings.Join(result, "\n")
-	return os.WriteFile(confPath, []byte(output), 0600)
+	return os.WriteFile(confPath, []byte(output), 0o600)
 }
 
 // readAWGParams extracts all AWG obfuscation parameters present in the
@@ -249,7 +250,7 @@ func rewriteEndpointPort(clientPath string, port int) error {
 	if !changed {
 		return nil
 	}
-	return os.WriteFile(clientPath, []byte(strings.Join(lines, "\n")), 0600)
+	return os.WriteFile(clientPath, []byte(strings.Join(lines, "\n")), 0o600)
 }
 
 // detectObfuscationPreset compares current config params to known presets.

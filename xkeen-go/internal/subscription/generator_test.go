@@ -229,11 +229,12 @@ func TestGenerateRoutingJSON_StrategyRandom(t *testing.T) {
 	hasProxy := false
 	hasProxyPrefix := 0
 	for _, s := range balancer.Selector {
-		if s == "proxy" {
+		switch {
+		case s == "proxy":
 			hasProxy = true
-		} else if strings.HasPrefix(s, "proxy-") {
+		case strings.HasPrefix(s, "proxy-"):
 			hasProxyPrefix++
-		} else {
+		default:
 			t.Errorf("expected 'proxy' or 'proxy-*' tag in selector, got %q", s)
 		}
 	}
@@ -668,8 +669,8 @@ func TestGenerateRoutingJSON_PreservesRulesRaw(t *testing.T) {
 		}
 	}`)
 
-	strat := RoutingStrategy{Type: "random"}
-	profiles := defaultProfiles(strat)
+	start := RoutingStrategy{Type: "random"}
+	profiles := defaultProfiles(start)
 	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
 		t.Fatal(err)
@@ -876,8 +877,8 @@ func TestGenerateRoutingJSON_WithReplaceBalancerTag(t *testing.T) {
 		}
 	}`)
 
-	strat := RoutingStrategy{Type: "random", ReplaceBalancerTag: true}
-	profiles := defaultProfiles(strat)
+	start := RoutingStrategy{Type: "random", ReplaceBalancerTag: true}
+	profiles := defaultProfiles(start)
 	data, err := GenerateRoutingJSON(proxies, profiles, existing)
 	if err != nil {
 		t.Fatal(err)

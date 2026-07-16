@@ -15,7 +15,7 @@ import (
 type Store struct {
 	mu     sync.RWMutex
 	path   string
-	config *SubscriptionConfig
+	config *Config
 
 	// proxies is the in-memory cache of all parsed proxies from all subscriptions.
 	// Updated by the scheduler after a successful fetch cycle.
@@ -27,7 +27,7 @@ type Store struct {
 func NewStore(path string) (*Store, error) {
 	s := &Store{
 		path: path,
-		config: &SubscriptionConfig{
+		config: &Config{
 			Subscriptions: []Subscription{},
 			Profiles:      []Profile{},
 		},
@@ -35,7 +35,7 @@ func NewStore(path string) (*Store, error) {
 
 	data, err := os.ReadFile(path)
 	if err == nil {
-		var cfg SubscriptionConfig
+		var cfg Config
 		if jsonErr := json.Unmarshal(data, &cfg); jsonErr == nil {
 			s.config = &cfg
 		}
@@ -58,7 +58,7 @@ func NewStore(path string) (*Store, error) {
 }
 
 // GetConfig returns a deep copy of the current config.
-func (s *Store) GetConfig() *SubscriptionConfig {
+func (s *Store) GetConfig() *Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneConfig(s.config)
@@ -74,7 +74,7 @@ func (s *Store) Save() error {
 }
 
 // saveConfig writes a config to disk (caller handles locking if needed).
-func (s *Store) saveConfig(cfg *SubscriptionConfig) error {
+func (s *Store) saveConfig(cfg *Config) error {
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -661,14 +661,14 @@ func generateID() (string, error) {
 }
 
 // cloneConfig returns a deep copy of cfg via JSON round-trip.
-func cloneConfig(cfg *SubscriptionConfig) *SubscriptionConfig {
+func cloneConfig(cfg *Config) *Config {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		// Should never happen with our types; return shallow copy.
 		cp := *cfg
 		return &cp
 	}
-	var cp SubscriptionConfig
+	var cp Config
 	if err := json.Unmarshal(data, &cp); err != nil {
 		// Fallback: shallow copy
 		cp = *cfg

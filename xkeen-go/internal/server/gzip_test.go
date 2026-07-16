@@ -96,9 +96,9 @@ func realServer(t *testing.T, h http.Handler) *httptest.Server {
 	return httptest.NewServer(GzipMiddleware(h))
 }
 
-func getGzipBody(t *testing.T, url string) (status int, contentEncoding string, vary string, contentLength string, body []byte) {
+func getGzipBody(t *testing.T, url string) (status int, contentEncoding, vary, contentLength string, body []byte) {
 	t.Helper()
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}

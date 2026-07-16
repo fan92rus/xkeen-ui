@@ -175,7 +175,7 @@ func (h *LogsHandler) sendToClients(msg LogMessage) {
 	h.clientsMu.RLock()
 	var deadClients []*websocket.Conn
 	for client := range h.clients {
-		client.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = client.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		err := client.WriteJSON(msg)
 		if err != nil {
 			deadClients = append(deadClients, client)
@@ -186,7 +186,7 @@ func (h *LogsHandler) sendToClients(msg LogMessage) {
 	if len(deadClients) > 0 {
 		h.clientsMu.Lock()
 		for _, client := range deadClients {
-			client.Close()
+			_ = client.Close()
 			delete(h.clients, client)
 		}
 		h.clientsMu.Unlock()
@@ -195,14 +195,14 @@ func (h *LogsHandler) sendToClients(msg LogMessage) {
 
 // tailFile tails a log file using native Go file reading (no external tail process).
 // Handles: missing files (waits for creation), log rotation (reopens), and context cancellation.
-// All resources are freed when context is cancelled — no orphan processes.
+// All resources are freed when context is canceled — no orphan processes.
 func (h *LogsHandler) tailFile(path string) {
 	defer h.wg.Done()
 
 	log.Printf("[logs] Native tail starting: %s", path)
 
 	var lastSize int64 = -1 // -1 = first read, start from beginning
-	var lastInode uint64 = 0
+	var lastInode uint64
 
 	for {
 		select {
@@ -246,12 +246,13 @@ func (h *LogsHandler) tailFile(path string) {
 		// First read or after rotation: seek to end (stream new lines only)
 		// File truncated: read from start
 		// Otherwise: seek to last known position
-		if lastSize < 0 {
-			f.Seek(0, 2)
-		} else if info.Size() < lastSize {
-			f.Seek(0, 0)
-		} else {
-			f.Seek(lastSize, 0)
+		switch {
+		case lastSize < 0:
+			_, _ = f.Seek(0, 2)
+		case info.Size() < lastSize:
+			_, _ = f.Seek(0, 0)
+		default:
+			_, _ = f.Seek(lastSize, 0)
 		}
 
 		// Read available new lines
@@ -269,7 +270,7 @@ func (h *LogsHandler) tailFile(path string) {
 			select {
 			case h.broadcast <- msg:
 			case <-h.ctx.Done():
-				f.Close()
+				_ = f.Close()
 				return
 			default:
 				// Channel full, drop message
@@ -284,7 +285,7 @@ func (h *LogsHandler) tailFile(path string) {
 			lastSize = info.Size()
 		}
 
-		f.Close()
+		_ = f.Close()
 
 		// Poll interval: fast when active, slower when idle
 		interval := 500 * time.Millisecond
@@ -322,7 +323,7 @@ func (h *LogsHandler) ReadLogs(w http.ResponseWriter, r *http.Request) {
 
 	lines := 100
 	if l := r.URL.Query().Get("lines"); l != "" {
-		fmt.Sscanf(l, "%d", &lines)
+		_, _ = fmt.Sscanf(l, "%d", &lines)
 		if lines > 1000 {
 			lines = 1000
 		}
@@ -350,7 +351,7 @@ func (h *LogsHandler) readLastLines(path string, n int) ([]LogMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var entries []LogMessage
 	scanner := bufio.NewScanner(file)
@@ -418,7 +419,7 @@ func (h *LogsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	h.clientsMu.Lock()
 	h.clients[conn] = true
@@ -428,7 +429,7 @@ func (h *LogsHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("WebSocket client connected. Total: %d", clientCount)
 
 	// Send initial message
-	conn.WriteJSON(LogMessage{
+	_ = conn.WriteJSON(LogMessage{
 		Timestamp: time.Now().Format(time.RFC3339),
 		Level:     "info",
 		Message:   "Connected to log stream",

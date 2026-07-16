@@ -41,7 +41,7 @@ func newMockCmdExecutor() *mockCommandExecutor {
 	}
 }
 
-func (m *mockCommandExecutor) Execute(ctx context.Context, name string, args ...string) (string, error) {
+func (m *mockCommandExecutor) Execute(_ context.Context, name string, args ...string) (string, error) {
 	key := name + " " + strings.Join(args, " ")
 	m.mu.Lock()
 	m.calls = append(m.calls, mockCall{name: name, args: args})
@@ -57,7 +57,7 @@ func (m *mockCommandExecutor) Execute(ctx context.Context, name string, args ...
 	return "", errors.New("command not configured")
 }
 
-func (m *mockCommandExecutor) setResult(cmd string, output string, err error) {
+func (m *mockCommandExecutor) setResult(cmd, output string, err error) {
 	m.mu.Lock()
 	m.results[cmd] = mockResult{output: output, err: err}
 	m.mu.Unlock()
@@ -80,7 +80,7 @@ func TestGetStatus_Running(t *testing.T) {
 	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -109,7 +109,7 @@ func TestGetStatus_NotRunning(t *testing.T) {
 	exec.setResult("xkeen -status", "Xray is not running", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -129,7 +129,7 @@ func TestGetStatus_RussianOutput(t *testing.T) {
 	exec.setResult("xkeen -status", "xray запущен (PID: 99999)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -146,7 +146,7 @@ func TestGetStatus_RussianNotRunning(t *testing.T) {
 	exec.setResult("xkeen -status", "xray не запущен", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -163,7 +163,7 @@ func TestGetStatus_CommandError(t *testing.T) {
 	exec.setResult("xkeen -status", "", errors.New("command failed"))
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -188,7 +188,7 @@ func TestGetStatus_Timeout(t *testing.T) {
 	exec.setResult("xkeen -status", "some error output", fmt.Errorf("command failed: timeout"))
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -215,7 +215,7 @@ func TestStart_ReturnsImmediately(t *testing.T) {
 	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("POST", "/api/xkeen/start", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.Start(rec, req)
 
@@ -240,7 +240,7 @@ func TestStop_ReturnsImmediately(t *testing.T) {
 	exec.setResult("xkeen -status", "Xray is not running", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("POST", "/api/xkeen/stop", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/stop", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.Stop(rec, req)
 
@@ -261,7 +261,7 @@ func TestRestart_ReturnsImmediately(t *testing.T) {
 	exec.setResult("xkeen -restart", "Xray restarted successfully", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("POST", "/api/xkeen/restart", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/restart", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.Restart(rec, req)
 
@@ -353,7 +353,7 @@ func TestExecuteCommandWithTimeout_ValidAction(t *testing.T) {
 
 // --- TriggerStatusCheck Tests ---
 
-func TestTriggerStatusCheck_NonBlocking(t *testing.T) {
+func TestTriggerStatusCheck_NonBlocking(_ *testing.T) {
 	handler := NewServiceHandler()
 
 	// Should not block even if nobody is listening
@@ -393,7 +393,7 @@ func TestGetStatus_ActiveRunningPattern(t *testing.T) {
 	exec.setResult("xkeen -status", "active (running)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -410,7 +410,7 @@ func TestGetStatus_RunningWithPIDPattern(t *testing.T) {
 	exec.setResult("xkeen -status", "running (PID: 42)", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -429,7 +429,7 @@ func TestGetStatus_ContentTypeJSON(t *testing.T) {
 	exec.setResult("xkeen -status", "Xray is running", nil)
 	handler := NewServiceHandlerWithExecutor(exec)
 
-	req := httptest.NewRequest("GET", "/api/xkeen/status", nil)
+	req := httptest.NewRequest("GET", "/api/xkeen/status", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.GetStatus(rec, req)
 
@@ -454,7 +454,7 @@ func TestStatusStream_SendsInitialEvent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("SSE request failed: %v", err)
@@ -495,7 +495,7 @@ func TestStatusStream_ClosesOnContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("SSE request failed: %v", err)
@@ -508,7 +508,7 @@ func TestStatusStream_ClosesOnContextCancel(t *testing.T) {
 	// Cancel context — stream should stop
 	cancel()
 
-	// Subsequent read should get error (stream closed or context cancelled)
+	// Subsequent read should get error (stream closed or context canceled)
 	_, readErr := resp.Body.Read(buf)
 	if readErr == nil {
 		// Try once more with timeout
@@ -540,12 +540,12 @@ func TestClose_WaitsForBackgroundGoroutines(t *testing.T) {
 	handler := NewServiceHandlerWithExecutor(exec)
 
 	// Fire start — it spawns goroutine that sleeps 1s then triggers status check
-	req := httptest.NewRequest("POST", "/api/xkeen/start", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.Start(rec, req)
 
 	// Fire stop — another goroutine
-	req2 := httptest.NewRequest("POST", "/api/xkeen/stop", nil)
+	req2 := httptest.NewRequest("POST", "/api/xkeen/stop", http.NoBody)
 	rec2 := httptest.NewRecorder()
 	handler.Stop(rec2, req2)
 
@@ -574,7 +574,7 @@ func TestClose_Idempotent(t *testing.T) {
 	handler.Close() // second call should be no-op
 
 	// Fire start after close is allowed (wg.Add still works)
-	req := httptest.NewRequest("POST", "/api/xkeen/start", nil)
+	req := httptest.NewRequest("POST", "/api/xkeen/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.Start(rec, req)
 

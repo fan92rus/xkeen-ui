@@ -31,13 +31,13 @@ func testHelpRegistry() *CommandRegistry {
 
 // newTestInteractiveHandler creates a handler backed by the real help fixture
 // (so the whitelist is populated with actual xkeen commands) and a permissive
-// origin check. Pass an InteractiveConfig to test origin behaviour.
+// origin check. Pass an InteractiveConfig to test origin behavior.
 func newTestInteractiveHandler(cfg *InteractiveConfig) *InteractiveHandler {
 	h := NewInteractiveHandler(cfg, testHelpRegistry())
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+		CheckOrigin:     func(_ *http.Request) bool { return true },
 	}
 	return h
 }
@@ -186,7 +186,7 @@ func TestClientMessage_AllFields(t *testing.T) {
 func TestInteractiveCheckOrigin_EmptyOrigin(t *testing.T) {
 	h := newTestInteractiveHandler(nil)
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	req.Header.Del("Origin")
 
 	if h.checkOrigin(req) {
@@ -197,7 +197,7 @@ func TestInteractiveCheckOrigin_EmptyOrigin(t *testing.T) {
 func TestInteractiveCheckOrigin_SameOrigin(t *testing.T) {
 	h := newTestInteractiveHandler(nil)
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	req.Header.Set("Origin", "http://localhost:8089")
 	req.Host = "localhost:8089"
 
@@ -209,7 +209,7 @@ func TestInteractiveCheckOrigin_SameOrigin(t *testing.T) {
 func TestInteractiveCheckOrigin_SameOriginHTTPS(t *testing.T) {
 	h := newTestInteractiveHandler(nil)
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	req.Header.Set("Origin", "https://router.lan:8089")
 	req.Host = "router.lan:8089"
 
@@ -221,7 +221,7 @@ func TestInteractiveCheckOrigin_SameOriginHTTPS(t *testing.T) {
 func TestInteractiveCheckOrigin_RejectedOrigin(t *testing.T) {
 	h := newTestInteractiveHandler(nil)
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	req.Header.Set("Origin", "http://evil.example.com")
 	req.Host = "localhost:8089"
 
@@ -235,7 +235,7 @@ func TestInteractiveCheckOrigin_AllowedOrigin(t *testing.T) {
 		AllowedOrigins: []string{"http://trusted.example.com"},
 	})
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	req.Header.Set("Origin", "http://trusted.example.com")
 	req.Host = "other-host"
 
@@ -247,7 +247,7 @@ func TestInteractiveCheckOrigin_AllowedOrigin(t *testing.T) {
 func TestInteractiveCheckOrigin_MalformedOrigin(t *testing.T) {
 	h := newTestInteractiveHandler(nil)
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	req.Header.Set("Origin", "://::bad")
 	req.Host = "localhost:8089"
 
@@ -453,7 +453,7 @@ func TestRegisterInteractiveWSRoute(t *testing.T) {
 	})
 
 	// Verify the route exists by attempting a GET request
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -473,7 +473,7 @@ func TestRegisterInteractiveWSRoute_MethodNotAllowed(t *testing.T) {
 	})
 
 	// POST should not match the registered GET route
-	req := httptest.NewRequest("POST", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("POST", "/ws/xkeen/interactive", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -494,7 +494,7 @@ func TestRegisterInteractiveWSRoute_AuthMiddlewareApplied(t *testing.T) {
 		})
 	})
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -508,7 +508,7 @@ func TestRegisterInteractiveWSRoute_AuthMiddlewareApplied(t *testing.T) {
 func TestServeHTTP_RejectsNonWebSocket(t *testing.T) {
 	handler := newTestInteractiveHandler(nil)
 
-	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", nil)
+	req := httptest.NewRequest("GET", "/ws/xkeen/interactive", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -698,7 +698,7 @@ func TestInteractiveConfig_MultipleAllowedOrigins(t *testing.T) {
 	handler := newTestInteractiveHandler(cfg)
 
 	for _, origin := range cfg.AllowedOrigins {
-		req := httptest.NewRequest("GET", "/", nil)
+		req := httptest.NewRequest("GET", "/", http.NoBody)
 		req.Header.Set("Origin", origin)
 		req.Host = "other-host"
 
@@ -749,7 +749,7 @@ func TestIsCommandAllowed_Concurrent(t *testing.T) {
 func TestExecuteInteractive_HandlerReturnsWithinTimeout(t *testing.T) {
 	// Regression test for goroutine leak: after command completion (possibly with error),
 	// the handler should return within a reasonable timeout. The goroutines are tracked
-	// via WaitGroup and cancelled via context after cmd.Wait().
+	// via WaitGroup and canceled via context after cmd.Wait().
 	handler := newTestInteractiveHandler(nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -841,7 +841,7 @@ func TestExecuteInteractive_EmptyCommandParts(t *testing.T) {
 	// The branch only triggers if the combined cmdStr is whitespace-only or
 	// empty, which cannot happen given the "xkeen " prefix.
 	//
-	// We verify this behaviour: even with an injected Cmd="", the guard does
+	// We verify this behavior: even with an injected Cmd="", the guard does
 	// NOT fire; execution proceeds to the PTY path (which may fail on non-Linux).
 	// The guard exists purely as defensive/audit protection.
 
@@ -859,7 +859,7 @@ func TestExecuteInteractive_EmptyCommandParts(t *testing.T) {
 	handler.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+		CheckOrigin:     func(_ *http.Request) bool { return true },
 	}
 
 	server := httptest.NewServer(handler)

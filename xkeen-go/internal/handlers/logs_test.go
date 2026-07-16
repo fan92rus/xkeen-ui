@@ -20,9 +20,9 @@ import (
 
 // helper: create a LogsHandler with a temp dir as the allowed root
 // Does NOT start tail goroutines to avoid hangs in test.
-func newTestLogsHandler(t *testing.T) (*LogsHandler, string) {
+func newTestLogsHandler(t *testing.T) (h *LogsHandler, tmpDir string) {
 	t.Helper()
-	tmpDir := t.TempDir()
+	tmpDir = t.TempDir()
 
 	validator, err := utils.NewPathValidator([]string{tmpDir})
 	if err != nil {
@@ -31,14 +31,14 @@ func newTestLogsHandler(t *testing.T) (*LogsHandler, string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	h := &LogsHandler{
+	h = &LogsHandler{
 		validator: validator,
 		logFiles:  []string{},
 		clients:   make(map[*websocket.Conn]bool),
 		broadcast: make(chan LogMessage, 100),
 		ctx:       ctx,
 		cancel:    cancel,
-		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		upgrader:  websocket.Upgrader{CheckOrigin: func(_ *http.Request) bool { return true }},
 	}
 
 	// Start only the broadcast goroutine (no tailFile goroutines)
@@ -52,10 +52,10 @@ func newTestLogsHandler(t *testing.T) (*LogsHandler, string) {
 // helper: write lines to a file
 func writeLines(t *testing.T, path string, lines []string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
 }
@@ -81,24 +81,12 @@ func decodeLogsResponse(t *testing.T, rec *httptest.ResponseRecorder) (string, [
 	return pathVal, entries
 }
 
-// helper: decode error response
-func decodeErrorResponse(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	var errResp struct {
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode error response: %v", err)
-	}
-	return errResp.Error
-}
-
 // === HandleLogs (ReadLogs) ===
 
 func TestReadLogs_FileNotFound(t *testing.T) {
 	h, tmpDir := newTestLogsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+filepath.Join(tmpDir, "nonexistent.log"), nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+filepath.Join(tmpDir, "nonexistent.log"), http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -112,7 +100,7 @@ func TestReadLogs_EmptyFile(t *testing.T) {
 	logPath := filepath.Join(tmpDir, "empty.log")
 	writeLines(t, logPath, []string{})
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -135,7 +123,7 @@ func TestReadLogs_WithContent(t *testing.T) {
 		"line 3 warn message",
 	})
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -170,7 +158,7 @@ func TestReadLogs_RespectsLimit(t *testing.T) {
 	}
 	writeLines(t, logPath, lines)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath+"&lines=10", nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath+"&lines=10", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -194,7 +182,7 @@ func TestReadLogs_DefaultLimit100(t *testing.T) {
 	}
 	writeLines(t, logPath, lines)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -214,7 +202,7 @@ func TestReadLogs_MaxLimit1000(t *testing.T) {
 	}
 	writeLines(t, logPath, lines)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath+"&lines=5000", nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath+"&lines=5000", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -234,7 +222,7 @@ func TestReadLogs_InvalidLimitUsesDefault(t *testing.T) {
 	}
 	writeLines(t, logPath, lines)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath+"&lines=0", nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath+"&lines=0", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -248,7 +236,7 @@ func TestReadLogs_InvalidLimitUsesDefault(t *testing.T) {
 func TestReadLogs_InvalidPathTraversal(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path=../../etc/passwd", nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path=../../etc/passwd", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -260,7 +248,7 @@ func TestReadLogs_InvalidPathTraversal(t *testing.T) {
 func TestReadLogs_DefaultPathWhenEmpty(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 
-	req := httptest.NewRequest("GET", "/api/logs/xray", nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -279,7 +267,7 @@ func TestReadLogs_ContentTypeJSON(t *testing.T) {
 	logPath := filepath.Join(tmpDir, "ct.log")
 	writeLines(t, logPath, []string{"line"})
 
-	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, nil)
+	req := httptest.NewRequest("GET", "/api/logs/xray?path="+logPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	h.ReadLogs(rec, req)
 
@@ -374,7 +362,7 @@ func TestParseLogLine_TimestampPresent(t *testing.T) {
 func TestReadLastLines_EmptyFile(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 	tmpFile := filepath.Join(t.TempDir(), "empty.log")
-	os.WriteFile(tmpFile, []byte{}, 0644)
+	os.WriteFile(tmpFile, []byte{}, 0o644)
 
 	entries, err := h.readLastLines(tmpFile, 10)
 	if err != nil {
@@ -388,7 +376,7 @@ func TestReadLastLines_EmptyFile(t *testing.T) {
 func TestReadLastLines_SmallFile(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 	tmpFile := filepath.Join(t.TempDir(), "small.log")
-	os.WriteFile(tmpFile, []byte("line1\nline2\nline3\n"), 0644)
+	os.WriteFile(tmpFile, []byte("line1\nline2\nline3\n"), 0o644)
 
 	entries, err := h.readLastLines(tmpFile, 10)
 	if err != nil {
@@ -412,7 +400,7 @@ func TestReadLastLines_TruncatesToN(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		content.WriteString("line\n")
 	}
-	os.WriteFile(tmpFile, []byte(content.String()), 0644)
+	os.WriteFile(tmpFile, []byte(content.String()), 0o644)
 
 	entries, err := h.readLastLines(tmpFile, 5)
 	if err != nil {
@@ -426,7 +414,7 @@ func TestReadLastLines_TruncatesToN(t *testing.T) {
 func TestReadLastLines_ExactLineCount(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 	tmpFile := filepath.Join(t.TempDir(), "exact.log")
-	os.WriteFile(tmpFile, []byte("line1\nline2\nline3\n"), 0644)
+	os.WriteFile(tmpFile, []byte("line1\nline2\nline3\n"), 0o644)
 
 	entries, err := h.readLastLines(tmpFile, 3)
 	if err != nil {
@@ -451,7 +439,7 @@ func TestReadLastLines_VeryLongLine(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "longline.log")
 
 	longLine := strings.Repeat("x", 10000)
-	os.WriteFile(tmpFile, []byte(longLine+"\n"), 0644)
+	os.WriteFile(tmpFile, []byte(longLine+"\n"), 0o644)
 
 	entries, err := h.readLastLines(tmpFile, 10)
 	if err != nil {
@@ -468,7 +456,7 @@ func TestReadLastLines_VeryLongLine(t *testing.T) {
 func TestReadLastLines_NoTrailingNewline(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 	tmpFile := filepath.Join(t.TempDir(), "notrail.log")
-	os.WriteFile(tmpFile, []byte("line1\nline2\nline3"), 0644) // no trailing \n
+	os.WriteFile(tmpFile, []byte("line1\nline2\nline3"), 0o644) // no trailing \n
 
 	entries, err := h.readLastLines(tmpFile, 10)
 	if err != nil {
@@ -485,7 +473,7 @@ func TestReadLastLines_BinaryContent(t *testing.T) {
 
 	// Binary content with null bytes and non-UTF8
 	data := []byte{0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x0a, 0x00, 0x01, 0x02, 0x0a}
-	os.WriteFile(tmpFile, data, 0644)
+	os.WriteFile(tmpFile, data, 0o644)
 
 	entries, err := h.readLastLines(tmpFile, 10)
 	if err != nil {
@@ -502,7 +490,7 @@ func TestReadLastLines_BinaryContent(t *testing.T) {
 func TestCheckOrigin_EmptyOrigin(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 
-	req := httptest.NewRequest("GET", "/ws/logs", nil)
+	req := httptest.NewRequest("GET", "/ws/logs", http.NoBody)
 	req.Header.Del("Origin")
 
 	if h.checkOrigin(req) {
@@ -513,7 +501,7 @@ func TestCheckOrigin_EmptyOrigin(t *testing.T) {
 func TestCheckOrigin_SameOriginHTTP(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 
-	req := httptest.NewRequest("GET", "/ws/logs", nil)
+	req := httptest.NewRequest("GET", "/ws/logs", http.NoBody)
 	req.Header.Set("Origin", "http://localhost:8089")
 	req.Host = "localhost:8089"
 
@@ -525,7 +513,7 @@ func TestCheckOrigin_SameOriginHTTP(t *testing.T) {
 func TestCheckOrigin_SameOriginHTTPS(t *testing.T) {
 	h, _ := newTestLogsHandler(t)
 
-	req := httptest.NewRequest("GET", "/ws/logs", nil)
+	req := httptest.NewRequest("GET", "/ws/logs", http.NoBody)
 	req.Header.Set("Origin", "https://myrouter:8089")
 	req.Host = "myrouter:8089"
 
@@ -541,7 +529,7 @@ func TestCheckOrigin_AllowedOrigin(t *testing.T) {
 		broadcast:      make(chan LogMessage, 100),
 	}
 
-	req := httptest.NewRequest("GET", "/ws/logs", nil)
+	req := httptest.NewRequest("GET", "/ws/logs", http.NoBody)
 	req.Header.Set("Origin", "http://trusted.example.com")
 	req.Host = "other-host"
 
@@ -557,7 +545,7 @@ func TestCheckOrigin_RejectedOrigin(t *testing.T) {
 		broadcast:      make(chan LogMessage, 100),
 	}
 
-	req := httptest.NewRequest("GET", "/ws/logs", nil)
+	req := httptest.NewRequest("GET", "/ws/logs", http.NoBody)
 	req.Header.Set("Origin", "http://evil.example.com")
 	req.Host = "myrouter:8089"
 
@@ -576,7 +564,7 @@ func TestRegisterLogsRoutes(t *testing.T) {
 	router := mux.NewRouter()
 	RegisterLogsRoutes(router, h)
 
-	req := httptest.NewRequest("GET", "/logs/xray?path="+logPath, nil)
+	req := httptest.NewRequest("GET", "/logs/xray?path="+logPath, http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -591,7 +579,7 @@ func TestRegisterLogsRoutes_MethodNotAllowed(t *testing.T) {
 	router := mux.NewRouter()
 	RegisterLogsRoutes(router, h)
 
-	req := httptest.NewRequest("POST", "/logs/xray", nil)
+	req := httptest.NewRequest("POST", "/logs/xray", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -710,7 +698,7 @@ func TestLogsHandler_CloseWithActiveSenders(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		tmpDir := t.TempDir()
 		logFile := filepath.Join(tmpDir, "access.log")
-		if err := os.WriteFile(logFile, []byte("line 1\nline 2\nline 3\n"), 0644); err != nil {
+		if err := os.WriteFile(logFile, []byte("line 1\nline 2\nline 3\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -721,7 +709,7 @@ func TestLogsHandler_CloseWithActiveSenders(t *testing.T) {
 			broadcast: make(chan LogMessage, 100),
 			ctx:       ctx,
 			cancel:    cancel,
-			upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+			upgrader:  websocket.Upgrader{CheckOrigin: func(_ *http.Request) bool { return true }},
 		}
 		h.wg.Add(1)
 		go h.runBroadcast()
@@ -740,7 +728,7 @@ func TestLogsHandler_CloseWithActiveSenders(t *testing.T) {
 					return
 				case <-ticker.C:
 					go func() {
-						f, err := os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0644)
+						f, err := os.OpenFile(logFile, os.O_APPEND|os.O_WRONLY, 0o644)
 						if err == nil {
 							f.WriteString("x\n")
 							f.Close()
@@ -777,7 +765,7 @@ func TestLogsHandler_SendToClients_DeadClientRemoved(t *testing.T) {
 		ctx:       ctx,
 		cancel:    cancel,
 		upgrader: websocket.Upgrader{
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			CheckOrigin:     func(_ *http.Request) bool { return true },
 			WriteBufferSize: 1, // minimize buffer — every write flushes to TCP
 		},
 	}

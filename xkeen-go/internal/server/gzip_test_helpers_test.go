@@ -12,7 +12,7 @@ import (
 // httpHandler returns a handler writing s as the body with a default
 // text/plain Content-Type.
 func httpHandler(s string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Write([]byte(s))
 	})
@@ -21,7 +21,7 @@ func httpHandler(s string) http.Handler {
 // gzipHandlerWithContentType returns a handler that sets the given
 // Content-Type then writes body.
 func gzipHandlerWithContentType(body []byte, contentType string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", contentType)
 		w.Write(body)
 	})
@@ -35,7 +35,7 @@ func newRequest(method, target string, body io.Reader) *http.Request {
 }
 
 func newRequestAcceptingGzip(method, target string) *http.Request {
-	req := httptest.NewRequest(method, target, nil)
+	req := httptest.NewRequest(method, target, http.NoBody)
 	req.Header.Set("Accept-Encoding", "gzip")
 	return req
 }

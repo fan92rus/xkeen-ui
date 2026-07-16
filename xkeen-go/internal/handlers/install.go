@@ -2,7 +2,6 @@
 //
 // Embeds install-awg.sh and executes it on the router via sh.
 // stdout lines are streamed to the frontend as SSE events for progress display.
-
 package handlers
 
 import (
@@ -52,7 +51,7 @@ type AWGStatusResponse struct {
 
 // Status checks if AWG is installed.
 // GET /api/install/awg/status
-func (h *InstallHandler) Status(w http.ResponseWriter, r *http.Request) {
+func (h *InstallHandler) Status(w http.ResponseWriter, _ *http.Request) {
 	resp := AWGStatusResponse{}
 
 	// Check if awg binary exists
@@ -96,11 +95,11 @@ type InitScriptResponse struct {
 
 // SetupInitScript creates or updates the AWG init script.
 // POST /api/install/awg/init
-func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, r *http.Request) {
+func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, _ *http.Request) {
 	targetPath := "/opt/etc/init.d/awg"
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o750); err != nil {
 		respondJSON(w, http.StatusInternalServerError, InitScriptResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to create init.d dir: %v", err),
@@ -108,7 +107,8 @@ func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := os.WriteFile(targetPath, []byte(installAWGInitScript), 0755); err != nil {
+	//nolint:gosec // AWG init script needs execute
+	if err := os.WriteFile(targetPath, []byte(installAWGInitScript), 0o755); err != nil {
 		respondJSON(w, http.StatusInternalServerError, InitScriptResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to write init script: %v", err),
@@ -176,12 +176,13 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 
 	// Write install script to temp
 	installScriptPath := "/tmp/install-awg.sh"
-	if err := os.WriteFile(installScriptPath, []byte(installAWGScript), 0755); err != nil {
+	//nolint:gosec // AWG install script needs execute
+	if err := os.WriteFile(installScriptPath, []byte(installAWGScript), 0o755); err != nil {
 		sendEvent("error", AWGInstallProgress{Percent: 0, Status: "failed",
 			Error: fmt.Sprintf("cannot write script: %v", err)})
 		return
 	}
-	defer os.Remove(installScriptPath)
+	defer func() { _ = os.Remove(installScriptPath) }()
 
 	sendEvent("progress", AWGInstallProgress{Percent: 5, Status: "starting installation..."})
 
@@ -263,13 +264,15 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 	}
 
 waitExit:
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.Printf("[install] command wait: %v", err)
+	}
 
 	if cmd.ProcessState.ExitCode() == 0 {
 		// Auto-create init script after successful install
 		targetPath := "/opt/etc/init.d/awg"
-		os.MkdirAll(filepath.Dir(targetPath), 0755)
-		if werr := os.WriteFile(targetPath, []byte(installAWGInitScript), 0755); werr == nil {
+		_ = os.MkdirAll(filepath.Dir(targetPath), 0o750)
+		if werr := os.WriteFile(targetPath, []byte(installAWGInitScript), 0o755); werr == nil { //nolint:gosec // AWG init script needs execute
 			log.Printf("[install] AWG init script auto-created at %s", targetPath)
 		} else {
 			log.Printf("[install] Warning: failed to create init script: %v", werr)
@@ -316,12 +319,13 @@ func (h *InstallHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 
 	// Write uninstall script to temp
 	scriptPath := "/tmp/uninstall-awg.sh"
-	if err := os.WriteFile(scriptPath, []byte(installAWGUninstallScript), 0755); err != nil {
+	//nolint:gosec // AWG uninstall script needs execute
+	if err := os.WriteFile(scriptPath, []byte(installAWGUninstallScript), 0o755); err != nil {
 		sendEvent("error", AWGInstallProgress{Percent: 0, Status: "failed",
 			Error: fmt.Sprintf("cannot write script: %v", err)})
 		return
 	}
-	defer os.Remove(scriptPath)
+	defer func() { _ = os.Remove(scriptPath) }()
 
 	sendEvent("progress", AWGInstallProgress{Percent: 5, Status: "starting uninstall..."})
 
@@ -402,6 +406,8 @@ func (h *InstallHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 waitUninstallExit:
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.Printf("[install] command wait: %v", err)
+	}
 	log.Printf("[install] AmneziaWG uninstall finished (exit code: %d)", cmd.ProcessState.ExitCode())
 }

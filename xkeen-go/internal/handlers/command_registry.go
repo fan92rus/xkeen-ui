@@ -25,6 +25,7 @@ import (
 // CacheTTL is how long the command list stays cached before a refresh.
 const CacheTTL = 300 * time.Minute
 
+// CommandRegistry manages the available interactive commands with caching.
 type CommandRegistry struct {
 	mu        sync.RWMutex
 	xkeenPath string
@@ -105,6 +106,7 @@ func (r *CommandRegistry) loadFromXkeen() (map[string]CommandConfig, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), HelpTimeout)
 	defer cancel()
 
+	//nolint:gosec // xkeenPath from validated config
 	cmd := exec.CommandContext(ctx, r.xkeenPath, "-help")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

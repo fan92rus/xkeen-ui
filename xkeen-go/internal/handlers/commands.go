@@ -56,7 +56,7 @@ func NewCommandsHandler(registry *CommandRegistry) *CommandsHandler {
 
 // GetCommands returns the list of available commands.
 // GET /api/xkeen/commands
-func (h *CommandsHandler) GetCommands(w http.ResponseWriter, r *http.Request) {
+func (h *CommandsHandler) GetCommands(w http.ResponseWriter, _ *http.Request) {
 	all := h.registry.All()
 
 	commands := make([]CommandInfo, 0, len(all))
@@ -91,7 +91,7 @@ func RegisterCommandsRoutes(r *mux.Router, handler *CommandsHandler) {
 
 // RefreshCommands force-reloads the command list from xkeen.
 // POST /api/xkeen/commands/refresh
-func (h *CommandsHandler) RefreshCommands(w http.ResponseWriter, r *http.Request) {
+func (h *CommandsHandler) RefreshCommands(w http.ResponseWriter, _ *http.Request) {
 	h.registry.Refresh()
 	all := h.registry.All()
 	commands := make([]CommandInfo, 0, len(all))

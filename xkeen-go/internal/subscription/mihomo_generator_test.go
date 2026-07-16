@@ -469,9 +469,7 @@ func TestConvertXrayRouting_Basic(t *testing.T) {
 	}
 
 	ruleStrs := make([]string, len(rules))
-	for i, r := range rules {
-		ruleStrs[i] = string(r)
-	}
+	copy(ruleStrs, rules)
 
 	find := func(s string) bool {
 		for _, r := range ruleStrs {
@@ -503,7 +501,7 @@ func TestConvertXrayRouting_PortRules(t *testing.T) {
 
 	found := false
 	for _, r := range rules {
-		if string(r) == "DST-PORT,0-1023,DIRECT" {
+		if r == "DST-PORT,0-1023,DIRECT" {
 			found = true
 			break
 		}
@@ -525,7 +523,7 @@ func TestConvertXrayRouting_BalancerToGroup(t *testing.T) {
 
 	found := false
 	for _, r := range rules {
-		if string(r) == "DOMAIN-SUFFIX,example.com,mybalancer" {
+		if r == "DOMAIN-SUFFIX,example.com,mybalancer" {
 			found = true
 			break
 		}
@@ -547,7 +545,7 @@ func TestBuildMihomoRules_WithConversion(t *testing.T) {
 	if err != nil { t.Fatalf("BuildMihomoRules failed: %v", err) }
 
 	// Last rule should still be MATCH,Proxy
-	lastRule := string(rules[len(rules)-1])
+	lastRule := rules[len(rules)-1]
 	if lastRule != "MATCH,Proxy" {
 		t.Errorf("last rule = %q, want MATCH,Proxy", lastRule)
 	}
@@ -555,7 +553,7 @@ func TestBuildMihomoRules_WithConversion(t *testing.T) {
 	// Should have converted rule
 	found := false
 	for _, r := range rules {
-		if string(r) == "DOMAIN-SUFFIX,custom.com,proxy" {
+		if r == "DOMAIN-SUFFIX,custom.com,proxy" {
 			found = true
 			break
 		}

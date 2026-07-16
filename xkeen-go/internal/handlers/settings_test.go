@@ -23,17 +23,17 @@ import (
 
 // setupSettingsTest creates a temporary directory structure and SettingsHandler.
 // Returns handler, xrayConfigDir, backupDir.
-func setupSettingsTest(t *testing.T) (*SettingsHandler, string, string) {
+func setupSettingsTest(t *testing.T) (h *SettingsHandler, xrayDir, backupDir string) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
 
-	xrayDir := filepath.Join(tmpDir, "xray-configs")
-	backupDir := filepath.Join(tmpDir, "backups")
-	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+	xrayDir = filepath.Join(tmpDir, "xray-configs")
+	backupDir = filepath.Join(tmpDir, "backups")
+	if err := os.MkdirAll(xrayDir, 0o755); err != nil {
 		t.Fatalf("failed to create xray dir: %v", err)
 	}
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		t.Fatalf("failed to create backup dir: %v", err)
 	}
 
@@ -43,7 +43,8 @@ func setupSettingsTest(t *testing.T) (*SettingsHandler, string, string) {
 		filepath.Join(tmpDir, "config.json"),
 		nil, // no metrics callback in most tests
 	)
-	return handler, xrayDir, backupDir
+	h = handler
+	return h, xrayDir, backupDir
 }
 
 // newSettingsRouter creates a mux.Router with settings routes.
@@ -94,9 +95,9 @@ func parseSettingsResponse(t *testing.T, resp *http.Response) map[string]interfa
 }
 
 // writeLogConfig writes a log config file to the xray config directory.
-func writeLogConfig(t *testing.T, xrayDir string, content string) {
+func writeLogConfig(t *testing.T, xrayDir, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(xrayDir, "01_log.json"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(xrayDir, "01_log.json"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write log config: %v", err)
 	}
 }
@@ -108,11 +109,11 @@ func readLogConfig(t *testing.T, xrayDir string) XrayLogConfigFile {
 	if err != nil {
 		t.Fatalf("failed to read log config: %v", err)
 	}
-	var config XrayLogConfigFile
-	if err := json.Unmarshal(data, &config); err != nil {
+	var logCfg XrayLogConfigFile
+	if err := json.Unmarshal(data, &logCfg); err != nil {
 		t.Fatalf("failed to parse log config: %v", err)
 	}
-	return config
+	return logCfg
 }
 
 // ---------------------------------------------------------------------------
@@ -280,9 +281,9 @@ func TestUpdateLogLevel_AllValidLevels(t *testing.T) {
 				t.Fatalf("expected 200 for level %q, got %d", level, resp.StatusCode)
 			}
 
-			config := readLogConfig(t, xrayDir)
-			if config.Log.LogLevel != level {
-				t.Errorf("got level %q, want %q", config.Log.LogLevel, level)
+			logCfg := readLogConfig(t, xrayDir)
+			if logCfg.Log.LogLevel != level {
+				t.Errorf("got level %q, want %q", logCfg.Log.LogLevel, level)
 			}
 		})
 	}
@@ -300,15 +301,15 @@ func TestUpdateLogLevel_PreservesExistingPaths(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	config := readLogConfig(t, xrayDir)
-	if config.Log.Access != "/custom/access.log" {
-		t.Errorf("access path not preserved: %q", config.Log.Access)
+	logCfg := readLogConfig(t, xrayDir)
+	if logCfg.Log.Access != "/custom/access.log" {
+		t.Errorf("access path not preserved: %q", logCfg.Log.Access)
 	}
-	if config.Log.Error != "/custom/error.log" {
-		t.Errorf("error path not preserved: %q", config.Log.Error)
+	if logCfg.Log.Error != "/custom/error.log" {
+		t.Errorf("error path not preserved: %q", logCfg.Log.Error)
 	}
-	if config.Log.LogLevel != "none" {
-		t.Errorf("log level not updated: %q", config.Log.LogLevel)
+	if logCfg.Log.LogLevel != "none" {
+		t.Errorf("log level not updated: %q", logCfg.Log.LogLevel)
 	}
 }
 
@@ -372,15 +373,15 @@ func TestUpdateLogLevel_CreatesFileIfNotExists(t *testing.T) {
 		t.Fatal("config file should have been created")
 	}
 
-	config := readLogConfig(t, xrayDir)
-	if config.Log.LogLevel != "info" {
-		t.Errorf("got level %q, want 'info'", config.Log.LogLevel)
+	logCfg := readLogConfig(t, xrayDir)
+	if logCfg.Log.LogLevel != "info" {
+		t.Errorf("got level %q, want 'info'", logCfg.Log.LogLevel)
 	}
-	if config.Log.Access != "/opt/var/log/xray/access.log" {
-		t.Errorf("expected default access path, got %q", config.Log.Access)
+	if logCfg.Log.Access != "/opt/var/log/xray/access.log" {
+		t.Errorf("expected default access path, got %q", logCfg.Log.Access)
 	}
-	if config.Log.Error != "/opt/var/log/xray/error.log" {
-		t.Errorf("expected default error path, got %q", config.Log.Error)
+	if logCfg.Log.Error != "/opt/var/log/xray/error.log" {
+		t.Errorf("expected default error path, got %q", logCfg.Log.Error)
 	}
 }
 
@@ -534,8 +535,8 @@ func TestListBackups_IgnoresNonMatchingFiles(t *testing.T) {
 	handler, _, backupDir := setupSettingsTest(t)
 	router := newSettingsRouter(handler)
 
-	os.WriteFile(filepath.Join(backupDir, "other_file.bak"), []byte("data"), 0644)
-	os.WriteFile(filepath.Join(backupDir, "01_log.json.readme"), []byte("data"), 0644)
+	os.WriteFile(filepath.Join(backupDir, "other_file.bak"), []byte("data"), 0o644)
+	os.WriteFile(filepath.Join(backupDir, "01_log.json.readme"), []byte("data"), 0o644)
 
 	resp := settingsRequest(t, router, "GET", "/xray/settings/backups", nil)
 	result := parseSettingsResponse(t, resp)
@@ -603,8 +604,8 @@ func TestListBackups_WithMixedFiles(t *testing.T) {
 	settingsRequest(t, router, "POST", "/xray/settings/log-level", map[string]string{"log_level": "debug"})
 
 	// Create unrelated files
-	os.WriteFile(filepath.Join(backupDir, "random.txt"), []byte("data"), 0644)
-	os.WriteFile(filepath.Join(backupDir, "other.json.bak"), []byte("data"), 0644)
+	os.WriteFile(filepath.Join(backupDir, "random.txt"), []byte("data"), 0o644)
+	os.WriteFile(filepath.Join(backupDir, "other.json.bak"), []byte("data"), 0o644)
 
 	resp := settingsRequest(t, router, "GET", "/xray/settings/backups", nil)
 	result := parseSettingsResponse(t, resp)
@@ -716,7 +717,7 @@ func TestCreateBackup_MultipleBackupsDifferentTimestamps(t *testing.T) {
 func TestGetFileModTime_ExistingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.json")
-	os.WriteFile(path, []byte("{}"), 0644)
+	os.WriteFile(path, []byte("{}"), 0o644)
 
 	result := getFileModTime(path)
 	if result == "" || result == "unknown" {
@@ -737,7 +738,7 @@ func TestGetFileModTime_NonexistentFile(t *testing.T) {
 func TestGetFileModTime_UsesModTime(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "timed.json")
-	os.WriteFile(path, []byte("{}"), 0644)
+	os.WriteFile(path, []byte("{}"), 0o644)
 
 	localTime := time.Date(2025, 6, 15, 10, 30, 45, 0, time.Local)
 	os.Chtimes(path, localTime, localTime)
@@ -758,7 +759,7 @@ func TestRegisterSettingsRoutes(t *testing.T) {
 	handler, _, _ := setupSettingsTest(t)
 	RegisterSettingsRoutes(r, handler)
 
-	req := httptest.NewRequest("GET", "/xray/settings", nil)
+	req := httptest.NewRequest("GET", "/xray/settings", http.NoBody)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -785,7 +786,7 @@ func TestRegisterSettingsRoutes_RouteMethods(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := httptest.NewRequest(tt.method, tt.path, http.NoBody)
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 
@@ -867,12 +868,12 @@ func TestUpdateLogLevel_JSONCExistingConfig(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	config := readLogConfig(t, xrayDir)
-	if config.Log.Access != "/custom/access.log" {
-		t.Errorf("access path not preserved from JSONC: %q", config.Log.Access)
+	logCfg := readLogConfig(t, xrayDir)
+	if logCfg.Log.Access != "/custom/access.log" {
+		t.Errorf("access path not preserved from JSONC: %q", logCfg.Log.Access)
 	}
-	if config.Log.LogLevel != "warning" {
-		t.Errorf("log level not updated: %q", config.Log.LogLevel)
+	if logCfg.Log.LogLevel != "warning" {
+		t.Errorf("log level not updated: %q", logCfg.Log.LogLevel)
 	}
 }
 

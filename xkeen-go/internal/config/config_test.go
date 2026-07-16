@@ -312,7 +312,7 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 		"log_level":       "debug",
 	}
 	data, _ := json.Marshal(input)
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, 0o644)
 
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -332,7 +332,7 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 func TestLoadConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	os.WriteFile(path, []byte("{invalid json}"), 0644)
+	os.WriteFile(path, []byte("{invalid json}"), 0o644)
 
 	cfg, err := LoadConfig(path)
 	if err == nil {
@@ -355,7 +355,7 @@ func TestLoadConfig_ValidJSON_InvalidConfig(t *testing.T) {
 		"allowed_roots":   []string{"/opt/etc/xray"},
 	}
 	data, _ := json.Marshal(input)
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, 0o644)
 
 	cfg, err := LoadConfig(path)
 	if err == nil {
@@ -375,7 +375,7 @@ func TestLoadConfig_MergesOntoDefaults(t *testing.T) {
 		"port": 1234,
 	}
 	data, _ := json.Marshal(input)
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, 0o644)
 
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -420,15 +420,15 @@ func TestSaveConfig_WritesValidConfig(t *testing.T) {
 		t.Errorf("loaded Mode = %q, want %q", loaded.Mode, cfg.Mode)
 	}
 
-	// Verify file permissions are 0600 (owner read/write only) on Unix systems.
+	// Verify file permissions are 0o600 (owner read/write only) on Unix systems.
 	// On Windows, the permission bits may not be enforced the same way.
 	fi, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("failed to stat saved file: %v", err)
 	}
 	perms := fi.Mode().Perm()
-	if runtime.GOOS != "windows" && perms != 0600 {
-		t.Errorf("saved config has permissions %o, want 0600", perms)
+	if runtime.GOOS != "windows" && perms != 0o600 {
+		t.Errorf("saved config has permissions %o, want 0o600", perms)
 	}
 }
 

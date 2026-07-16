@@ -32,9 +32,9 @@ type LogBackupsResponse struct {
 
 // MetricsPortResponse is the response for metrics port endpoints.
 type MetricsPortResponse struct {
-	Ok          bool `json:"ok"`
-	MetricsPort int  `json:"metrics_port"`
-	Enabled     bool `json:"enabled"`
+	Ok          bool   `json:"ok"`
+	MetricsPort int    `json:"metrics_port"`
+	Enabled     bool   `json:"enabled"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -50,7 +50,7 @@ type SettingsHandler struct {
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
-func NewSettingsHandler(allowedRoots []string, xrayConfigDir string, backupDir string, cfg *config.Config, configPath string, onMetricsChange func(int) *MetricsHandler) *SettingsHandler {
+func NewSettingsHandler(allowedRoots []string, xrayConfigDir, backupDir string, cfg *config.Config, configPath string, onMetricsChange func(int) *MetricsHandler) *SettingsHandler {
 	validator, err := utils.NewPathValidator(allowedRoots)
 	if err != nil {
 		log.Printf("Warning: failed to create path validator: %v", err)
@@ -92,7 +92,7 @@ type UpdateLogLevelRequest struct {
 
 // GetXraySettings returns current Xray logging settings.
 // GET /api/xray/settings
-func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, r *http.Request) {
+func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, _ *http.Request) {
 	// Default response
 	response := XraySettingsResponse{
 		LogLevel:  "none",
@@ -120,21 +120,21 @@ func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var config XrayLogConfigFile
-	if err := json.Unmarshal(jsonData, &config); err != nil {
+	var logCfg XrayLogConfigFile
+	if err := json.Unmarshal(jsonData, &logCfg); err != nil {
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse log config JSON: %v", err))
 		return
 	}
 
 	// Update response with actual values
-	if config.Log.LogLevel != "" {
-		response.LogLevel = config.Log.LogLevel
+	if logCfg.Log.LogLevel != "" {
+		response.LogLevel = logCfg.Log.LogLevel
 	}
-	if config.Log.Access != "" {
-		response.AccessLog = config.Log.Access
+	if logCfg.Log.Access != "" {
+		response.AccessLog = logCfg.Log.Access
 	}
-	if config.Log.Error != "" {
-		response.ErrorLog = config.Log.Error
+	if logCfg.Log.Error != "" {
+		response.ErrorLog = logCfg.Log.Error
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -163,7 +163,7 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Read existing config or create new one
-	config := XrayLogConfigFile{
+	logCfg := XrayLogConfigFile{
 		Log: XrayLogConfig{
 			Access:   "/opt/var/log/xray/access.log",
 			Error:    "/opt/var/log/xray/error.log",
@@ -180,10 +180,10 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 			if json.Unmarshal(jsonData, &existingConfig) == nil {
 				// Preserve existing paths
 				if existingConfig.Log.Access != "" {
-					config.Log.Access = existingConfig.Log.Access
+					logCfg.Log.Access = existingConfig.Log.Access
 				}
 				if existingConfig.Log.Error != "" {
-					config.Log.Error = existingConfig.Log.Error
+					logCfg.Log.Error = existingConfig.Log.Error
 				}
 			}
 		}
@@ -199,13 +199,13 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(h.logConfigPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(h.logConfigPath), 0o750); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create config directory: %v", err))
 		return
 	}
 
 	// Write new config
-	newData, err := json.MarshalIndent(config, "", "  ")
+	newData, err := json.MarshalIndent(logCfg, "", "  ")
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal config: %v", err))
 		return
@@ -214,7 +214,7 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 	// Add trailing newline
 	newData = append(newData, '\n')
 
-	if err := os.WriteFile(h.logConfigPath, newData, 0644); err != nil {
+	if err := os.WriteFile(h.logConfigPath, newData, 0o600); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config: %v", err))
 		return
 	}
@@ -232,7 +232,7 @@ func (h *SettingsHandler) createBackup(filePath string) (string, error) {
 		return "", nil
 	}
 
-	if err := os.MkdirAll(h.backupDir, 0755); err != nil {
+	if err := os.MkdirAll(h.backupDir, 0o750); err != nil {
 		return "", fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
@@ -246,7 +246,7 @@ func (h *SettingsHandler) createBackup(filePath string) (string, error) {
 		return "", fmt.Errorf("failed to read file for backup: %w", err)
 	}
 
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	if err := os.WriteFile(backupPath, data, 0o600); err != nil {
 		return "", fmt.Errorf("failed to write backup file: %w", err)
 	}
 
@@ -264,7 +264,7 @@ func getFileModTime(filePath string) string {
 
 // ListBackupsForLogConfig returns available backups for log config.
 // GET /api/xray/settings/backups
-func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http.Request) {
+func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, _ *http.Request) {
 	entries, err := os.ReadDir(h.backupDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -306,13 +306,14 @@ func (h *SettingsHandler) ListBackupsForLogConfig(w http.ResponseWriter, r *http
 	})
 }
 
+// SetUpdateMetrics sets the callback function called when metrics port changes.
 func (h *SettingsHandler) SetUpdateMetrics(fn func(int)) {
 	h.updateMetrics = fn
 }
 
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
-func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, r *http.Request) {
+func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, _ *http.Request) {
 	respondJSON(w, http.StatusOK, MetricsPortResponse{
 		Ok:          true,
 		MetricsPort: h.cfg.MetricsPort,
@@ -368,7 +369,7 @@ type AWGInterfaceResponse struct {
 
 // GetAWGInterfaces returns the configured AWG LAN/WAN interfaces and endpoint.
 // GET /api/settings/awg-interfaces
-func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, r *http.Request) {
+func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Request) {
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
 		Ok:       "ok",
 		LanIface: h.cfg.AWGLanIface,
@@ -393,10 +394,10 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 	// Basic validation: interface names are alphanumeric + optional digits/hyphens
 	validateIface := func(s string) bool {
 		if s == "" {
-			return true // empty = auto-detect
+			return true // empty means auto-detect
 		}
 		for _, c := range s {
-			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
 				return false
 			}
 		}
@@ -414,8 +415,8 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 			return
 		}
 		for _, c := range req.Endpoint {
-			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-				c == '.' || c == '-' || c == ':' || c == '[' || c == ']') {
+			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') &&
+				c != '.' && c != '-' && c != ':' && c != '[' && c != ']' {
 				respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid endpoint (use IP or domain)"})
 				return
 			}

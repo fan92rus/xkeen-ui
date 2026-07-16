@@ -75,7 +75,7 @@ func TestValidate_PathWithinRoot_ReturnsCleanedAbsPath(t *testing.T) {
 
 	// Create a file to validate
 	filePath := filepath.Join(tmp, "test.json")
-	if err := os.WriteFile(filePath, []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestValidate_EmptyPath_ReturnsErrEmpty(t *testing.T) {
 func TestValidate_SubdirectoryWithinRoot(t *testing.T) {
 	tmp := t.TempDir()
 	subdir := filepath.Join(tmp, "subdir")
-	if err := os.MkdirAll(subdir, 0755); err != nil {
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatalf("failed to create subdir: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestValidate_SymlinkRejectedWhenDisallowed(t *testing.T) {
 
 	tmp := t.TempDir()
 	realDir := filepath.Join(tmp, "real")
-	if err := os.MkdirAll(realDir, 0755); err != nil {
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatalf("failed to create real dir: %v", err)
 	}
 
@@ -248,7 +248,7 @@ func TestValidate_SymlinkAllowedWhenOptionSet(t *testing.T) {
 
 	tmp := t.TempDir()
 	realDir := filepath.Join(tmp, "real")
-	if err := os.MkdirAll(realDir, 0755); err != nil {
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatalf("failed to create real dir: %v", err)
 	}
 
@@ -259,7 +259,7 @@ func TestValidate_SymlinkAllowedWhenOptionSet(t *testing.T) {
 
 	// Create file inside the real dir
 	realFile := filepath.Join(realDir, "file.txt")
-	if err := os.WriteFile(realFile, []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(realFile, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
 
@@ -286,7 +286,7 @@ func TestIsAllowed_ValidPath_ReturnsTrue(t *testing.T) {
 	}
 
 	filePath := filepath.Join(tmp, "test.json")
-	if err := os.WriteFile(filePath, []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -518,7 +518,7 @@ func TestWithSymlinks(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	realDir := filepath.Join(tmpDir, "real")
-	if err := os.MkdirAll(realDir, 0755); err != nil {
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -535,7 +535,7 @@ func TestWithSymlinks(t *testing.T) {
 	}
 
 	targetFile := filepath.Join(linkPath, "test.txt")
-	if err := os.WriteFile(targetFile, []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(targetFile, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -553,7 +553,7 @@ func TestWithSymlinks_Disallowed(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	realDir := filepath.Join(tmpDir, "real")
-	if err := os.MkdirAll(realDir, 0755); err != nil {
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -570,7 +570,7 @@ func TestWithSymlinks_Disallowed(t *testing.T) {
 	}
 
 	targetFile := filepath.Join(linkPath, "test.txt")
-	if err := os.WriteFile(targetFile, []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(targetFile, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -586,7 +586,7 @@ func TestWithSymlinks_Disallowed(t *testing.T) {
 func TestValidateNonExistentPath_WithinRoot(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "sub")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -609,7 +609,7 @@ func TestValidateNonExistentPath_WithinRoot(t *testing.T) {
 func TestValidateNonExistentPath_DeepNesting(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "level1")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -632,7 +632,7 @@ func TestValidateNonExistentPath_DeepNesting(t *testing.T) {
 func TestValidateNonExistentPath_OutsideRoot(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "sub")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 

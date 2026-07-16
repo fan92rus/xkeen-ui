@@ -118,8 +118,8 @@ type AWGConfig struct {
 	Role AWGRole  `json:"role"` // auto-detected or overridden role
 }
 
-// SubscriptionConfig is the persisted subscription configuration.
-type SubscriptionConfig struct {
+// Config is the persisted subscription configuration.
+type Config struct {
 	Subscriptions []Subscription `json:"subscriptions"`
 	Profiles      []Profile      `json:"profiles"`
 	GeneratedAt   time.Time      `json:"generated_at"`

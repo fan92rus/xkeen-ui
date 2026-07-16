@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,7 +41,7 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "subscriptions.json")
 
-	existing := &SubscriptionConfig{
+	existing := &Config{
 		Subscriptions: []Subscription{
 			{ID: "abc", Name: "Test", URL: "https://example.com/sub", Enabled: true, Interval: 5},
 		},
@@ -48,7 +49,7 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 		Strategy: &RoutingStrategy{Type: "random"},
 	}
 	data, _ := json.MarshalIndent(existing, "", "    ")
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, 0o644)
 
 	store, err := NewStore(path)
 	if err != nil {
@@ -87,7 +88,7 @@ func TestNewStore_LoadsExistingFile(t *testing.T) {
 func TestNewStore_CorruptFileUsesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "subscriptions.json")
-	os.WriteFile(path, []byte("not json at all"), 0644)
+	os.WriteFile(path, []byte("not json at all"), 0o644)
 
 	store, err := NewStore(path)
 	if err != nil {
@@ -906,7 +907,7 @@ func TestSave_PersistsToDisk(t *testing.T) {
 		t.Fatalf("read file: %v", err)
 	}
 
-	var cfg SubscriptionConfig
+	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -1168,7 +1169,7 @@ func emptyFilter() Filter {
 }
 
 func containsStr(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || containsStrHelper(s, substr))
+	return len(s) >= len(substr) && (s == substr || substr == "" || containsStrHelper(s, substr))
 }
 
 func containsStrHelper(s, substr string) bool {
@@ -1308,7 +1309,7 @@ func TestProxyCache_CorruptedFileGraceful(t *testing.T) {
 
 	// Write a corrupted cache file
 	cachePath := filepath.Join(dir, "proxy-cache.json")
-	os.WriteFile(cachePath, []byte("{invalid json!!!"), 0644)
+	os.WriteFile(cachePath, []byte("{invalid json!!!"), 0o644)
 
 	store, err := NewStore(path)
 	if err != nil {
@@ -1385,13 +1386,13 @@ func TestGetFilters_NoDefaultProfile_DoesNotMutate(t *testing.T) {
 	path := filepath.Join(dir, "subscriptions.json")
 
 	// Create a file with profiles but NO IsDefault profile
-	cfg := &SubscriptionConfig{
+	cfg := &Config{
 		Profiles: []Profile{
 			{ID: "custom1", Name: "Custom", Enabled: true, IsDefault: false, Strategy: RoutingStrategy{Type: "random"}},
 		},
 	}
 	data, _ := json.MarshalIndent(cfg, "", "    ")
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, 0o644)
 
 	store, err := NewStore(path)
 	if err != nil {
@@ -1408,13 +1409,13 @@ func TestGetFilters_NoDefaultProfile_DoesNotMutate(t *testing.T) {
 
 	// Verify they returned non-nil sensible defaults
 	if filters == nil {
-		t.Error("GetFilters returned nil")
+		t.Fatal("GetFilters returned nil")
 	}
 	if filters.IncludeCountries == nil {
 		t.Error("GetFilters returned nil IncludeCountries")
 	}
 	if strategy == nil {
-		t.Error("GetStrategy returned nil")
+		t.Fatal("GetStrategy returned nil")
 	}
 	if strategy.Type != "all" {
 		t.Errorf("expected default strategy type 'all', got %q", strategy.Type)
@@ -1438,13 +1439,13 @@ func TestGetStrategy_NoDefaultProfile_DoesNotMutate(t *testing.T) {
 	path := filepath.Join(dir, "subscriptions.json")
 
 	// Create a file with profiles but NO IsDefault
-	cfg := &SubscriptionConfig{
+	cfg := &Config{
 		Profiles: []Profile{
 			{ID: "custom2", Name: "Custom 2", Enabled: true, IsDefault: false, Filter: Filter{MaxProxies: 5}},
 		},
 	}
 	data, _ := json.MarshalIndent(cfg, "", "    ")
-	os.WriteFile(path, data, 0644)
+	os.WriteFile(path, data, 0o644)
 
 	store, err := NewStore(path)
 	if err != nil {
@@ -1476,8 +1477,8 @@ func TestSave_ConcurrentWithWriter_DoesNotLoseUpdates(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 10; i++ {
 			err := store.AddSubscription(&Subscription{
-				Name: fmt.Sprintf("Race-%d", i),
-				URL:  fmt.Sprintf("https://sub-%d.example.com", i),
+				Name:    fmt.Sprintf("Race-%d", i),
+				URL:     fmt.Sprintf("https://sub-%d.example.com", i),
 				Enabled: true,
 			})
 			if err != nil {
@@ -1512,7 +1513,7 @@ func TestAtomicWriteFile_ProducesCorrectContent(t *testing.T) {
 	path := filepath.Join(dir, "atomic-test.json")
 
 	content := []byte(`{"hello":"world"}`)
-	if err := atomicWriteFile(path, content, 0644); err != nil {
+	if err := atomicWriteFile(path, content, 0o644); err != nil {
 		t.Fatalf("atomicWriteFile: %v", err)
 	}
 
@@ -1521,7 +1522,7 @@ func TestAtomicWriteFile_ProducesCorrectContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
-	if string(data) != string(content) {
+	if !bytes.Equal(data, content) {
 		t.Errorf("content mismatch:\nwant: %q\ngot:  %q", string(content), string(data))
 	}
 
@@ -1537,11 +1538,11 @@ func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
 	path := filepath.Join(dir, "overwrite-test.json")
 
 	// Write initial content
-	os.WriteFile(path, []byte("old"), 0644)
+	os.WriteFile(path, []byte("old"), 0o644)
 
 	// Overwrite atomically
 	newContent := []byte(`{"updated": true}`)
-	if err := atomicWriteFile(path, newContent, 0644); err != nil {
+	if err := atomicWriteFile(path, newContent, 0o644); err != nil {
 		t.Fatalf("atomicWriteFile overwrite: %v", err)
 	}
 
@@ -1549,7 +1550,7 @@ func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read after overwrite: %v", err)
 	}
-	if string(data) != string(newContent) {
+	if !bytes.Equal(data, newContent) {
 		t.Errorf("overwrite content mismatch:\nwant: %q\ngot:  %q", string(newContent), string(data))
 	}
 
@@ -1627,7 +1628,7 @@ func TestSaveConfig_MkdirAllFailure(t *testing.T) {
 	dir := t.TempDir()
 	// Create a regular file that blocks using its path as a parent directory.
 	blocker := filepath.Join(dir, "not-a-dir")
-	if err := os.WriteFile(blocker, []byte("blocker"), 0644); err != nil {
+	if err := os.WriteFile(blocker, []byte("blocker"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(blocker, "subs.json") // parent is a file, not a dir
@@ -1676,7 +1677,7 @@ func TestAtomicWriteFile_ErrorOnBadPath(t *testing.T) {
 	// Path inside a non-existent subdirectory — WriteFile will fail because
 	// atomicWriteFile does NOT create parent directories.
 	badPath := filepath.Join(dir, "nonexistent", "out.json")
-	err := atomicWriteFile(badPath, []byte("data"), 0644)
+	err := atomicWriteFile(badPath, []byte("data"), 0o644)
 	if err == nil {
 		t.Error("atomicWriteFile should fail when parent directory does not exist")
 	}
@@ -1696,7 +1697,7 @@ func writeRawConfig(t *testing.T, dir string, cfg interface{}) *Store {
 	if err != nil {
 		t.Fatalf("marshal raw config: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("write raw config: %v", err)
 	}
 	store, err := NewStore(path)
@@ -1710,7 +1711,7 @@ func TestMigrateRegexFields_FromLegacy(t *testing.T) {
 	dir := t.TempDir()
 	// Write a config whose profile has LegacyIncludeRegex / LegacyExcludeRegex
 	// but empty IncludeRegexes / ExcludeRegexes — migration must populate them.
-	rawCfg := &SubscriptionConfig{
+	rawCfg := &Config{
 		Subscriptions: []Subscription{},
 		Profiles: []Profile{{
 			ID:        "default",
@@ -1753,7 +1754,7 @@ func TestMigrateRegexFields_AlreadyMigrated(t *testing.T) {
 	dir := t.TempDir()
 	// Config that already has IncludeRegexes populated and Legacy fields empty
 	// — migration must NOT change it.
-	rawCfg := &SubscriptionConfig{
+	rawCfg := &Config{
 		Subscriptions: []Subscription{},
 		Profiles: []Profile{{
 			ID:        "default",
@@ -1789,7 +1790,7 @@ func TestMigrateRegexFields_NilSlicesNormalized(t *testing.T) {
 	dir := t.TempDir()
 	// Profile with nil IncludeRegexes and ExcludeRegexes (no legacy fields) —
 	// migration must replace nils with empty slices.
-	rawCfg := &SubscriptionConfig{
+	rawCfg := &Config{
 		Subscriptions: []Subscription{},
 		Profiles: []Profile{{
 			ID:        "default",
@@ -1839,7 +1840,7 @@ func TestGenerateID_HappyPath(t *testing.T) {
 // ---------- cloneConfig ----------
 
 func TestCloneConfig_DeepCopy(t *testing.T) {
-	orig := &SubscriptionConfig{
+	orig := &Config{
 		Subscriptions: []Subscription{
 			{ID: "sub-1", Name: "Original", URL: "https://example.com/list", Enabled: true},
 		},
@@ -1858,7 +1859,7 @@ func TestCloneConfig_DeepCopy(t *testing.T) {
 	// Must be equal.
 	origJSON, _ := json.Marshal(orig)
 	cpJSON, _ := json.Marshal(cp)
-	if string(origJSON) != string(cpJSON) {
+	if !bytes.Equal(origJSON, cpJSON) {
 		t.Errorf("clone should produce identical JSON:\norig: %s\ncp:   %s", string(origJSON), string(cpJSON))
 	}
 
@@ -1877,4 +1878,3 @@ func TestCloneConfig_DeepCopy(t *testing.T) {
 		t.Errorf("global filter should be isolated after clone, got %q", orig.Filters.ExcludeCountries[0])
 	}
 }
-

@@ -31,15 +31,6 @@ type awgPeer struct {
 	Index           int    `json:"index"`                      // 0-based position among [Peer] sections
 }
 
-// awgServerInfo holds parsed info about a server config.
-type awgServerInfo struct {
-	Name         string    `json:"name"`
-	ListenPort   int       `json:"listen_port"`
-	TunnelSubnet string    `json:"tunnel_subnet"`
-	PeerCount    int       `json:"peer_count"`
-	Peers        []awgPeer `json:"peers"`
-}
-
 // ---------- Handlers ----------
 
 // ListPeers returns the peers of a server config.
@@ -302,8 +293,8 @@ func (h *AWGHandler) syncInterface(name string) (bool, error) {
 	}
 
 	confPath := filepath.Join(h.awgDir, name+".conf")
-	tmpFile := filepath.Join("/tmp", fmt.Sprintf(".awg-sync-%s", name))
-	defer os.Remove(tmpFile)
+	tmpFile := fmt.Sprintf("/tmp/.awg-sync-%s", name)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Step 1: awg-quick strip converts awg-quick format → awg format
 	stripCmd := exec.Command("awg-quick", "strip", confPath)
@@ -311,7 +302,7 @@ func (h *AWGHandler) syncInterface(name string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("awg-quick strip failed: %w", err)
 	}
-	if err := os.WriteFile(tmpFile, stripped, 0600); err != nil {
+	if err := os.WriteFile(tmpFile, stripped, 0o600); err != nil {
 		return false, fmt.Errorf("write temp config: %w", err)
 	}
 
@@ -424,11 +415,11 @@ func buildPeerSection(pubKey, ip, label string) string {
 
 // appendToFile appends content to a file.
 func appendToFile(path, content string) error {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.WriteString(content)
 	return err
 }
@@ -447,7 +438,7 @@ func removePeerFromFile(path, pubKey, peerIP string, peerIndex int) error {
 	matchKey := strings.TrimSpace(pubKey)
 	matchIP := strings.TrimSpace(peerIP)
 	if matchIP != "" && !strings.Contains(matchIP, "/") {
-		matchIP = matchIP + "/32"
+		matchIP += "/32"
 	}
 
 	// Resolve WHICH peer (by 0-based index) to remove. Matching by key/IP is
@@ -484,7 +475,7 @@ func removePeerFromFile(path, pubKey, peerIP string, peerIndex int) error {
 	// is what lets us drop a removed peer's "# peer: <label>" comment along with
 	// its header and body.
 	lines := strings.Split(string(content), "\n")
-	var out []string
+	var out = make([]string, 0, len(lines))
 	var commentBuf []string
 	curPeer := -1
 	skipSection := false
@@ -539,7 +530,7 @@ func removePeerFromFile(path, pubKey, peerIP string, peerIndex int) error {
 	flushComments(true) // preserve trailing comments after the last section
 
 	output := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
-	return os.WriteFile(path, []byte(output), 0600)
+	return os.WriteFile(path, []byte(output), 0o600)
 }
 
 // clientConfigPath returns the path to a stored client config.
@@ -553,11 +544,11 @@ func (h *AWGHandler) clientConfigPath(server, ip string) string {
 func (h *AWGHandler) saveClientConfig(server, ip, config string) {
 	clientConfPath := h.clientConfigPath(server, ip)
 	clientsDir := filepath.Dir(clientConfPath)
-	if err := os.MkdirAll(clientsDir, 0755); err != nil {
+	if err := os.MkdirAll(clientsDir, 0o750); err != nil {
 		log.Printf("[awg] warning: failed to create clients dir: %v", err)
 		return
 	}
-	if err := os.WriteFile(clientConfPath, []byte(config), 0600); err != nil {
+	if err := os.WriteFile(clientConfPath, []byte(config), 0o600); err != nil {
 		log.Printf("[awg] warning: failed to save client config: %v", err)
 	}
 }

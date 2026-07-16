@@ -46,9 +46,9 @@ func testConfig(t *testing.T, tmpDir string) *config.Config {
 
 // testServer creates a Server instance with real session store, security service,
 // and middleware — no external dependencies. Returns the router for testing.
-func testServer(t *testing.T) (*Server, string) {
+func testServer(t *testing.T) (s *Server, tmpDir string) {
 	t.Helper()
-	tmpDir := t.TempDir()
+	tmpDir = t.TempDir()
 
 	cfg := testConfig(t, tmpDir)
 	configPath := filepath.Join(tmpDir, "config.json")
@@ -57,7 +57,7 @@ func testServer(t *testing.T) (*Server, string) {
 	// We use an empty FS since auth handlers don't serve static files
 	webFS := &emptyFS{}
 
-	s := &Server{
+	s = &Server{
 		cfg:        cfg,
 		configPath: configPath,
 		router:     mux.NewRouter(),
@@ -140,7 +140,7 @@ func parseJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]interfac
 }
 
 // loginAndGetSession performs login and returns (sessionToken, csrfToken).
-func loginAndGetSession(t *testing.T, router http.Handler) (string, string) {
+func loginAndGetSession(t *testing.T, router http.Handler) (sessionToken, csrfToken string) {
 	t.Helper()
 	rec := doReq(t, router, "POST", "/api/auth/login", loginJSON("password"))
 	if rec.Code != http.StatusOK {
@@ -148,7 +148,6 @@ func loginAndGetSession(t *testing.T, router http.Handler) (string, string) {
 	}
 
 	// Extract session cookie
-	var sessionToken, csrfToken string
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "session" {
 			sessionToken = c.Value
@@ -179,7 +178,7 @@ func loginAndGetSession(t *testing.T, router http.Handler) (string, string) {
 // emptyFS implements fs.FS with minimal files for testing.
 type emptyFS struct{}
 
-func (e *emptyFS) Open(name string) (fs.File, error) {
+func (e *emptyFS) Open(_ string) (fs.File, error) {
 	return nil, os.ErrNotExist
 }
 
@@ -474,7 +473,7 @@ func TestLogout_InvalidSession(t *testing.T) {
 	s, _ := testServer(t)
 
 	// Logout without ever logging in — should still return OK
-	req, _ := http.NewRequest("POST", "/api/auth/logout", nil)
+	req, _ := http.NewRequest("POST", "/api/auth/logout", http.NoBody)
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()
 	s.router.ServeHTTP(rec, req)
@@ -821,7 +820,7 @@ func TestCSRF_GetRequestsDontNeedCSRF(t *testing.T) {
 	sessionToken, _ := loginAndGetSession(t, s.router)
 
 	// GET request without CSRF header should work
-	req, _ := http.NewRequest("GET", "/api/auth/csrf", nil)
+	req, _ := http.NewRequest("GET", "/api/auth/csrf", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
 	// No X-CSRF-Token header
 	req.RemoteAddr = "192.168.1.1:12345"
@@ -1054,7 +1053,7 @@ func TestSecurityService_GenerateToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateToken failed: %v", err)
 	}
-	if len(token1) == 0 {
+	if token1 == "" {
 		t.Error("token should not be empty")
 	}
 
@@ -1133,7 +1132,7 @@ func TestSessionStore_ExpiredSession(t *testing.T) {
 	}
 }
 
-func TestSessionStore_StopIsIdempotent(t *testing.T) {
+func TestSessionStore_StopIsIdempotent(_ *testing.T) {
 	ss := newSessionStore(1 * time.Hour)
 	ss.Stop()
 	ss.Stop() // should not panic
@@ -1215,7 +1214,7 @@ func TestChangePassword_SavesToConfigFile(t *testing.T) {
 			"lockout_duration": 1
 		}
 	}`, tmpDir, tmpDir, testPasswordHash)
-	os.WriteFile(configPath, []byte(initialConfig), 0644)
+	os.WriteFile(configPath, []byte(initialConfig), 0o644)
 	s.configPath = configPath
 
 	body := map[string]string{
@@ -1261,7 +1260,7 @@ func TestLoginPage_RedirectsIfLoggedIn(t *testing.T) {
 	s, _ := testServer(t)
 	sessionToken, _ := loginAndGetSession(t, s.router)
 
-	req, _ := http.NewRequest("GET", "/login", nil)
+	req, _ := http.NewRequest("GET", "/login", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()
@@ -1282,7 +1281,7 @@ func TestIndexPage_RequiresAuth(t *testing.T) {
 	s, _ := testServer(t)
 
 	// HTML request should redirect to login
-	req, _ := http.NewRequest("GET", "/", nil)
+	req, _ := http.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("Accept", "text/html")
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()
@@ -1355,7 +1354,7 @@ func TestLogin_MultipleFailedAttemptsRecordIP(t *testing.T) {
 func TestValidateAndResolveBackupPath_ValidPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	xrayDir := filepath.Join(tmpDir, "xray")
-	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+	if err := os.MkdirAll(xrayDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1379,7 +1378,7 @@ func TestValidateAndResolveBackupPath_EmptyRoots(t *testing.T) {
 func TestValidateAndResolveBackupPath_DefaultWithinRoot(t *testing.T) {
 	tmpDir := t.TempDir()
 	xrayDir := filepath.Join(tmpDir, "xray")
-	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+	if err := os.MkdirAll(xrayDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Add parent of xray dir as allowed root, so default backup path is valid
@@ -1397,7 +1396,7 @@ func TestValidateAndResolveBackupPath_DefaultWithinRoot(t *testing.T) {
 func TestValidateAndResolveBackupPath_Fallback(t *testing.T) {
 	tmpDir := t.TempDir()
 	xrayDir := filepath.Join(tmpDir, "xray")
-	if err := os.MkdirAll(xrayDir, 0755); err != nil {
+	if err := os.MkdirAll(xrayDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Use a different root than tmpDir to trigger fallback
@@ -1447,7 +1446,7 @@ func TestLoginPage_AlreadyLoggedIn(t *testing.T) {
 	}
 
 	// GET /login with valid session should redirect to /
-	req := httptest.NewRequest("GET", "/login", nil)
+	req := httptest.NewRequest("GET", "/login", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()
@@ -1466,7 +1465,7 @@ func TestLoginPage_InvalidSession(t *testing.T) {
 	s, _ := testServer(t)
 
 	// GET /login with invalid session cookie — should serve login page
-	req := httptest.NewRequest("GET", "/login", nil)
+	req := httptest.NewRequest("GET", "/login", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "invalid-token"})
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()

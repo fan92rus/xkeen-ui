@@ -35,9 +35,9 @@ type ServerMessage struct {
 
 // InteractiveHandler handles interactive command execution via WebSocket.
 type InteractiveHandler struct {
-	registry        *CommandRegistry // shared with CommandsHandler
-	allowedOrigins  map[string]bool
-	upgrader        websocket.Upgrader
+	registry       *CommandRegistry // shared with CommandsHandler
+	allowedOrigins map[string]bool
+	upgrader       websocket.Upgrader
 }
 
 // InteractiveConfig configures the interactive handler.
@@ -109,7 +109,7 @@ func (h *InteractiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	log.Printf("Interactive WebSocket client connected from %s", r.RemoteAddr)
 
@@ -138,11 +138,11 @@ func (h *InteractiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // sendError sends an error message to the client.
 func (h *InteractiveHandler) sendError(conn *websocket.Conn, text string) {
-	conn.WriteJSON(ServerMessage{
+	_ = conn.WriteJSON(ServerMessage{
 		Type: "error",
 		Text: text,
 	})
-	conn.WriteJSON(ServerMessage{
+	_ = conn.WriteJSON(ServerMessage{
 		Type:     "complete",
 		Success:  false,
 		ExitCode: 1,
@@ -165,6 +165,7 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 		return
 	}
 
+	//nolint:gosec // command from validated whitelist (CommandRegistry)
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
 	// Start command with PTY
@@ -231,7 +232,7 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 			}
 			switch msg.Type {
 			case "input":
-				if _, werr := ptmx.Write([]byte(msg.Text)); werr != nil {
+				if _, werr := ptmx.WriteString(msg.Text); werr != nil {
 					log.Printf("[interactive] ptmx.Write failed for input %q: %v", msg.Text, werr)
 				} else {
 					log.Printf("[interactive] wrote %d bytes to PTY: %q", len(msg.Text), msg.Text)
@@ -277,7 +278,7 @@ func (h *InteractiveHandler) executeInteractive(conn *websocket.Conn, config Com
 	})
 
 	// Now close conn to unblock the input goroutine's ReadJSON (returns error).
-	conn.Close()
+	_ = conn.Close()
 	inputWg.Wait()
 
 	log.Printf("[interactive] command '%s' completed with exit code %d", config.Cmd, exitCode)
