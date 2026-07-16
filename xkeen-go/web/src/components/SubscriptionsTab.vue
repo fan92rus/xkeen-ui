@@ -380,226 +380,250 @@ onMounted(async () => {
 </script>
 
 <template>
-<div class="sub-wrapper">
-  <!-- Toolbar -->
-  <div class="sub-toolbar">
-    <input type="url" v-model="newUrl" @keydown.enter="add()"
-           :placeholder="i18n.t('subs.url_placeholder')" :disabled="busy">
-    <button @click="add()" :disabled="busy || !newUrl.trim()" class="btn btn-primary btn-sm">{{ i18n.t('subs.add_btn') }}</button>
-    <div class="sub-sep"></div>
-    <button @click="fetchAll()" :disabled="busy || !subs.length" class="btn btn-sm">{{ i18n.t('subs.refresh_all') }}</button>
-    <div class="sub-sep"></div>
-    <button @click="preview()" :disabled="busy || !proxies.length" class="btn btn-sm">{{ i18n.t('subs.preview') }}</button>
-    <button @click="applySubs()" :disabled="busy || !proxies.length" class="btn btn-primary btn-sm">{{ i18n.t('subs.apply') }}</button>
-    <div class="sub-sep"></div>
-    <button @click="runNetworkCheck()" :disabled="netCheck.loading" class="btn btn-sm" :title="i18n.t('subs.net_check_title')">
-      {{ netCheck.loading ? '...' : i18n.t('subs.net_check') }}
-    </button>
-    <span v-if="netCheck.checked && !netCheck.loading" class="net-result" :class="{ 'net-ok': netCheck.ip, 'net-err': netCheck.error }">
-      <template v-if="netCheck.error">
-        <span class="net-ip">ERR</span>
-        <span class="net-detail" :title="netCheck.error">{{ netCheck.source }}</span>
-      </template>
-      <template v-else>
-        <span class="net-ip">{{ netCheck.ip }}</span>
-        <span class="net-detail" v-if="netCheck.latency !== null">{{ netCheck.latency }}ms</span>
-        <span class="net-source" :class="{ 'net-vpn': netCheck.source.includes('socks') || netCheck.source.includes('http'), 'net-direct': netCheck.source === 'direct' }">{{ netCheck.source === 'direct' ? i18n.t('subs.source_direct') : 'VPN' }}</span>
-      </template>
-    </span>
-  </div>
-
-  <!-- Body: two columns -->
-  <div class="sub-body">
-    <!-- LEFT: subscriptions + profiles + filters -->
-    <div class="sub-left">
-      <!-- Subscription cards -->
-      <div v-for="s in subs" :key="s.id" class="sub-card" :class="{ editing: editId === s.id, builtin: s.is_builtin }">
-        <div v-if="editId !== s.id" class="sub-row">
-          <span class="dot" :class="s.enabled ? 'on' : 'off'"></span>
-          <span class="name">{{ s.name || i18n.t('subs.unnamed') }}</span>
-          <span class="badge" v-if="s.proxy_count">{{ s.proxy_count }}</span>
-          <span class="badge src" v-if="s.last_source === 'xray-proxy'" :title="i18n.t('subs.source_proxy')">VPN</span>
-          <span class="badge src-direct" v-else-if="s.last_source === 'direct'" :title="i18n.t('subs.source_direct')">{{ i18n.t('subs.source_direct') }}</span>
-          <span class="badge src-direct" v-else-if="s.last_source === 'awg-local'" :title="i18n.t('subs.source_awg')">{{ i18n.t('subs.source_awg') }}</span>
-          <span class="meta" v-if="s.last_fetch && s.last_fetch !== '0001-01-01T00:00:00Z'">{{ fmtTime(s.last_fetch) }}</span>
-          <span class="err" v-if="s.last_error" :title="s.last_error">!</span>
-          <span class="acts">
-            <button @click="fetchOne(s.id)" :disabled="busy" :title="i18n.t('subs.refresh_btn')">&#x21bb;</button>
-            <button v-if="!s.is_builtin" @click="editStart(s)" :title="i18n.t('subs.edit_btn')">&#x270e;</button>
-            <button v-if="!s.is_builtin" @click="remove(s.id)" class="danger" :title="i18n.t('subs.delete_btn')">&#x2715;</button>
-          </span>
-        </div>
-        <div v-else class="sub-edit">
-          <input type="url" v-model="edit.url" class="sub-input" placeholder="URL">
-          <div class="sub-edit-row">
-            <input type="text" v-model="edit.name" :placeholder="i18n.t('subs.edit_name')" class="sub-input">
-            <input type="number" v-model.number="edit.interval" min="0" class="sub-input xs" :title="i18n.t('subs.edit_interval')" :placeholder="i18n.t('subs.edit_interval_unit')">
-            <label><input type="checkbox" v-model="edit.enabled"> {{ i18n.t('subs.edit_enabled') }}</label>
-            <button @click="editSave()" class="btn btn-primary btn-sm">{{ i18n.t('subs.edit_save') }}</button>
-            <button @click="editCancel()" class="btn btn-sm">{{ i18n.t('subs.edit_cancel') }}</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Empty state -->
-      <div v-if="subs.length === 0" class="sub-empty">
-        <p>{{ i18n.t('subs.no_subs') }}</p>
-        <p class="sub-empty-hint">{{ i18n.t('subs.no_subs_hint') }}</p>
-      </div>
-
-      <!-- Profile Tabs -->
-      <div class="sub-divider"></div>
-      <div class="profile-tabs">
-        <button v-for="p in profiles" :key="p.id"
-                class="ptab" :class="{ active: activeProfile?.id === p.id }"
-                @click="switchProfile(p.id)">
-          <span class="dot" :class="p.enabled ? 'on' : 'off'" @click.stop="toggleProfileEnabled(p)"></span>
-          <span class="ptab-name">{{ p.name }}</span>
-          <button v-if="!p.is_default" class="ptab-delete" @click.stop="removeProfile(p.id)" :disabled="busy" :title="i18n.t('subs.delete_profile_btn')">&times;</button>
-        </button>
-        <button v-if="!showNewProfileInput && profiles.length < 10"
-                class="ptab ptab-add" @click="openNewProfile()" :disabled="busy" :title="i18n.t('subs.new_profile')">+</button>
-        <template v-if="showNewProfileInput">
-          <input class="ptab-new-input new-profile-name"
-                 v-model="newProfileName"
-                 @keydown.enter="confirmNewProfile()"
-                 @keydown.escape="cancelNewProfile()"
-                 @blur="cancelNewProfile()"
-                 :placeholder="i18n.t('subs.profile_name_ph')" maxlength="30">
+  <div class="sub-wrapper">
+    <!-- Toolbar -->
+    <div class="sub-toolbar">
+      <input
+        v-model="newUrl" type="url" :placeholder="i18n.t('subs.url_placeholder')"
+        :disabled="busy" @keydown.enter="add()"
+      >
+      <button :disabled="busy || !newUrl.trim()" class="btn btn-primary btn-sm" @click="add()">{{ i18n.t('subs.add_btn') }}</button>
+      <div class="sub-sep" />
+      <button :disabled="busy || !subs.length" class="btn btn-sm" @click="fetchAll()">{{ i18n.t('subs.refresh_all') }}</button>
+      <div class="sub-sep" />
+      <button :disabled="busy || !proxies.length" class="btn btn-sm" @click="preview()">{{ i18n.t('subs.preview') }}</button>
+      <button :disabled="busy || !proxies.length" class="btn btn-primary btn-sm" @click="applySubs()">{{ i18n.t('subs.apply') }}</button>
+      <div class="sub-sep" />
+      <button :disabled="netCheck.loading" class="btn btn-sm" :title="i18n.t('subs.net_check_title')" @click="runNetworkCheck()">
+        {{ netCheck.loading ? '...' : i18n.t('subs.net_check') }}
+      </button>
+      <span v-if="netCheck.checked && !netCheck.loading" class="net-result" :class="{ 'net-ok': netCheck.ip, 'net-err': netCheck.error }">
+        <template v-if="netCheck.error">
+          <span class="net-ip">ERR</span>
+          <span class="net-detail" :title="netCheck.error">{{ netCheck.source }}</span>
         </template>
-      </div>
-
-      <!-- Filters for active profile -->
-      <div class="sub-filters" v-if="activeProfile">
-        <div class="sub-divider"></div>
-
-        <!-- Strategy pills -->
-        <div style="margin-bottom:6px">
-          <div class="sub-row-label">{{ i18n.t('subs.strategy') }}</div>
-          <div class="strat-pills">
-            <button v-for="s in STRATS" :key="s.v" class="spill" :class="{ active: strategy.type === s.v }"
-                    @click="setStrategy(s.v)" :title="s.tip">{{ s.l }}</button>
-          </div>
-        </div>
-
-        <div class="px-stats">
-          <span>{{ i18n.t('subs.total') }} <strong>{{ proxies.length }}</strong></span>
-          <span>{{ i18n.t('subs.in_sample') }} <strong>{{ filteredProxies.length }}</strong></span>
-          <span v-if="proxies.length - filteredProxies.length" class="px-stat-excl">
-            {{ i18n.t('subs.excluded') }} <strong>{{ proxies.length - filteredProxies.length }}</strong>
-          </span>
-        </div>
-
-        <!-- Countries -->
-        <div v-if="allCountries.length">
-          <div class="sub-row-label">{{ i18n.t('subs.countries') }}</div>
-          <div class="country-cloud">
-            <button v-for="c in allCountries" :key="c" class="cc"
-                    :class="'cc-' + countryState(c)" @click="toggleCountry(c)">
-              {{ c }} {{ countByCountry(c) }}
-            </button>
-          </div>
-        </div>
-
-        <!-- Regex include -->
-        <div>
-          <div class="sub-row-label">{{ i18n.t('subs.regex_include') }}</div>
-          <div class="regex-pills">
-            <span v-for="(r, i) in (activeProfile.filter.include_regexes || [])" :key="'inc'+i" class="rpill">
-              {{ r }}
-              <button class="rpill-del" @click="removeIncludeRegex(i)" :title="i18n.t('subs.remove_filter')">&times;</button>
-            </span>
-            <template v-if="showIncRegexInput">
-              <input class="rpill-input" v-model="newIncRegex"
-                     @keydown.enter="addIncludeRegex()" @keydown.escape="showIncRegexInput = false"
-                     placeholder="Pattern…" autofocus>
-            </template>
-            <button v-else class="rpill-add" @click="showIncRegexInput = true; newIncRegex = ''">+</button>
-          </div>
-        </div>
-
-        <!-- Regex exclude -->
-        <div>
-          <div class="sub-row-label">{{ i18n.t('subs.regex_exclude') }}</div>
-          <div class="regex-pills">
-            <span v-for="(r, i) in (activeProfile.filter.exclude_regexes || [])" :key="'exc'+i" class="rpill rpill-excl">
-              {{ r }}
-              <button class="rpill-del" @click="removeExcludeRegex(i)" :title="i18n.t('subs.remove_filter')">&times;</button>
-            </span>
-            <template v-if="showExcRegexInput">
-              <input class="rpill-input" v-model="newExcRegex"
-                     @keydown.enter="addExcludeRegex()" @keydown.escape="showExcRegexInput = false"
-                     placeholder="Pattern…" autofocus>
-            </template>
-            <button v-else class="rpill-add" @click="showExcRegexInput = true; newExcRegex = ''">+</button>
-          </div>
-        </div>
-
-        <!-- Max proxies -->
-        <div class="sub-row-compact">
-          <input type="number" v-model.number="activeProfile.filter.max_proxies" @change="_persistProfile()" min="0" class="sub-input xs"
-                 :title="i18n.t('subs.max_proxies')" :placeholder="i18n.t('subs.limit')">
-        </div>
-      </div>
+        <template v-else>
+          <span class="net-ip">{{ netCheck.ip }}</span>
+          <span v-if="netCheck.latency !== null" class="net-detail">{{ netCheck.latency }}ms</span>
+          <span class="net-source" :class="{ 'net-vpn': netCheck.source.includes('socks') || netCheck.source.includes('http'), 'net-direct': netCheck.source === 'direct' }">{{ netCheck.source === 'direct' ? i18n.t('subs.source_direct') : 'VPN' }}</span>
+        </template>
+      </span>
     </div>
 
-    <!-- RIGHT: proxy list with virtual scroll -->
-    <div class="sub-right">
-      <template v-if="proxies.length">
-        <div class="px-header">
-          <input type="text" v-model="proxyQ" :placeholder="i18n.t('subs.search')" class="sub-input">
-          <span class="px-count">{{ filteredProxies.length }} / {{ proxies.length }}</span>
-        </div>
-        <div class="px-list" ref="scrollRef" @scroll="onScroll">
-          <div :style="{ height: visibleProxies.total * ITEM_HEIGHT + 'px', position: 'relative' }">
-            <div v-for="(p, idx) in visibleProxies.items" :key="p.tag"
-                 class="px-row"
-                 :style="{ position: 'absolute', top: (visibleProxies.start + idx) * ITEM_HEIGHT + 'px', left: 0, right: 0 }">
-              <span class="px-country" :title="p.remarks">{{ p.country || '?' }}</span>
-              <span class="px-remarks">{{ p.remarks || p.tag }}</span>
-              <span class="px-tag mono">{{ p.tag }}</span>
+    <!-- Body: two columns -->
+    <div class="sub-body">
+      <!-- LEFT: subscriptions + profiles + filters -->
+      <div class="sub-left">
+        <!-- Subscription cards -->
+        <div v-for="s in subs" :key="s.id" class="sub-card" :class="{ editing: editId === s.id, builtin: s.is_builtin }">
+          <div v-if="editId !== s.id" class="sub-row">
+            <span class="dot" :class="s.enabled ? 'on' : 'off'" />
+            <span class="name">{{ s.name || i18n.t('subs.unnamed') }}</span>
+            <span v-if="s.proxy_count" class="badge">{{ s.proxy_count }}</span>
+            <span v-if="s.last_source === 'xray-proxy'" class="badge src" :title="i18n.t('subs.source_proxy')">VPN</span>
+            <span v-else-if="s.last_source === 'direct'" class="badge src-direct" :title="i18n.t('subs.source_direct')">{{ i18n.t('subs.source_direct') }}</span>
+            <span v-else-if="s.last_source === 'awg-local'" class="badge src-direct" :title="i18n.t('subs.source_awg')">{{ i18n.t('subs.source_awg') }}</span>
+            <span v-if="s.last_fetch && s.last_fetch !== '0001-01-01T00:00:00Z'" class="meta">{{ fmtTime(s.last_fetch) }}</span>
+            <span v-if="s.last_error" class="err" :title="s.last_error">!</span>
+            <span class="acts">
+              <button :disabled="busy" :title="i18n.t('subs.refresh_btn')" @click="fetchOne(s.id)">&#x21bb;</button>
+              <button v-if="!s.is_builtin" :title="i18n.t('subs.edit_btn')" @click="editStart(s)">&#x270e;</button>
+              <button v-if="!s.is_builtin" class="danger" :title="i18n.t('subs.delete_btn')" @click="remove(s.id)">&#x2715;</button>
+            </span>
+          </div>
+          <div v-else class="sub-edit">
+            <input v-model="edit.url" type="url" class="sub-input" placeholder="URL">
+            <div class="sub-edit-row">
+              <input v-model="edit.name" type="text" :placeholder="i18n.t('subs.edit_name')" class="sub-input">
+              <input v-model.number="edit.interval" type="number" min="0" class="sub-input xs" :title="i18n.t('subs.edit_interval')" :placeholder="i18n.t('subs.edit_interval_unit')">
+              <label><input v-model="edit.enabled" type="checkbox"> {{ i18n.t('subs.edit_enabled') }}</label>
+              <button class="btn btn-primary btn-sm" @click="editSave()">{{ i18n.t('subs.edit_save') }}</button>
+              <button class="btn btn-sm" @click="editCancel()">{{ i18n.t('subs.edit_cancel') }}</button>
             </div>
           </div>
         </div>
-      </template>
-      <div v-else class="sub-right-empty">
-        <p v-if="subs.length === 0">{{ i18n.t('subs.hint_add_sub') }}</p>
-        <p v-else>{{ i18n.t('subs.hint_refresh_sub') }}</p>
-      </div>
-    </div>
-  </div>
 
-  <!-- Preview modal -->
-  <div v-if="showPreview" class="modal-overlay" @click.self="showPreview = false">
-    <div class="modal-box">
-      <div class="modal-header">
-        <h3>{{ i18n.t('subs.preview_title') }}</h3>
-        <button @click="showPreview = false" class="btn btn-sm">{{ i18n.t('subs.preview_close') }}</button>
-      </div>
-      <div class="modal-body" v-if="previewData">
-        <div class="preview-summary">
-          <span>{{ i18n.t('subs.preview_total') }} <strong>{{ previewData.proxy_count }}</strong></span>
-          <span v-if="previewData.filtered_proxy_count !== undefined">{{ i18n.t('subs.preview_filtered') }} <strong>{{ previewData.filtered_proxy_count }}</strong></span>
-          <span v-if="previewData.profiles?.length">{{ i18n.t('subs.preview_profiles') }} <strong>{{ previewData.profiles.length }}</strong></span>
+        <!-- Empty state -->
+        <div v-if="subs.length === 0" class="sub-empty">
+          <p>{{ i18n.t('subs.no_subs') }}</p>
+          <p class="sub-empty-hint">{{ i18n.t('subs.no_subs_hint') }}</p>
         </div>
-        <details>
-          <summary>outbounds.json</summary>
-          <pre class="preview-json" v-html="formatJson(previewData.outbounds)"></pre>
-        </details>
-        <details>
-          <summary>routing.json</summary>
-          <pre class="preview-json" v-html="formatJson(previewData.routing)"></pre>
-        </details>
-        <details v-if="previewData.observatory">
-          <summary>observatory.json</summary>
-          <pre class="preview-json" v-html="formatJson(previewData.observatory)"></pre>
-        </details>
+
+        <!-- Profile Tabs -->
+        <div class="sub-divider" />
+        <div class="profile-tabs">
+          <button
+            v-for="p in profiles" :key="p.id"
+            class="ptab" :class="{ active: activeProfile?.id === p.id }"
+            @click="switchProfile(p.id)"
+          >
+            <span class="dot" :class="p.enabled ? 'on' : 'off'" @click.stop="toggleProfileEnabled(p)" />
+            <span class="ptab-name">{{ p.name }}</span>
+            <button v-if="!p.is_default" class="ptab-delete" :disabled="busy" :title="i18n.t('subs.delete_profile_btn')" @click.stop="removeProfile(p.id)">&times;</button>
+          </button>
+          <button
+            v-if="!showNewProfileInput && profiles.length < 10"
+            class="ptab ptab-add" :disabled="busy" :title="i18n.t('subs.new_profile')" @click="openNewProfile()"
+          >
+            +
+          </button>
+          <template v-if="showNewProfileInput">
+            <input
+              v-model="newProfileName"
+              class="ptab-new-input new-profile-name"
+              :placeholder="i18n.t('subs.profile_name_ph')"
+              maxlength="30"
+              @keydown.enter="confirmNewProfile()"
+              @keydown.escape="cancelNewProfile()" @blur="cancelNewProfile()"
+            >
+          </template>
+        </div>
+
+        <!-- Filters for active profile -->
+        <div v-if="activeProfile" class="sub-filters">
+          <div class="sub-divider" />
+
+          <!-- Strategy pills -->
+          <div style="margin-bottom:6px">
+            <div class="sub-row-label">{{ i18n.t('subs.strategy') }}</div>
+            <div class="strat-pills">
+              <button
+                v-for="s in STRATS" :key="s.v" class="spill" :class="{ active: strategy.type === s.v }"
+                :title="s.tip" @click="setStrategy(s.v)"
+              >
+                {{ s.l }}
+              </button>
+            </div>
+          </div>
+
+          <div class="px-stats">
+            <span>{{ i18n.t('subs.total') }} <strong>{{ proxies.length }}</strong></span>
+            <span>{{ i18n.t('subs.in_sample') }} <strong>{{ filteredProxies.length }}</strong></span>
+            <span v-if="proxies.length - filteredProxies.length" class="px-stat-excl">
+              {{ i18n.t('subs.excluded') }} <strong>{{ proxies.length - filteredProxies.length }}</strong>
+            </span>
+          </div>
+
+          <!-- Countries -->
+          <div v-if="allCountries.length">
+            <div class="sub-row-label">{{ i18n.t('subs.countries') }}</div>
+            <div class="country-cloud">
+              <button
+                v-for="c in allCountries" :key="c" class="cc"
+                :class="'cc-' + countryState(c)" @click="toggleCountry(c)"
+              >
+                {{ c }} {{ countByCountry(c) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Regex include -->
+          <div>
+            <div class="sub-row-label">{{ i18n.t('subs.regex_include') }}</div>
+            <div class="regex-pills">
+              <span v-for="(r, i) in (activeProfile.filter.include_regexes || [])" :key="'inc'+i" class="rpill">
+                {{ r }}
+                <button class="rpill-del" :title="i18n.t('subs.remove_filter')" @click="removeIncludeRegex(i)">&times;</button>
+              </span>
+              <template v-if="showIncRegexInput">
+                <input
+                  v-model="newIncRegex" class="rpill-input"
+                  placeholder="Pattern…" autofocus
+                  @keydown.enter="addIncludeRegex()" @keydown.escape="showIncRegexInput = false"
+                >
+              </template>
+              <button v-else class="rpill-add" @click="showIncRegexInput = true; newIncRegex = ''">+</button>
+            </div>
+          </div>
+
+          <!-- Regex exclude -->
+          <div>
+            <div class="sub-row-label">{{ i18n.t('subs.regex_exclude') }}</div>
+            <div class="regex-pills">
+              <span v-for="(r, i) in (activeProfile.filter.exclude_regexes || [])" :key="'exc'+i" class="rpill rpill-excl">
+                {{ r }}
+                <button class="rpill-del" :title="i18n.t('subs.remove_filter')" @click="removeExcludeRegex(i)">&times;</button>
+              </span>
+              <template v-if="showExcRegexInput">
+                <input
+                  v-model="newExcRegex" class="rpill-input"
+                  placeholder="Pattern…" autofocus
+                  @keydown.enter="addExcludeRegex()" @keydown.escape="showExcRegexInput = false"
+                >
+              </template>
+              <button v-else class="rpill-add" @click="showExcRegexInput = true; newExcRegex = ''">+</button>
+            </div>
+          </div>
+
+          <!-- Max proxies -->
+          <div class="sub-row-compact">
+            <input
+              v-model.number="activeProfile.filter.max_proxies" type="number" min="0" class="sub-input xs" :title="i18n.t('subs.max_proxies')"
+              :placeholder="i18n.t('subs.limit')" @change="_persistProfile()"
+            >
+          </div>
+        </div>
       </div>
-      <div class="modal-footer">
-        <button @click="applySubs()" :disabled="busy" class="btn btn-primary">{{ i18n.t('subs.apply_btn') }}</button>
-        <button @click="showPreview = false" class="btn">{{ i18n.t('subs.apply_close') }}</button>
+
+      <!-- RIGHT: proxy list with virtual scroll -->
+      <div class="sub-right">
+        <template v-if="proxies.length">
+          <div class="px-header">
+            <input v-model="proxyQ" type="text" :placeholder="i18n.t('subs.search')" class="sub-input">
+            <span class="px-count">{{ filteredProxies.length }} / {{ proxies.length }}</span>
+          </div>
+          <div ref="scrollRef" class="px-list" @scroll="onScroll">
+            <div :style="{ height: visibleProxies.total * ITEM_HEIGHT + 'px', position: 'relative' }">
+              <div
+                v-for="(p, idx) in visibleProxies.items" :key="p.tag"
+                class="px-row"
+                :style="{ position: 'absolute', top: (visibleProxies.start + idx) * ITEM_HEIGHT + 'px', left: 0, right: 0 }"
+              >
+                <span class="px-country" :title="p.remarks">{{ p.country || '?' }}</span>
+                <span class="px-remarks">{{ p.remarks || p.tag }}</span>
+                <span class="px-tag mono">{{ p.tag }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+        <div v-else class="sub-right-empty">
+          <p v-if="subs.length === 0">{{ i18n.t('subs.hint_add_sub') }}</p>
+          <p v-else>{{ i18n.t('subs.hint_refresh_sub') }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview modal -->
+    <div v-if="showPreview" class="modal-overlay" @click.self="showPreview = false">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>{{ i18n.t('subs.preview_title') }}</h3>
+          <button class="btn btn-sm" @click="showPreview = false">{{ i18n.t('subs.preview_close') }}</button>
+        </div>
+        <div v-if="previewData" class="modal-body">
+          <div class="preview-summary">
+            <span>{{ i18n.t('subs.preview_total') }} <strong>{{ previewData.proxy_count }}</strong></span>
+            <span v-if="previewData.filtered_proxy_count !== undefined">{{ i18n.t('subs.preview_filtered') }} <strong>{{ previewData.filtered_proxy_count }}</strong></span>
+            <span v-if="previewData.profiles?.length">{{ i18n.t('subs.preview_profiles') }} <strong>{{ previewData.profiles.length }}</strong></span>
+          </div>
+          <details>
+            <summary>outbounds.json</summary>
+            <pre class="preview-json" v-html="formatJson(previewData.outbounds)" />
+          </details>
+          <details>
+            <summary>routing.json</summary>
+            <pre class="preview-json" v-html="formatJson(previewData.routing)" />
+          </details>
+          <details v-if="previewData.observatory">
+            <summary>observatory.json</summary>
+            <pre class="preview-json" v-html="formatJson(previewData.observatory)" />
+          </details>
+        </div>
+        <div class="modal-footer">
+          <button :disabled="busy" class="btn btn-primary" @click="applySubs()">{{ i18n.t('subs.apply_btn') }}</button>
+          <button class="btn" @click="showPreview = false">{{ i18n.t('subs.apply_close') }}</button>
+        </div>
       </div>
     </div>
   </div>
-</div>
 </template>

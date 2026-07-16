@@ -130,10 +130,12 @@ onUnmounted(() => {
         </svg>
       </div>
       <div class="sidebar-nav-items">
-        <button v-for="t in tabs" :key="t.id"
-                class="nav-btn" :class="{ active: app.activeTab === t.id }"
-                :title="t.label" :aria-label="t.label" :aria-current="app.activeTab === t.id ? 'page' : undefined"
-                @click="app.activeTab = t.id">
+        <button
+          v-for="t in tabs" :key="t.id"
+          class="nav-btn" :class="{ active: app.activeTab === t.id }"
+          :title="t.label" :aria-label="t.label" :aria-current="app.activeTab === t.id ? 'page' : undefined"
+          @click="app.activeTab = t.id"
+        >
           <svg viewBox="0 0 24 24"><path :d="icons[t.id]" /></svg>
         </button>
       </div>
@@ -154,8 +156,10 @@ onUnmounted(() => {
       <div class="toolbar">
         <div class="toolbar-left">
           <template v-if="app.activeTab === 'editor'">
-            <select class="file-select" :value="app.currentFile?.path || ''"
-                    @change="app.loadFile($event.target.value)">
+            <select
+              class="file-select" :value="app.currentFile?.path || ''"
+              @change="app.loadFile($event.target.value)"
+            >
               <option value="" disabled>{{ i18n.t('app.choose_file') }}</option>
               <template v-for="g in app.fileGroups" :key="g.section">
                 <optgroup v-if="g.files.length" :label="g.label">
@@ -171,15 +175,15 @@ onUnmounted(() => {
         <div class="toolbar-right">
           <!-- Service controls (always visible) -->
           <div class="service-bar">
-            <span class="status-dot" :class="app.serviceStatus"></span>
+            <span class="status-dot" :class="app.serviceStatus" />
             <span class="service-label">{{ i18n.t(app.serviceStatus === 'running' ? 'app.running' : app.serviceStatus === 'stopped' ? 'app.stopped' : 'app.unknown') }}</span>
-            <button class="btn btn-sm" @click="app.startService()" :disabled="app.serviceStatus === 'running'" :title="i18n.t('app.start')" :aria-label="i18n.t('app.start_title')">
+            <button class="btn btn-sm" :disabled="app.serviceStatus === 'running'" :title="i18n.t('app.start')" :aria-label="i18n.t('app.start_title')" @click="app.startService()">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.play" /></svg>
             </button>
-            <button class="btn btn-sm" @click="app.stopService()" :disabled="app.serviceStatus === 'stopped'" :title="i18n.t('app.stop')" :aria-label="i18n.t('app.stop_title')">
+            <button class="btn btn-sm" :disabled="app.serviceStatus === 'stopped'" :title="i18n.t('app.stop')" :aria-label="i18n.t('app.stop_title')" @click="app.stopService()">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.stop" /></svg>
             </button>
-            <button class="btn btn-sm" @click="app.restartService()" :title="i18n.t('app.restart')" :aria-label="i18n.t('app.restart_title')">
+            <button class="btn btn-sm" :title="i18n.t('app.restart')" :aria-label="i18n.t('app.restart_title')" @click="app.restartService()">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.restart" /></svg>
             </button>
           </div>
@@ -206,19 +210,21 @@ onUnmounted(() => {
     </div>
 
     <!-- Output Modal -->
-    <div class="modal-overlay" v-show="app.modal.show" @click.self="app.closeModal()">
+    <div v-show="app.modal.show" class="modal-overlay" @click.self="app.closeModal()">
       <div class="modal">
         <div class="modal-header">
           <h3>{{ i18n.t('app.output') }} <span>{{ app.modal.command }}</span></h3>
           <button class="modal-close" @click="app.closeModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <pre v-show="app.modal.error" class="modal-error" v-html="safeModalError"></pre>
-          <pre id="modal-output" class="modal-output" v-html="safeModalOutput"></pre>
+          <pre v-show="app.modal.error" class="modal-error" v-html="safeModalError" />
+          <pre id="modal-output" class="modal-output" v-html="safeModalOutput" />
         </div>
-        <div class="modal-input" v-show="app.canSendInput()">
-          <input type="text" v-model="app.inputValue" @keydown.enter="app.sendInput()"
-                 :placeholder="i18n.t('app.input_placeholder')" class="modal-input-field">
+        <div v-show="app.canSendInput()" class="modal-input">
+          <input
+            v-model="app.inputValue" type="text" :placeholder="i18n.t('app.input_placeholder')"
+            class="modal-input-field" @keydown.enter="app.sendInput()"
+          >
           <button class="btn btn-primary" @click="app.sendInput()">{{ i18n.t('app.send') }}</button>
         </div>
         <div class="modal-footer">
@@ -229,7 +235,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Confirm Dialog -->
-    <div class="modal-overlay" v-show="app.confirm.show" @click.self="app.cancelConfirm()">
+    <div v-show="app.confirm.show" class="modal-overlay" @click.self="app.cancelConfirm()">
       <div class="modal">
         <div class="modal-header"><h3>{{ i18n.t('app.confirm_title') }}</h3></div>
         <div class="modal-body">
@@ -244,17 +250,19 @@ onUnmounted(() => {
     </div>
 
     <!-- Backups Modal -->
-    <div class="modal-overlay" v-show="app.backupsModal.show" @click.self="app.closeBackupsModal()">
+    <div v-show="app.backupsModal.show" class="modal-overlay" @click.self="app.closeBackupsModal()">
       <div class="modal modal-large">
         <div class="modal-header">
           <h3>{{ i18n.t('app.backup_title') }} <span>{{ app.backupsModal.fileName }}</span></h3>
           <button class="modal-close" @click="app.closeBackupsModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="backups-list" v-show="app.backupsModal.backups.length > 0">
-            <div v-for="(backup, index) in app.backupsModal.backups" :key="backup.path" class="backup-item"
-                 :class="{ selected: app.backupsModal.selectedBackup?.path === backup.path }"
-                 @click="app.selectBackup(backup)">
+          <div v-show="app.backupsModal.backups.length > 0" class="backups-list">
+            <div
+              v-for="backup in app.backupsModal.backups" :key="backup.path" class="backup-item"
+              :class="{ selected: app.backupsModal.selectedBackup?.path === backup.path }"
+              @click="app.selectBackup(backup)"
+            >
               <span class="backup-time">{{ app.formatBackupTime(backup.modified) }}</span>
               <div class="backup-actions">
                 <button class="btn btn-sm" @click.stop="app.copyBackupContent(backup)">{{ i18n.t('app.backup_copy') }}</button>
@@ -262,12 +270,12 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <div class="backups-empty" v-show="app.backupsModal.backups.length === 0">
+          <div v-show="app.backupsModal.backups.length === 0" class="backups-empty">
             <p>{{ i18n.t('app.backup_none') }}</p>
           </div>
-          <div class="backup-diff" v-show="app.backupsModal.selectedBackup && app.backupsModal.diffContent">
+          <div v-show="app.backupsModal.selectedBackup && app.backupsModal.diffContent" class="backup-diff">
             <h4>{{ i18n.t('app.diff_title') }}</h4>
-            <pre class="diff-content" v-html="app.backupsModal.diffContent"></pre>
+            <pre class="diff-content" v-html="app.backupsModal.diffContent" />
           </div>
         </div>
         <div class="modal-footer">
@@ -277,14 +285,14 @@ onUnmounted(() => {
     </div>
 
     <!-- Diff Modal -->
-    <div class="modal-overlay" v-show="app.diffModal.show" @click.self="app.closeDiffModal()">
+    <div v-show="app.diffModal.show" class="modal-overlay" @click.self="app.closeDiffModal()">
       <div class="modal modal-large">
         <div class="modal-header">
           <h3>{{ i18n.t('app.unsaved_changes') }}</h3>
           <button class="modal-close" @click="app.closeDiffModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <pre class="diff-content" v-html="app.diffModal.diffContent"></pre>
+          <pre class="diff-content" v-html="app.diffModal.diffContent" />
         </div>
         <div class="modal-footer">
           <button class="btn btn-primary" @click="app.closeDiffModal()">{{ i18n.t('app.unsaved_close') }}</button>

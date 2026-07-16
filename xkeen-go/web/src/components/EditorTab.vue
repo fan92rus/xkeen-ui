@@ -111,6 +111,6 @@ defineExpose({ getContent, save, diff, loadText });
 <template>
   <div class="editor-container">
     <div v-if="loading" class="editor-loading">{{ i18n.t('editor.loading') }}</div>
-    <div ref="editorRef" id="editor" v-show="!loading"></div>
+    <div v-show="!loading" id="editor" ref="editorRef" />
   </div>
 </template>

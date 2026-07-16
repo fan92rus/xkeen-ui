@@ -40,6 +40,7 @@ export default [
                 clearInterval: 'readonly',
                 btoa: 'readonly',
                 atob: 'readonly',
+                process: 'readonly', // Vite env access
             },
         },
     },

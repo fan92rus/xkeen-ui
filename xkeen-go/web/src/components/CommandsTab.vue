@@ -160,29 +160,31 @@ function isLoading(command) { return executingCommand.value === command; }
       <!-- Toolbar with refresh -->
       <div class="commands-toolbar">
         <span class="commands-count">{{ i18n.t('commands.count', { count: categories.flatMap(c => c.commands).length }) }}</span>
-        <button class="btn btn-sm" @click="refreshCommandPalette" :disabled="refreshing" style="margin-left:auto">
+        <button class="btn btn-sm" :disabled="refreshing" style="margin-left:auto" @click="refreshCommandPalette">
           {{ refreshing ? i18n.t('commands.refreshing') : i18n.t('commands.refresh') }}
         </button>
       </div>
       <div class="commands-grid">
-      <div v-for="category in categories" :key="category.name" class="command-category-block">
-        <h3 class="category-title">{{ i18n.t('cat.' + category.localeKey) }}</h3>
-        <div class="category-commands-list">
-          <div v-for="cmd in category.commands" :key="cmd.name" class="command-item">
-            <div class="command-info">
-              <span class="command-name">{{ cmd.name }}</span>
-              <span class="command-desc" @mouseenter="onDescHover">{{ cmd.description }}</span>
+        <div v-for="category in categories" :key="category.name" class="command-category-block">
+          <h3 class="category-title">{{ i18n.t('cat.' + category.localeKey) }}</h3>
+          <div class="category-commands-list">
+            <div v-for="cmd in category.commands" :key="cmd.name" class="command-item">
+              <div class="command-info">
+                <span class="command-name">{{ cmd.name }}</span>
+                <span class="command-desc" @mouseenter="onDescHover">{{ cmd.description }}</span>
+              </div>
+              <button
+                class="btn"
+                :class="isDangerous(cmd.name) ? 'btn-danger' : 'btn-primary'"
+                :disabled="isLoading(cmd.name)"
+                @click="executeCommand(cmd.name)"
+              >
+                {{ isLoading(cmd.name) ? i18n.t('commands.executing') : (isDangerous(cmd.name) ? i18n.t('commands.execute_btn') : i18n.t('commands.run_btn')) }}
+              </button>
             </div>
-            <button class="btn"
-                    :class="isDangerous(cmd.name) ? 'btn-danger' : 'btn-primary'"
-                    @click="executeCommand(cmd.name)"
-                    :disabled="isLoading(cmd.name)">
-              {{ isLoading(cmd.name) ? i18n.t('commands.executing') : (isDangerous(cmd.name) ? i18n.t('commands.execute_btn') : i18n.t('commands.run_btn')) }}
-            </button>
           </div>
         </div>
       </div>
-    </div>
     </template>
   </div>
 </template>

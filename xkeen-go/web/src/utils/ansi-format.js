@@ -38,6 +38,7 @@ const ANSI_COLORS = {
 export function renderAnsi(rawText) {
   const escaped = escapeHtml(rawText);
 
+  // eslint-disable-next-line no-control-regex
   const parts = escaped.split(/(\x1b\[[\d;]*[a-zA-Z])/);
   const spans = []; // { text: string, css: string }
   let buf = '';
@@ -51,6 +52,7 @@ export function renderAnsi(rawText) {
   }
 
   for (const part of parts) {
+    // eslint-disable-next-line no-control-regex
     const m = part.match(/^\x1b\[([\d;]*)([a-zA-Z])$/);
     if (m) {
       const nums = m[1] ? m[1].split(';') : ['0'];
@@ -101,6 +103,7 @@ export function renderAnsi(rawText) {
  * @returns {string} plain text (no HTML escaping)
  */
 export function stripAnsi(text) {
+  // eslint-disable-next-line no-control-regex
   return String(text).replace(/\x1b\[[\d;]*[a-zA-Z]/g, '');
 }
 

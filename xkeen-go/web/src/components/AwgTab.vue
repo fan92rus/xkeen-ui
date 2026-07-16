@@ -14,11 +14,11 @@
           <span v-if="serverIfaces.length" class="awg-tab-badge">{{ serverIfaces.length }}</span>
         </button>
       </div>
-      <button class="btn btn-sm awg-upload-btn" @click="$refs.fileInput.click()" :disabled="uploading">
+      <button class="btn btn-sm awg-upload-btn" :disabled="uploading" @click="$refs.fileInput.click()">
         <span v-if="!uploading">{{ i18n.t('awg.upload_btn') }}</span>
         <span v-else>{{ i18n.t('awg.uploading') }}</span>
       </button>
-      <input type="file" accept=".conf" ref="fileInput" @change="onFilePicked" class="awg-file-hidden" />
+      <input ref="fileInput" type="file" accept=".conf" class="awg-file-hidden" @change="onFilePicked">
     </div>
 
     <!-- Error banner -->
@@ -52,19 +52,19 @@
               <span class="awg-iface-icon">🔌</span>
               <span class="awg-iface-name">{{ iface.name }}</span>
               <span class="awg-pill" :class="iface.active ? 'awg-pill-on' : 'awg-pill-off'">
-                <span class="awg-pill-dot"></span>{{ iface.active ? i18n.t('awg.active') : i18n.t('awg.stopped') }}
+                <span class="awg-pill-dot" />{{ iface.active ? i18n.t('awg.active') : i18n.t('awg.stopped') }}
               </span>
             </div>
             <div class="awg-card-actions">
-              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">{{ i18n.t('awg.start') }}</button>
-              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">{{ i18n.t('awg.stop') }}</button>
-              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">{{ i18n.t('awg.delete') }}</button>
+              <button v-if="!iface.active" class="btn btn-primary btn-sm" :disabled="busy" @click="startIface(iface.name)">{{ i18n.t('awg.start') }}</button>
+              <button v-if="iface.active" class="btn btn-sm" :disabled="busy" @click="stopIface(iface.name)">{{ i18n.t('awg.stop') }}</button>
+              <button class="btn btn-danger btn-sm" :disabled="busy" @click="deleteIface(iface.name)">{{ i18n.t('awg.delete') }}</button>
             </div>
           </div>
           <div class="awg-card-body">
             <div class="awg-chips">
               <div class="awg-chip"><span class="awg-chip-label">Mark</span><code>{{ iface.mark }}</code></div>
-              <div class="awg-chip" v-if="iface.address"><span class="awg-chip-label">Address</span><code>{{ iface.address }}</code></div>
+              <div v-if="iface.address" class="awg-chip"><span class="awg-chip-label">Address</span><code>{{ iface.address }}</code></div>
             </div>
             <div v-if="iface.active" class="awg-route-chain">
               {{ i18n.t('awg.route_chain', { mark: iface.mark, name: iface.name }) }}
@@ -88,17 +88,17 @@
             <div class="awg-iface-row">
               <label class="awg-iface-field">
                 <span class="awg-iface-field-label">LAN</span>
-                <input v-model="awgIface.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving" />
+                <input v-model="awgIface.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving">
               </label>
               <label class="awg-iface-field">
                 <span class="awg-iface-field-label">WAN</span>
-                <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving" />
+                <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving">
               </label>
               <label class="awg-iface-field awg-iface-field-wide">
                 <span class="awg-iface-field-label">{{ i18n.t('awg.endpoint_label') }}</span>
-                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving" />
+                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving">
               </label>
-              <button class="btn btn-primary btn-sm" @click="saveIfaceSettings()" :disabled="awgIfaceSaving">
+              <button class="btn btn-primary btn-sm" :disabled="awgIfaceSaving" @click="saveIfaceSettings()">
                 {{ awgIfaceSaving ? i18n.t('awg.saving') : i18n.t('awg.save') }}
               </button>
             </div>
@@ -109,8 +109,10 @@
         <div v-if="serverIfaces.length === 0" class="awg-state">
           <div class="awg-state-icon">🖥️</div>
           <p class="awg-state-title">{{ i18n.t('awg.no_servers') }}</p>
-          <p class="awg-state-desc">{{ i18n.t('awg.server_hint_start') }} <code>ListenPort</code>{{ i18n.t('awg.server_hint_listen') }} <code>Endpoint</code>).<br />
-            {{ i18n.t('awg.server_hint') }}</p>
+          <p class="awg-state-desc">
+            {{ i18n.t('awg.server_hint_start') }} <code>ListenPort</code>{{ i18n.t('awg.server_hint_listen') }} <code>Endpoint</code>).<br>
+            {{ i18n.t('awg.server_hint') }}
+          </p>
           <button class="btn btn-primary" @click="$refs.fileInput.click()">{{ i18n.t('awg.upload_config') }}</button>
         </div>
 
@@ -121,14 +123,14 @@
               <span class="awg-iface-icon">🖥️</span>
               <span class="awg-iface-name">{{ iface.name }}</span>
               <span class="awg-pill" :class="iface.active ? 'awg-pill-on' : 'awg-pill-off'">
-                <span class="awg-pill-dot"></span>{{ iface.active ? i18n.t('awg.active') : i18n.t('awg.stopped') }}
+                <span class="awg-pill-dot" />{{ iface.active ? i18n.t('awg.active') : i18n.t('awg.stopped') }}
               </span>
               <span v-if="iface.active" class="awg-pill awg-pill-info">{{ i18n.t('awg.full_tunnel') }}</span>
             </div>
             <div class="awg-card-actions">
-              <button v-if="!iface.active" class="btn btn-primary btn-sm" @click="startIface(iface.name)" :disabled="busy">{{ i18n.t('awg.start') }}</button>
-              <button v-if="iface.active" class="btn btn-sm" @click="stopIface(iface.name)" :disabled="busy">{{ i18n.t('awg.stop') }}</button>
-              <button class="btn btn-danger btn-sm" @click="deleteIface(iface.name)" :disabled="busy">{{ i18n.t('awg.delete') }}</button>
+              <button v-if="!iface.active" class="btn btn-primary btn-sm" :disabled="busy" @click="startIface(iface.name)">{{ i18n.t('awg.start') }}</button>
+              <button v-if="iface.active" class="btn btn-sm" :disabled="busy" @click="stopIface(iface.name)">{{ i18n.t('awg.stop') }}</button>
+              <button class="btn btn-danger btn-sm" :disabled="busy" @click="deleteIface(iface.name)">{{ i18n.t('awg.delete') }}</button>
             </div>
           </div>
           <div class="awg-card-body">
@@ -136,11 +138,13 @@
             <div v-if="obfuscation[iface.name]" class="awg-obfuscation">
               <span class="awg-obfuscation-label-text">{{ i18n.t('awg.obfuscation_label') }}</span>
               <span v-if="obfuscation[iface.name].loading" class="awg-obfuscation-hint">…</span>
-              <select v-else
-                      :value="obfuscation[iface.name].current"
-                      :disabled="obfuscation[iface.name].applying"
-                      @change="applyObfuscationPreset(iface.name, $event.target.value)"
-                      class="awg-obfuscation-select">
+              <select
+                v-else
+                :value="obfuscation[iface.name].current"
+                :disabled="obfuscation[iface.name].applying"
+                class="awg-obfuscation-select"
+                @change="applyObfuscationPreset(iface.name, $event.target.value)"
+              >
                 <option v-for="p in obfuscation[iface.name].presets" :key="p.id" :value="p.id">{{ p.name }}</option>
                 <option v-if="obfuscation[iface.name].current === 'custom' || obfuscation[iface.name].current === 'unknown'" :value="obfuscation[iface.name].current">{{ obfuscationPresetName(iface.name) }}</option>
               </select>
@@ -152,15 +156,17 @@
             <div class="awg-peers">
               <div class="awg-peers-head">
                 <span class="awg-peers-title">{{ i18n.t('awg.clients_title', { count: (peers[iface.name] || []).length }) }}</span>
-                <button class="btn btn-primary btn-sm" @click="openAddPeer(iface.name)" :disabled="busy">{{ i18n.t('awg.add_client') }}</button>
+                <button class="btn btn-primary btn-sm" :disabled="busy" @click="openAddPeer(iface.name)">{{ i18n.t('awg.add_client') }}</button>
               </div>
 
               <div v-if="peerLoading[iface.name]" class="awg-peers-status">{{ i18n.t('awg.peer_loading') }}</div>
               <div v-else-if="!(peers[iface.name] || []).length" class="awg-peers-status">{{ i18n.t('awg.peer_none') }}</div>
               <div v-else class="awg-peer-list">
-                <div v-for="peer in (peers[iface.name] || [])" :key="peer.public_key"
-                     class="awg-peer-row awg-peer-row-clickable"
-                     @click="showPeerQR(iface.name, peer)">
+                <div
+                  v-for="peer in (peers[iface.name] || [])" :key="peer.public_key"
+                  class="awg-peer-row awg-peer-row-clickable"
+                  @click="showPeerQR(iface.name, peer)"
+                >
                   <div class="awg-peer-info">
                     <span class="awg-peer-name" :class="{ 'awg-peer-name-fallback': !peer.label }">{{ peer.label || i18n.t('awg.peer_unnamed') }}</span>
                     <span class="awg-peer-ip">{{ peer.ip }}</span>
@@ -168,7 +174,7 @@
                     <span class="awg-peer-qr-hint" :title="peer.has_client_config ? i18n.t('awg.peer_qr_hint') : i18n.t('awg.peer_no_config')">{{ peer.has_client_config ? '📱' : '🔒' }}</span>
                   </div>
                   <div class="awg-peer-actions">
-                    <button class="btn btn-danger btn-sm" @click.stop="removePeer(iface.name, peer)" :disabled="busy" :title="i18n.t('awg.peer_delete')">✕</button>
+                    <button class="btn btn-danger btn-sm" :disabled="busy" :title="i18n.t('awg.peer_delete')" @click.stop="removePeer(iface.name, peer)">✕</button>
                   </div>
                 </div>
               </div>
@@ -189,12 +195,14 @@
           <!-- Form -->
           <template v-if="!addPeer.result">
             <label class="awg-modal-label">{{ i18n.t('awg.add_name_label') }}</label>
-            <input v-model="addPeer.label" type="text" class="awg-modal-input" :placeholder="i18n.t('awg.add_name_placeholder')"
-                   @keyup.enter="doAddPeer" />
+            <input
+              v-model="addPeer.label" type="text" class="awg-modal-input" :placeholder="i18n.t('awg.add_name_placeholder')"
+              @keyup.enter="doAddPeer"
+            >
             <p class="awg-modal-hint">{{ i18n.t('awg.add_desc') }}</p>
             <div class="awg-modal-actions">
               <button class="btn" @click="closeAddPeer">{{ i18n.t('awg.add_cancel') }}</button>
-              <button class="btn btn-primary" @click="doAddPeer" :disabled="addPeer.loading">
+              <button class="btn btn-primary" :disabled="addPeer.loading" @click="doAddPeer">
                 {{ addPeer.loading ? i18n.t('awg.add_generating') : i18n.t('awg.add_generate') }}
               </button>
             </div>
@@ -206,20 +214,28 @@
             </div>
             <!-- View toggle -->
             <div class="awg-config-toggle">
-              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
-                      @click="configView = 'qr'">{{ i18n.t('awg.peer_qr_tab') }}</button>
-              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
-                      @click="configView = 'text'">{{ i18n.t('awg.peer_text_tab') }}</button>
+              <button
+                :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
+                @click="configView = 'qr'"
+              >
+                {{ i18n.t('awg.peer_qr_tab') }}
+              </button>
+              <button
+                :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
+                @click="configView = 'text'"
+              >
+                {{ i18n.t('awg.peer_text_tab') }}
+              </button>
             </div>
             <!-- QR view -->
             <div v-if="configView === 'qr'" class="awg-qr-wrap">
-              <img v-if="qrDataUrl" :src="qrDataUrl" :alt="i18n.t('awg.peer_qr_alt')" class="awg-qr-img" />
+              <img v-if="qrDataUrl" :src="qrDataUrl" :alt="i18n.t('awg.peer_qr_alt')" class="awg-qr-img">
               <p v-else class="awg-peers-status">{{ i18n.t('awg.peer_qr_unavailable') }}</p>
             </div>
             <!-- Text view -->
             <div v-else class="awg-config-wrap">
               <pre class="awg-config-text">{{ addPeer.result.client_config }}</pre>
-              <button class="awg-copy-btn" @click="copyConfig" :title="i18n.t('awg.peer_copy')">{{ copied ? '✓' : '📋' }}</button>
+              <button class="awg-copy-btn" :title="i18n.t('awg.peer_copy')" @click="copyConfig">{{ copied ? '✓' : '📋' }}</button>
             </div>
             <div class="awg-modal-actions">
               <button class="btn" @click="downloadConfig">{{ i18n.t('awg.peer_download') }}</button>
@@ -248,20 +264,28 @@
           <template v-else>
             <!-- View toggle -->
             <div class="awg-config-toggle">
-              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
-                      @click="configView = 'qr'">{{ i18n.t('awg.peer_qr_tab') }}</button>
-              <button :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
-                      @click="configView = 'text'">{{ i18n.t('awg.peer_text_tab') }}</button>
+              <button
+                :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'qr' }]"
+                @click="configView = 'qr'"
+              >
+                {{ i18n.t('awg.peer_qr_tab') }}
+              </button>
+              <button
+                :class="['awg-toggle-btn', { 'awg-toggle-active': configView === 'text' }]"
+                @click="configView = 'text'"
+              >
+                {{ i18n.t('awg.peer_text_tab') }}
+              </button>
             </div>
             <!-- QR view -->
             <div v-if="configView === 'qr'" class="awg-qr-wrap">
-              <img v-if="qrDataUrl" :src="qrDataUrl" :alt="i18n.t('awg.peer_qr_alt')" class="awg-qr-img" />
+              <img v-if="qrDataUrl" :src="qrDataUrl" :alt="i18n.t('awg.peer_qr_alt')" class="awg-qr-img">
               <p v-else class="awg-peers-status">{{ i18n.t('awg.peer_qr_unavailable') }}</p>
             </div>
             <!-- Text view -->
             <div v-else class="awg-config-wrap">
               <pre class="awg-config-text">{{ peerView.config }}</pre>
-              <button class="awg-copy-btn" @click="copyConfig" :title="i18n.t('awg.peer_copy')">{{ copied ? '✓' : '📋' }}</button>
+              <button class="awg-copy-btn" :title="i18n.t('awg.peer_copy')" @click="copyConfig">{{ copied ? '✓' : '📋' }}</button>
             </div>
             <div class="awg-modal-actions">
               <button class="btn" @click="downloadPeerConfig">{{ i18n.t('awg.peer_download') }}</button>

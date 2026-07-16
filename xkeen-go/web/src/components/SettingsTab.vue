@@ -188,7 +188,6 @@ onMounted(() => {
 
       <!-- Content -->
       <div class="s-content">
-
         <!-- Mode -->
         <section :id="sections[0].id" class="s-section">
           <h2 class="s-title">{{ sections[0].icon }} {{ sections[0].label }}</h2>
@@ -199,19 +198,23 @@ onMounted(() => {
                 <div class="s-row-desc">{{ i18n.t('settings.mode_desc') }}</div>
               </div>
               <div class="mode-selector">
-                <button @click="app.switchMode('xray')"
-                        :class="{ active: app.currentMode === 'xray' }"
-                        :disabled="!app.xrayAvailable" class="btn-mode">
+                <button
+                  :class="{ active: app.currentMode === 'xray' }"
+                  :disabled="!app.xrayAvailable"
+                  class="btn-mode" @click="app.switchMode('xray')"
+                >
                   <span class="mode-icon">X</span> Xray
                 </button>
-                <button @click="app.switchMode('mihomo')"
-                        :class="{ active: app.currentMode === 'mihomo' }"
-                        :disabled="!app.mihomoAvailable" class="btn-mode">
+                <button
+                  :class="{ active: app.currentMode === 'mihomo' }"
+                  :disabled="!app.mihomoAvailable"
+                  class="btn-mode" @click="app.switchMode('mihomo')"
+                >
                   <span class="mode-icon">M</span> Mihomo
                 </button>
               </div>
             </div>
-            <div class="s-row" v-show="!app.mihomoAvailable">
+            <div v-show="!app.mihomoAvailable" class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label s-muted">Mihomo</div>
                 <div class="s-row-desc s-warn">{{ i18n.t('settings.mode_no_config') }}</div>
@@ -231,7 +234,7 @@ onMounted(() => {
                   Access: <code>{{ app.xraySettings.accessLog }}</code> · Error: <code>{{ app.xraySettings.errorLog }}</code>
                 </div>
               </div>
-              <select v-model="app.xraySettings.logLevel" @change="app.updateLogLevel()" class="s-select">
+              <select v-model="app.xraySettings.logLevel" class="s-select" @change="app.updateLogLevel()">
                 <option v-for="level in app.xraySettings.logLevels" :key="level" :value="level">{{ level.toUpperCase() }}</option>
               </select>
             </div>
@@ -251,7 +254,7 @@ onMounted(() => {
                 <span v-show="app.updateInfo.is_prerelease" class="dev-tag">dev</span>
               </div>
             </div>
-            <div class="s-row" v-show="app.updateInfo.latest_version">
+            <div v-show="app.updateInfo.latest_version" class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label">{{ i18n.t('settings.latest_version') }}</div>
               </div>
@@ -270,20 +273,20 @@ onMounted(() => {
                 <div class="s-row-desc">{{ i18n.t('settings.dev_channel_desc') }}</div>
               </div>
               <label class="toggle">
-                <input type="checkbox" v-model="app.checkDevUpdates">
-                <span class="toggle-slider"></span>
+                <input v-model="app.checkDevUpdates" type="checkbox">
+                <span class="toggle-slider" />
               </label>
             </div>
             <div class="s-row s-row-actions">
-              <button @click="app.checkUpdate()" :disabled="app.updateChecking || app.updating" class="btn">
+              <button :disabled="app.updateChecking || app.updating" class="btn" @click="app.checkUpdate()">
                 {{ app.updateChecking ? i18n.t('settings.checking') : i18n.t('settings.check_btn') }}
               </button>
-              <button v-if="app.updateInfo.update_available" @click="app.startUpdate()" :disabled="app.updating" class="btn btn-primary">
+              <button v-if="app.updateInfo.update_available" :disabled="app.updating" class="btn btn-primary" @click="app.startUpdate()">
                 {{ app.updating ? i18n.t('settings.updating') : i18n.t('settings.update_btn') }}
               </button>
             </div>
             <div v-show="app.updating" class="s-progress">
-              <div class="s-progress-bar"><div :style="'width:' + app.updateProgress + '%'"></div></div>
+              <div class="s-progress-bar"><div :style="'width:' + app.updateProgress + '%'" /></div>
               <span class="s-progress-text">{{ app.updateStatus }}</span>
             </div>
           </div>
@@ -294,20 +297,26 @@ onMounted(() => {
           <h2 class="s-title">{{ sections[3].icon }} {{ sections[3].label }}</h2>
           <div class="s-block">
             <div class="pw-grid">
-              <input type="password" v-model="app.passwordChange.currentPassword"
-                     :placeholder="i18n.t('settings.current_pwd')" autocomplete="current-password" class="s-input">
-              <input type="password" v-model="app.passwordChange.newPassword"
-                     :placeholder="i18n.t('settings.new_pwd')" autocomplete="new-password" class="s-input">
-              <input type="password" v-model="app.passwordChange.confirmPassword"
-                     :placeholder="i18n.t('settings.confirm_pwd')" autocomplete="new-password" class="s-input">
+              <input
+                v-model="app.passwordChange.currentPassword" type="password"
+                :placeholder="i18n.t('settings.current_pwd')" autocomplete="current-password" class="s-input"
+              >
+              <input
+                v-model="app.passwordChange.newPassword" type="password"
+                :placeholder="i18n.t('settings.new_pwd')" autocomplete="new-password" class="s-input"
+              >
+              <input
+                v-model="app.passwordChange.confirmPassword" type="password"
+                :placeholder="i18n.t('settings.confirm_pwd')" autocomplete="new-password" class="s-input"
+              >
             </div>
             <div v-show="app.passwordChange.error" class="s-callout s-callout-err">{{ app.passwordChange.error }}</div>
             <div v-show="app.passwordChange.success" class="s-callout s-callout-ok">{{ i18n.t('settings.pwd_changed') }}</div>
             <div class="s-row s-row-actions">
-              <button @click="app.changePassword()" :disabled="app.passwordChange.loading" class="btn btn-primary">
+              <button :disabled="app.passwordChange.loading" class="btn btn-primary" @click="app.changePassword()">
                 {{ app.passwordChange.loading ? i18n.t('settings.changing') : i18n.t('settings.change_btn') }}
               </button>
-              <button @click="app.clearPasswordForm()" :disabled="app.passwordChange.loading" class="btn">{{ i18n.t('settings.clear') }}</button>
+              <button :disabled="app.passwordChange.loading" class="btn" @click="app.clearPasswordForm()">{{ i18n.t('settings.clear') }}</button>
             </div>
           </div>
         </section>
@@ -322,8 +331,8 @@ onMounted(() => {
                 <div class="s-row-desc">{{ i18n.t('settings.auto_update_desc') }}</div>
               </div>
               <label class="toggle">
-                <input type="checkbox" v-model="autoApply.enabled">
-                <span class="toggle-slider"></span>
+                <input v-model="autoApply.enabled" type="checkbox">
+                <span class="toggle-slider" />
               </label>
             </div>
             <div class="s-row">
@@ -335,14 +344,16 @@ onMounted(() => {
                   <code>*/30 * * * *</code> каждые 30м
                 </div>
               </div>
-              <input type="text" v-model="autoApply.cron" placeholder="0 */6 * * *"
-                     :disabled="!autoApply.enabled" class="s-input s-input-mono">
+              <input
+                v-model="autoApply.cron" type="text" placeholder="0 */6 * * *"
+                :disabled="!autoApply.enabled" class="s-input s-input-mono"
+              >
             </div>
             <div v-if="autoApply.enabled && autoApply.next_run" class="s-callout s-callout-info">
               {{ i18n.t('settings.next_run', { time: fmtNextRun(autoApply.next_run) }) }}
             </div>
             <div class="s-row s-row-actions">
-              <button @click="saveAutoApply()" :disabled="autoApplySaving" class="btn btn-primary">
+              <button :disabled="autoApplySaving" class="btn btn-primary" @click="saveAutoApply()">
                 {{ autoApplySaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
               </button>
             </div>
@@ -360,19 +371,21 @@ onMounted(() => {
               </div>
               <label class="toggle">
                 <input type="checkbox" :checked="metricsPort > 0" @change="$event.target.checked ? metricsPort = 11111 : metricsPort = 0">
-                <span class="toggle-slider"></span>
+                <span class="toggle-slider" />
               </label>
             </div>
-            <div class="s-row" v-if="metricsPort > 0">
+            <div v-if="metricsPort > 0" class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label">{{ i18n.t('settings.metrics_port') }}</div>
                 <div class="s-row-desc">{{ i18n.t('settings.metrics_listen') }} <code>127.0.0.1:{{ metricsPort }}</code>{{ i18n.t('settings.metrics_restart_hint') }}</div>
               </div>
-              <input type="number" v-model.number="metricsPort" min="1" max="65535"
-                     :disabled="metricsSaving" class="s-input s-input-port">
+              <input
+                v-model.number="metricsPort" type="number" min="1" max="65535"
+                :disabled="metricsSaving" class="s-input s-input-port"
+              >
             </div>
             <div class="s-row s-row-actions">
-              <button @click="saveMetricsPort()" :disabled="metricsSaving" class="btn btn-primary">
+              <button :disabled="metricsSaving" class="btn btn-primary" @click="saveMetricsPort()">
                 {{ metricsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }} }}
               </button>
             </div>
@@ -396,11 +409,11 @@ onMounted(() => {
             <div v-if="awg.progress" class="s-callout s-callout-info">{{ awg.progress }}</div>
             <div v-if="awg.error" class="s-callout s-callout-err">{{ awg.error }}</div>
             <div class="s-row s-row-actions">
-              <button v-if="!awg.installed && !awg.installing" @click="installAWG()" class="btn btn-primary">
+              <button v-if="!awg.installed && !awg.installing" class="btn btn-primary" @click="installAWG()">
                 {{ i18n.t('settings.awg_install_btn') }}
               </button>
               <button v-if="awg.installing" disabled class="btn btn-primary">{{ i18n.t('settings.awg_installing') }}</button>
-              <button v-if="awg.installed && !awg.uninstalling" @click="uninstallAWG()" class="btn btn-danger" style="margin-left:auto">
+              <button v-if="awg.installed && !awg.uninstalling" class="btn btn-danger" style="margin-left:auto" @click="uninstallAWG()">
                 {{ i18n.t('settings.awg_uninstall_btn') }}
               </button>
               <button v-if="awg.uninstalling" disabled class="btn btn-danger">{{ i18n.t('settings.awg_uninstalling') }}</button>
@@ -408,7 +421,7 @@ onMounted(() => {
           </div>
 
           <!-- Init script -->
-          <div class="s-block" v-if="awg.installed">
+          <div v-if="awg.installed" class="s-block">
             <div class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label">{{ i18n.t('settings.awg_init_title') }}</div>
@@ -421,10 +434,10 @@ onMounted(() => {
               <pre style="margin:0;font-size:12px">{{ awg.interfaces }}</pre>
             </div>
             <div class="s-row s-row-actions">
-              <button v-if="!awg.hasInitScript" @click="setupAWGInit()" :disabled="awg.initSaving" class="btn btn-primary">
+              <button v-if="!awg.hasInitScript" :disabled="awg.initSaving" class="btn btn-primary" @click="setupAWGInit()">
                 {{ awg.initSaving ? i18n.t('settings.awg_init_creating') : i18n.t('settings.awg_create_init') }}
               </button>
-              <button v-if="awg.hasInitScript" @click="setupAWGInit()" :disabled="awg.initSaving" class="btn">
+              <button v-if="awg.hasInitScript" :disabled="awg.initSaving" class="btn" @click="setupAWGInit()">
                 {{ awg.initSaving ? i18n.t('settings.awg_init_updating') : i18n.t('settings.awg_update_init') }}
               </button>
             </div>
@@ -439,14 +452,13 @@ onMounted(() => {
               <div class="s-row-main">
                 <div class="s-row-label">{{ i18n.t('settings.lang_label') }}</div>
               </div>
-              <select :value="i18n.lang" @change="i18n.setLang($event.target.value)" class="s-select">
+              <select :value="i18n.lang" class="s-select" @change="i18n.setLang($event.target.value)">
                 <option value="ru">Русский</option>
                 <option value="en">English</option>
               </select>
             </div>
           </div>
         </section>
-
       </div>
     </div>
   </div>

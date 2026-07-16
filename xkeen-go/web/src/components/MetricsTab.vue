@@ -159,154 +159,157 @@ onUnmounted(() => { destroyCharts(); disconnect(); });
 </script>
 
 <template>
-	<div class="metrics-wrapper">
-		<!-- Header -->
-		<div class="metrics-header">
-			<div class="metrics-status">
-				<span class="status-indicator" :class="wsStatus"></span>
-				<span class="status-text">
-					{{ i18n.t(wsStatus === 'connected' ? 'metrics.connected' : wsStatus === 'connecting' ? 'metrics.connecting' : 'metrics.disconnected') }}
-				</span>
-				<span v-if="wsError" class="status-error">{{ wsError }}</span>
-			</div>
-			<div v-if="latestSnap" class="metrics-total">
-				<span class="total-dl">↓ {{ fmtRate(totalRates.dl) }}</span>
-				<span class="total-ul">↑ {{ fmtRate(totalRates.ul) }}</span>
-			</div>
-			<span v-if="sessionUptime" class="session-uptime">⏱ {{ sessionUptime }}</span>
-			<div class="metrics-controls">
-				<label class="toggle-label">
-					<input type="checkbox" v-model="showInactive"> {{ i18n.t('metrics.inactive') }}
-				</label>
-			</div>
-		</div>
+  <div class="metrics-wrapper">
+    <!-- Header -->
+    <div class="metrics-header">
+      <div class="metrics-status">
+        <span class="status-indicator" :class="wsStatus" />
+        <span class="status-text">
+          {{ i18n.t(wsStatus === 'connected' ? 'metrics.connected' : wsStatus === 'connecting' ? 'metrics.connecting' : 'metrics.disconnected') }}
+        </span>
+        <span v-if="wsError" class="status-error">{{ wsError }}</span>
+      </div>
+      <div v-if="latestSnap" class="metrics-total">
+        <span class="total-dl">↓ {{ fmtRate(totalRates.dl) }}</span>
+        <span class="total-ul">↑ {{ fmtRate(totalRates.ul) }}</span>
+      </div>
+      <span v-if="sessionUptime" class="session-uptime">⏱ {{ sessionUptime }}</span>
+      <div class="metrics-controls">
+        <label class="toggle-label">
+          <input v-model="showInactive" type="checkbox"> {{ i18n.t('metrics.inactive') }}
+        </label>
+      </div>
+    </div>
 
-		<!-- Unavailable -->
-		<div v-if="latestSnap && !latestSnap.available" class="metrics-unavailable">
-			<span class="unavail-icon">⚠</span>
-			<p>{{ i18n.t('metrics.unavailable') }}</p>
-			<p class="unavail-hint">{{ i18n.t('metrics.unavailable_hint') }}</p>
-		</div>
-		<div v-else-if="!latestSnap && history.length === 0" class="metrics-unavailable">
-			<span class="unavail-icon">📊</span>
-			<p>{{ i18n.t('metrics.waiting') }}</p>
-			<p class="unavail-hint" v-if="wsStatus !== 'connected'">{{ i18n.t('metrics.ws_not_connected') }}</p>
-		</div>
+    <!-- Unavailable -->
+    <div v-if="latestSnap && !latestSnap.available" class="metrics-unavailable">
+      <span class="unavail-icon">⚠</span>
+      <p>{{ i18n.t('metrics.unavailable') }}</p>
+      <p class="unavail-hint">{{ i18n.t('metrics.unavailable_hint') }}</p>
+    </div>
+    <div v-else-if="!latestSnap && history.length === 0" class="metrics-unavailable">
+      <span class="unavail-icon">📊</span>
+      <p>{{ i18n.t('metrics.waiting') }}</p>
+      <p v-if="wsStatus !== 'connected'" class="unavail-hint">{{ i18n.t('metrics.ws_not_connected') }}</p>
+    </div>
 
-		<!-- Content -->
-		<template v-else>
-			<!-- Chart -->
-			<div class="chart-container">
-				<canvas ref="chartCanvas" :height="CHART_H"></canvas>
-			</div>
+    <!-- Content -->
+    <template v-else>
+      <!-- Chart -->
+      <div class="chart-container">
+        <canvas ref="chartCanvas" :height="CHART_H" />
+      </div>
 
-			<!-- Speed stats -->
-			<div v-if="speedStats" class="stats-row">
-				<div class="stat-card">
-					<div class="stat-label">{{ i18n.t('metrics.peak') }}</div>
-					<div class="stat-values">
-						<span class="stat-dl">↓ {{ fmtRate(speedStats.peak.dl) }}</span>
-						<span class="stat-ul">↑ {{ fmtRate(speedStats.peak.ul) }}</span>
-					</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-label">P95</div>
-					<div class="stat-values">
-						<span class="stat-dl">↓ {{ fmtRate(speedStats.p95.dl) }}</span>
-						<span class="stat-ul">↑ {{ fmtRate(speedStats.p95.ul) }}</span>
-					</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-label">P50</div>
-					<div class="stat-values">
-						<span class="stat-dl">↓ {{ fmtRate(speedStats.p50.dl) }}</span>
-						<span class="stat-ul">↑ {{ fmtRate(speedStats.p50.ul) }}</span>
-					</div>
-				</div>
-			</div>
+      <!-- Speed stats -->
+      <div v-if="speedStats" class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">{{ i18n.t('metrics.peak') }}</div>
+          <div class="stat-values">
+            <span class="stat-dl">↓ {{ fmtRate(speedStats.peak.dl) }}</span>
+            <span class="stat-ul">↑ {{ fmtRate(speedStats.peak.ul) }}</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">P95</div>
+          <div class="stat-values">
+            <span class="stat-dl">↓ {{ fmtRate(speedStats.p95.dl) }}</span>
+            <span class="stat-ul">↑ {{ fmtRate(speedStats.p95.ul) }}</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">P50</div>
+          <div class="stat-values">
+            <span class="stat-dl">↓ {{ fmtRate(speedStats.p50.dl) }}</span>
+            <span class="stat-ul">↑ {{ fmtRate(speedStats.p50.ul) }}</span>
+          </div>
+        </div>
+      </div>
 
-			<!-- Rates + Observatory side by side -->
-			<div class="bottom-section">
-				<!-- Rates tables -->
-				<div class="rates-column">
-					<h3 class="rates-title">{{ i18n.t('metrics.inbound') }}</h3>
-					<table class="rates-table">
-						<thead><tr><th>{{ i18n.t('metrics.inbound_tag') }}</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
-						<tbody>
-							<tr v-for="(r, i) in tagRates.inbound" :key="r.tag">
-								<td class="tag-cell">{{ displayName(r.tag) }}</td>
-								<td class="rate-cell dl">{{ fmtRate(r.dl) }}</td>
-								<td class="rate-cell ul">{{ fmtRate(r.ul) }}</td>
-								<td class="vol-cell vol-sep">{{ fmtBytes(tagVolumes.inbound[i]?.dl ?? 0) }}</td>
-								<td class="vol-cell">{{ fmtBytes(tagVolumes.inbound[i]?.ul ?? 0) }}</td>
-							</tr>
-							<tr v-if="!tagRates.inbound.length"><td colspan="5" class="empty-cell">—</td></tr>
-						</tbody>
-					</table>
-					<h3 class="rates-title" style="margin-top:10px">{{ i18n.t('metrics.outbound') }}</h3>
-					<table class="rates-table">
-						<thead><tr><th>{{ i18n.t('metrics.outbound_tag') }}</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
-						<tbody>
-							<tr v-for="(r, i) in tagRates.outbound" :key="r.tag">
-								<td class="tag-cell">{{ displayName(r.tag) }}</td>
-								<td class="rate-cell dl">{{ fmtRate(r.dl) }}</td>
-								<td class="rate-cell ul">{{ fmtRate(r.ul) }}</td>
-								<td class="vol-cell vol-sep">{{ fmtBytes(tagVolumes.outbound[i]?.dl ?? 0) }}</td>
-								<td class="vol-cell">{{ fmtBytes(tagVolumes.outbound[i]?.ul ?? 0) }}</td>
-							</tr>
-							<tr v-if="!tagRates.outbound.length"><td colspan="5" class="empty-cell">—</td></tr>
-						</tbody>
-					</table>
-					<h3 class="rates-title" style="margin-top:10px">{{ i18n.t('metrics.traffic_share') }}</h3>
-					<div class="share-bars">
-						<div v-for="s in proxyShare" :key="s.tag" class="share-row">
-							<span class="share-tag">{{ displayName(s.tag) }}</span>
-							<div class="share-track">
-								<div class="share-fill" :style="{ width: s.pct + '%', background: s.color }"></div>
-							</div>
-							<span class="share-pct">{{ s.pct.toFixed(1) }}%</span>
-						</div>
-					</div>
-				</div>
-				<!-- Observatory -->
-				<div v-if="observatory.length > 0" class="obs-section">
-					<h3 class="section-title">Observatory</h3>
-					<table class="obs-table">
-						<thead><tr><th>{{ i18n.t('metrics.proxy_tag') }}</th><th>{{ i18n.t('metrics.proxy_status') }}</th><th>{{ i18n.t('metrics.proxy_latency') }}</th><th>{{ i18n.t('metrics.proxy_check') }}</th></tr></thead>
-						<tbody>
-							<tr v-for="e in observatory" :key="e.tag"
-								v-show="showInactive || e.alive"
-								:class="{ 'obs-dead': !e.alive }">
-								<td class="tag-cell">{{ displayName(e.tag) }}</td>
-								<td><span class="obs-alive" :class="{ alive: e.alive }">{{ e.alive ? '✓' : '✗' }}</span></td>
-								<td class="rate-cell">{{ fmtDelay(e.delay) }}</td>
-								<td class="time-cell">{{ e.lastSeen ? fmtTime(e.lastSeen) : '—' }}</td>
-							</tr>
-						</tbody>
-					</table>
-					<template v-if="obsTimeline.tags.length > 0">
-						<h3 class="section-title" style="margin-top:12px">Timeline</h3>
-						<div class="obs-timeline-header">
-							<span>{{ fmtTimeShort(obsTimeline.range.start) }}</span>
-							<span>{{ fmtTimeShort(obsTimeline.range.end) }}</span>
-						</div>
-						<div class="obs-timeline">
-							<div v-for="t in obsTimeline.tags" :key="t.tag" class="timeline-row">
-								<span class="timeline-tag">{{ t.tag }}</span>
-								<div class="timeline-track">
-									<div v-for="(seg, i) in t.segments" :key="i"
-										class="timeline-seg"
-										:class="{ alive: seg.alive, dead: !seg.alive }"
-										:style="{ left: seg.left + '%', width: Math.max(seg.width, 0.5) + '%' }">
-									</div>
-								</div>
-							</div>
-						</div>
-					</template>
-				</div>
-			</div>
-		</template>
-	</div>
+      <!-- Rates + Observatory side by side -->
+      <div class="bottom-section">
+        <!-- Rates tables -->
+        <div class="rates-column">
+          <h3 class="rates-title">{{ i18n.t('metrics.inbound') }}</h3>
+          <table class="rates-table">
+            <thead><tr><th>{{ i18n.t('metrics.inbound_tag') }}</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
+            <tbody>
+              <tr v-for="(r, i) in tagRates.inbound" :key="r.tag">
+                <td class="tag-cell">{{ displayName(r.tag) }}</td>
+                <td class="rate-cell dl">{{ fmtRate(r.dl) }}</td>
+                <td class="rate-cell ul">{{ fmtRate(r.ul) }}</td>
+                <td class="vol-cell vol-sep">{{ fmtBytes(tagVolumes.inbound[i]?.dl ?? 0) }}</td>
+                <td class="vol-cell">{{ fmtBytes(tagVolumes.inbound[i]?.ul ?? 0) }}</td>
+              </tr>
+              <tr v-if="!tagRates.inbound.length"><td colspan="5" class="empty-cell">—</td></tr>
+            </tbody>
+          </table>
+          <h3 class="rates-title" style="margin-top:10px">{{ i18n.t('metrics.outbound') }}</h3>
+          <table class="rates-table">
+            <thead><tr><th>{{ i18n.t('metrics.outbound_tag') }}</th><th>↓ DL</th><th>↑ UL</th><th class="vol-sep">↓ DL</th><th>↑ UL</th></tr></thead>
+            <tbody>
+              <tr v-for="(r, i) in tagRates.outbound" :key="r.tag">
+                <td class="tag-cell">{{ displayName(r.tag) }}</td>
+                <td class="rate-cell dl">{{ fmtRate(r.dl) }}</td>
+                <td class="rate-cell ul">{{ fmtRate(r.ul) }}</td>
+                <td class="vol-cell vol-sep">{{ fmtBytes(tagVolumes.outbound[i]?.dl ?? 0) }}</td>
+                <td class="vol-cell">{{ fmtBytes(tagVolumes.outbound[i]?.ul ?? 0) }}</td>
+              </tr>
+              <tr v-if="!tagRates.outbound.length"><td colspan="5" class="empty-cell">—</td></tr>
+            </tbody>
+          </table>
+          <h3 class="rates-title" style="margin-top:10px">{{ i18n.t('metrics.traffic_share') }}</h3>
+          <div class="share-bars">
+            <div v-for="s in proxyShare" :key="s.tag" class="share-row">
+              <span class="share-tag">{{ displayName(s.tag) }}</span>
+              <div class="share-track">
+                <div class="share-fill" :style="{ width: s.pct + '%', background: s.color }" />
+              </div>
+              <span class="share-pct">{{ s.pct.toFixed(1) }}%</span>
+            </div>
+          </div>
+        </div>
+        <!-- Observatory -->
+        <div v-if="observatory.length > 0" class="obs-section">
+          <h3 class="section-title">Observatory</h3>
+          <table class="obs-table">
+            <thead><tr><th>{{ i18n.t('metrics.proxy_tag') }}</th><th>{{ i18n.t('metrics.proxy_status') }}</th><th>{{ i18n.t('metrics.proxy_latency') }}</th><th>{{ i18n.t('metrics.proxy_check') }}</th></tr></thead>
+            <tbody>
+              <tr
+                v-for="e in observatory" v-show="showInactive || e.alive"
+                :key="e.tag"
+                :class="{ 'obs-dead': !e.alive }"
+              >
+                <td class="tag-cell">{{ displayName(e.tag) }}</td>
+                <td><span class="obs-alive" :class="{ alive: e.alive }">{{ e.alive ? '✓' : '✗' }}</span></td>
+                <td class="rate-cell">{{ fmtDelay(e.delay) }}</td>
+                <td class="time-cell">{{ e.lastSeen ? fmtTime(e.lastSeen) : '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <template v-if="obsTimeline.tags.length > 0">
+            <h3 class="section-title" style="margin-top:12px">Timeline</h3>
+            <div class="obs-timeline-header">
+              <span>{{ fmtTimeShort(obsTimeline.range.start) }}</span>
+              <span>{{ fmtTimeShort(obsTimeline.range.end) }}</span>
+            </div>
+            <div class="obs-timeline">
+              <div v-for="t in obsTimeline.tags" :key="t.tag" class="timeline-row">
+                <span class="timeline-tag">{{ t.tag }}</span>
+                <div class="timeline-track">
+                  <div
+                    v-for="(seg, i) in t.segments" :key="i"
+                    class="timeline-seg"
+                    :class="{ alive: seg.alive, dead: !seg.alive }"
+                    :style="{ left: seg.left + '%', width: Math.max(seg.width, 0.5) + '%' }"
+                  />
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
 </template>
 
 <style scoped>

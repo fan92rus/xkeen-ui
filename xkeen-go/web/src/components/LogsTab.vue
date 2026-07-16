@@ -52,21 +52,21 @@ onUnmounted(disconnect);
   <div class="logs-wrapper">
     <div class="logs-toolbar">
       <select v-model="app.logFile" @change="app.loadLogs()">
-        <option value="/opt/var/log/xray/access.log" v-show="app.currentMode === 'xray'">Access</option>
-        <option value="/opt/var/log/xray/error.log" v-show="app.currentMode === 'xray'">Error</option>
-        <option value="/opt/var/log/mihomo/access.log" v-show="app.currentMode === 'mihomo'">Access</option>
-        <option value="/opt/var/log/mihomo/error.log" v-show="app.currentMode === 'mihomo'">Error</option>
+        <option v-show="app.currentMode === 'xray'" value="/opt/var/log/xray/access.log">Access</option>
+        <option v-show="app.currentMode === 'xray'" value="/opt/var/log/xray/error.log">Error</option>
+        <option v-show="app.currentMode === 'mihomo'" value="/opt/var/log/mihomo/access.log">Access</option>
+        <option v-show="app.currentMode === 'mihomo'" value="/opt/var/log/mihomo/error.log">Error</option>
       </select>
-      <input type="text" v-model="app.logSearch" :placeholder="i18n.t('logs.search')">
+      <input v-model="app.logSearch" type="text" :placeholder="i18n.t('logs.search')">
       <select v-model="app.logFilter">
         <option value="all">{{ i18n.t('logs.all') }}</option>
         <option value="error">{{ i18n.t('logs.errors') }}</option>
         <option value="warn">Warning</option>
         <option value="info">Info</option>
       </select>
-      <button @click="app.clearLogs()" class="btn btn-sm">{{ i18n.t('logs.clear') }}</button>
+      <button class="btn btn-sm" @click="app.clearLogs()">{{ i18n.t('logs.clear') }}</button>
     </div>
-    <div class="logs-container" ref="logsEl" @scroll="onScroll">
+    <div ref="logsEl" class="logs-container" @scroll="onScroll">
       <div v-for="(log, index) in app.filteredLogs" :key="log.timestamp + '-' + index" :class="'log-entry log-' + log.level">
         <span class="log-time">{{ log.timestamp }}</span>
         <span class="log-level">{{ log.level.toUpperCase() }}</span>
