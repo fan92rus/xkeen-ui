@@ -1,0 +1,50 @@
+# Semgrep configuration for xkeen-go
+# Security-focused static analysis for Go + JS/Vue
+# Docs: https://semgrep.dev/docs/
+
+rules:
+  # --- Use Semgrep auto rules (curated by r2c) ---
+  # Includes OWASP Top 10, Go security best practices, and JS/Vue XSS detection
+  - config: p/auto
+
+  # --- Custom project-specific rules ---
+
+  # Detect hardcoded secrets/credentials in Go source
+  - id: xkeen-hardcoded-secret
+    languages: [go]
+    message: "Potential hardcoded secret/credential. Use environment variable or config file."
+    severity: ERROR
+    patterns:
+      - pattern: |
+          password = "..."
+      - pattern-not: |
+          password = ""
+      - pattern-not: |
+          password = os.Getenv("...")
+
+  # Detect path traversal in file handlers (critical for PathValidator)
+  - id: xkeen-path-traversal
+    languages: [go]
+    message: "Potential path traversal. Always use utils.PathValidator to validate file paths."
+    severity: ERROR
+    patterns:
+      - pattern: os.ReadFile($PATH)
+      - pattern-not: os.ReadFile(filepath.Join($CONST, $FILE))
+    metadata:
+      mitigation: "Use utils.PathValidator.ValidatePath(path) before file operations"
+
+  # Detect XSS in Vue templates (v-html without sanitization)
+  - id: xkeen-vue-xss
+    languages: [javascript]
+    message: "v-html can lead to XSS. Ensure the content is sanitized."
+    severity: WARNING
+    patterns:
+      - pattern: v-html="$EXPR"
+
+paths:
+  exclude:
+    - "node_modules"
+    - "web/static/dist"
+    - "vendor"
+    - "build"
+    - ".pi-subagents"

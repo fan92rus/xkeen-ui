@@ -86,3 +86,47 @@ jobs:
         # embedded. Dev-tooling vulns (vite, puppeteer) are surfaced but do
         # not gate CI — they never reach the router.
         run: npm audit --omit=dev --audit-level=high
+
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+
+      - name: Download dependencies
+        run: go mod download
+
+      # golangci-lint is installed via the official action which handles
+      # caching and version pinning automatically.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
+          working-directory: xkeen-go
+
+  security:
+    name: Security Scan (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      # Semgrep scans Go + JS/Vue for security patterns: path traversal,
+      # XSS, secret leaks, OWASP Top 10. Free tier, no license needed.
+      - name: Semgrep scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/auto
+            .semgrep.yml
+          generateSarif: "1"

@@ -87,3 +87,18 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf web/node_modules
 	rm -rf web/static/dist
+
+# Static analysis (local equivalents of CI checks)
+# Install golangci-lint: https://golangci-lint.run/welcome/install/
+lint:
+	golangci-lint run ./...
+
+lint-fix:
+	golangci-lint run --fix ./...
+
+# Security scan via Semgrep (install: https://semgrep.dev/docs/getting-started/quickstart)
+security-scan:
+	semgrep scan --config p/auto ./
+
+# Full pre-push check: lint + vet + test
+check: lint vet test

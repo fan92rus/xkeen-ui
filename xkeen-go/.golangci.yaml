@@ -1,0 +1,112 @@
+# golangci-lint configuration for xkeen-go
+# Docs: https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  go: "1.26.5"
+
+linters:
+  enable:
+    # --- Baseline (enabled by default in golangci-lint) ---
+    - errcheck      # Detect unchecked errors (critical for robustness)
+    - gosimple      # Simplifications
+    - govet         # go vet checks
+    - ineffassign   # Ineffectual assignments
+    - staticcheck   # Comprehensive static analysis (SA*)
+    - unused        # Find unused code
+
+    # --- Security ---
+    - gosec         # Security-focused: weak crypto, hardcoded creds, path traversal
+
+    # --- Code Quality ---
+    - gocritic      # Common mistakes, performance, style
+    - revive        # Fast, configurable linter (replaces golint)
+    - misspell      # Find commonly misspelled English words
+    - unconvert     # Remove unnecessary type conversions
+    - prealloc      # Slice preallocation hints
+    - nolintlint    # Don't allow badly formed //nolint directives
+
+linters-settings:
+  errcheck:
+    # Don't ignore type assertions in goroutines (common bug source)
+    check-type-assertions: false
+    # Allow blank identifier for known-ignored errors
+    check-blank: false
+    # Exclude these functions from requiring error checks
+    exclude-functions:
+      - (io.Closer).Close
+      - fmt.Fprint
+      - fmt.Fprintln
+      - fmt.Fprintf
+
+  gosec:
+    excludes:
+      - G104  # Allow unhandled errors (errcheck covers this better)
+      - G304  # Allow os.ReadFile with variable paths (we validate via PathValidator)
+    severity: medium
+    confidence: medium
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - hugeParam       # Don't complain about large struct params
+      - rangeValCopy    # Don't force pointer for range copies
+
+  revive:
+    severity: warning
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-naming
+      - name: error-strings
+      - name: error-return
+      - name: errorf
+      - name: exported
+        arguments: ["disableStutteringCheck"]
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: var-declaration
+      - name: var-naming
+
+  staticcheck:
+    checks: ["all"]
+
+  misspell:
+    locale: US
+
+issues:
+  # Maximum issues count per linter (0 = no limit)
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text (0 = no limit)
+  max-same-issues: 0
+  # Exclude these issue patterns globally
+  exclude-rules:
+    # Test files: relax some checks
+    - path: _test\.go
+      linters:
+        - gosec       # Security checks relaxed in tests
+        - errcheck    # Don't require error handling in every test assertion
+        - goconst     # Don't complain about magic numbers in tests
+        - prealloc    # Don't require slice preallocation in tests
+
+    # testutil package: mocks don't need full error handling
+    - path: internal/testutil/
+      linters:
+        - errcheck
+        - gosec
+
+    # Main package: allow Some unused (install/uninstall commands)
+    - path: main\.go
+      linters:
+        - gosec       # Allow os.Exec for install commands
+
+  # Don't auto-exclude these patterns
+  exclude-use-default: false

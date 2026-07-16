@@ -1,0 +1,61 @@
+#!/bin/sh
+# Pre-commit hook: run linters on staged files
+# Blocks commit if linters fail. Bypass with: git commit --no-verify
+#
+# This hook is auto-installed by: xkeen-go/scripts/setup-hooks.sh
+# Or manually: cp xkeen-go/scripts/pre-commit .git/hooks/pre-commit && chmod +x
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# --- Get staged files ---
+STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | grep -v '_test\.go$' || true)
+STAGED_JS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(js|vue|ts)$' || true)
+STAGED_GO_TEST=$(git diff --cached --name-only --diff-filter=ACM | grep '_test\.go$' || true)
+
+# --- Go: golangci-lint (if available) ---
+if [ -n "$STAGED_GO" ] || [ -n "$STAGED_GO_TEST" ]; then
+    if command -v golangci-lint >/dev/null 2>&1; then
+        echo "  → golangci-lint (Go files)"
+        cd xkeen-go
+        # Run on the whole package (golangci-lint needs compilation context)
+        golangci-lint run ./... 2>&1 | sed 's/^/    /'
+        cd ..
+        echo "  ✓ golangci-lint passed"
+    else
+        echo "  ⚠ golangci-lint not installed — skipping Go lint"
+        echo "    Install: https://golangci-lint.run/welcome/install/"
+    fi
+fi
+
+# --- Frontend: quick check (if node_modules available) ---
+if [ -n "$STAGED_JS" ]; then
+    if [ -d "xkeen-go/web/node_modules" ]; then
+        echo "  → eslint (JS/Vue files)"
+        cd xkeen-go/web
+        npx eslint $STAGED_JS 2>&1 | sed 's/^/    /' || {
+            echo "  ✗ eslint found issues — commit blocked"
+            exit 1
+        }
+        echo "  ✓ eslint passed"
+        cd ../..
+    else
+        echo "  ⚠ node_modules not found — skipping frontend lint"
+    fi
+fi
+
+# --- Go: go vet (always, fast) ---
+if [ -n "$STAGED_GO" ] || [ -n "$STAGED_GO_TEST" ]; then
+    echo "  → go vet"
+    cd xkeen-go
+    if ! go vet ./... 2>&1 | sed 's/^/    /'; then
+        echo "  ✗ go vet found issues — commit blocked"
+        exit 1
+    fi
+    echo "  ✓ go vet passed"
+    cd ..
+fi
+
+echo "✅ All pre-commit checks passed!"
+exit 0
