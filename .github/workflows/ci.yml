@@ -81,6 +81,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Lint (eslint)
+        run: npm run lint
+
       - name: Audit (production deps, fail on high+)
         # Frontend ships as a compiled bundle; production deps are the ones
         # embedded. Dev-tooling vulns (vite, puppeteer) are surfaced but do

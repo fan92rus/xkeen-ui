@@ -29,19 +29,34 @@ if [ -n "$STAGED_GO" ] || [ -n "$STAGED_GO_TEST" ]; then
     fi
 fi
 
-# --- Frontend: quick check (if node_modules available) ---
+# --- Frontend: eslint (if node_modules available) ---
 if [ -n "$STAGED_JS" ]; then
     if [ -d "xkeen-go/web/node_modules" ]; then
         echo "  → eslint (JS/Vue files)"
-        cd xkeen-go/web
-        npx eslint $STAGED_JS 2>&1 | sed 's/^/    /' || {
-            echo "  ✗ eslint found issues — commit blocked"
-            exit 1
-        }
-        echo "  ✓ eslint passed"
-        cd ../..
+        # Convert repo-root-relative paths to web-relative paths for eslint
+        WEB_JS=""
+        for f in $STAGED_JS; do
+            # Strip xkeen-go/web/ prefix if present
+            rel=$(echo "$f" | sed 's|^xkeen-go/web/||')
+            # Only lint files inside web/
+            case "$f" in
+                xkeen-go/web/*) WEB_JS="$WEB_JS $rel" ;;
+            esac
+        done
+        if [ -n "$WEB_JS" ]; then
+            cd xkeen-go/web
+            npx eslint $WEB_JS 2>&1 | sed 's/^/    /' || {
+                echo "  ✗ eslint found issues — commit blocked"
+                exit 1
+            }
+            echo "  ✓ eslint passed"
+            cd ../../
+        else
+            echo "  → eslint: no web/ files staged, skipping"
+        fi
     else
         echo "  ⚠ node_modules not found — skipping frontend lint"
+        echo "    Install: cd xkeen-go/web && npm install"
     fi
 fi
 
