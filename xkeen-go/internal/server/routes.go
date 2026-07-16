@@ -54,6 +54,11 @@ func (s *Server) setupRoutes() {
 		handlers.RegisterAWGRoutes(apiRouter, s.awgHandler)
 	}
 
+	// Diagnostics routes
+	if s.diagnosticsHandler != nil {
+		handlers.RegisterDiagnosticsRoutes(apiRouter, s.diagnosticsHandler)
+	}
+
 	// Metrics routes (optional)
 	if s.metricsHandler != nil {
 		handlers.RegisterMetricsRoutes(apiRouter, s.metricsHandler)

@@ -6,6 +6,7 @@ import * as api from '../services/subscription.js';
 import { fmtTime } from '../utils/format.js';
 import { error as logError } from '../utils/logger.js';
 import { filterProxies } from '../services/filter.js';
+import { checkNetwork } from '../services/diagnostics.js';
 import { formatJson } from '../utils/json-format.js';
 import { countByCountry as _countByCountry, countryState as _countryState, uniqueCountries, textFilterProxies } from '../utils/subscriptions-grouping.js';
 
@@ -23,6 +24,28 @@ const edit = reactive({ name: '', url: '', interval: 0, enabled: true });
 const newUrl = ref('');
 const proxyQ = ref('');
 const showPreview = ref(false);
+
+/* ---- network diagnostics ---- */
+const netCheck = reactive({ loading: false, ip: '', source: '', latency: null, error: '', checked: false });
+
+async function runNetworkCheck() {
+    netCheck.loading = true;
+    netCheck.error = '';
+    netCheck.ip = '';
+    netCheck.checked = false;
+    try {
+        const r = await checkNetwork();
+        netCheck.ip = r.exit_ip || '';
+        netCheck.source = r.source || '';
+        netCheck.latency = r.latency_ms ?? null;
+        netCheck.error = r.error || '';
+    } catch (e) {
+        netCheck.error = e.message || String(e);
+    } finally {
+        netCheck.loading = false;
+        netCheck.checked = true;
+    }
+}
 
 /* ---- active profile ---- */
 const activeProfileId = ref(null);
@@ -368,6 +391,21 @@ onMounted(async () => {
     <div class="sub-sep"></div>
     <button @click="preview()" :disabled="busy || !proxies.length" class="btn btn-sm">{{ i18n.t('subs.preview') }}</button>
     <button @click="applySubs()" :disabled="busy || !proxies.length" class="btn btn-primary btn-sm">{{ i18n.t('subs.apply') }}</button>
+    <div class="sub-sep"></div>
+    <button @click="runNetworkCheck()" :disabled="netCheck.loading" class="btn btn-sm" :title="i18n.t('subs.net_check_title')">
+      {{ netCheck.loading ? '...' : i18n.t('subs.net_check') }}
+    </button>
+    <span v-if="netCheck.checked && !netCheck.loading" class="net-result" :class="{ 'net-ok': netCheck.ip, 'net-err': netCheck.error }">
+      <template v-if="netCheck.error">
+        <span class="net-ip">ERR</span>
+        <span class="net-detail" :title="netCheck.error">{{ netCheck.source }}</span>
+      </template>
+      <template v-else>
+        <span class="net-ip">{{ netCheck.ip }}</span>
+        <span class="net-detail" v-if="netCheck.latency !== null">{{ netCheck.latency }}ms</span>
+        <span class="net-source" :class="{ 'net-vpn': netCheck.source.includes('socks') || netCheck.source.includes('http'), 'net-direct': netCheck.source === 'direct' }">{{ netCheck.source === 'direct' ? i18n.t('subs.source_direct') : 'VPN' }}</span>
+      </template>
+    </span>
   </div>
 
   <!-- Body: two columns -->

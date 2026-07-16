@@ -320,7 +320,9 @@
     "apply_close": "Закрыть",
     "source_proxy": "VPN",
     "source_direct": "Напрямую",
-    "source_awg": "Локальный"
+    "source_awg": "Локальный",
+    "net_check": "Проверить IP",
+    "net_check_title": "Проверить, через какой IP идут запросы"
   },
   "toast": {
     "copied": "Вывод скопирован в буфер обмена",

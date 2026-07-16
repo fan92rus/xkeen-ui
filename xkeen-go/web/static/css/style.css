@@ -448,6 +448,16 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 .sub-row .badge { font-size: var(--text-small); color: var(--primary-color); background: var(--status-special-background); padding: 0 6px; border-radius: var(--radius); white-space: nowrap; }
 .sub-row .badge.src { color: #fff; background: var(--indicator-online); }
 .sub-row .badge.src-direct { color: var(--text-gray); background: var(--status-special-background); }
+
+/* Network diagnostics result */
+.net-result { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--status-special-background); }
+.net-result.net-ok { color: var(--text); }
+.net-result.net-err { color: var(--status-error, #e74c3c); }
+.net-result .net-ip { font-weight: 600; font-family: monospace; }
+.net-result .net-detail { color: var(--text-gray); font-size: 11px; }
+.net-result .net-source { padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+.net-result .net-source.net-vpn { background: var(--indicator-online); color: #fff; }
+.net-result .net-source.net-direct { background: var(--status-special-background); color: var(--text-gray); }
 .sub-row .meta { font-size: var(--text-small); color: var(--text-gray); white-space: nowrap; }
 .sub-row .err { font-size: var(--text-small); color: var(--error); cursor: help; }
 .sub-row .acts { display: flex; gap: 2px; flex-shrink: 0; }

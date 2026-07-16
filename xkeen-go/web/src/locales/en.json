@@ -320,7 +320,9 @@
     "apply_close": "Close",
     "source_proxy": "VPN",
     "source_direct": "Direct",
-    "source_awg": "Local"
+    "source_awg": "Local",
+    "net_check": "Check IP",
+    "net_check_title": "Check which IP requests go through"
   },
   "toast": {
     "copied": "Output copied to clipboard",

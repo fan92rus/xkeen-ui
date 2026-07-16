@@ -189,6 +189,23 @@ func (f *Fetcher) SetProxyURL(proxyURL string) error {
 	return nil
 }
 
+// HTTPClient returns the fetcher's internal HTTP client.
+// Used by diagnostics to make requests through the same transport/cascade.
+func (f *Fetcher) HTTPClient() *http.Client {
+	return f.client
+}
+
+// ProxyStatus returns a human-readable description of the current proxy
+// configuration: the proxy URL if set, or "direct" if fetches go direct.
+func (f *Fetcher) ProxyStatus() string {
+	f.proxyMu.RLock()
+	defer f.proxyMu.RUnlock()
+	if f.proxyURL != "" {
+		return f.proxyURL
+	}
+	return "direct"
+}
+
 // FetchResult holds the parsed subscription entries together with the
 // delivery method that produced them.
 type FetchResult struct {

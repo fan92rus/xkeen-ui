@@ -45,6 +45,7 @@ type Server struct {
 	commandRegistry     *handlers.CommandRegistry
 	installHandler      *handlers.InstallHandler
 	awgHandler          *handlers.AWGHandler
+	diagnosticsHandler  *handlers.DiagnosticsHandler
 
 	// Shutdown state
 	shutdown    bool
@@ -160,6 +161,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 
 	// AWG handler
 	s.awgHandler = handlers.NewAWGHandler(subStore, cfg.AWGConfigDir, cfg)
+
+	// Diagnostics handler (network exit-IP check via fetcher cascade)
+	s.diagnosticsHandler = handlers.NewDiagnosticsHandler(subFetcher)
 
 	// Helper: build tag→remarks from current proxy cache
 	buildProxyNames := func() map[string]string {
