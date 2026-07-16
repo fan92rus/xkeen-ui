@@ -40,7 +40,7 @@ func killOrphanedTails(logFiles []string) {
 			continue
 		}
 
-		cmdline, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
+		cmdline, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline")) //nolint:gocritic // /proc is a valid absolute path prefix
 		if err != nil {
 			continue
 		}
@@ -66,7 +66,7 @@ func killOrphanedTails(logFiles []string) {
 
 		if shouldKill {
 			log.Printf("[logs] Killing orphaned tail process: pid=%d", pid)
-			syscall.Kill(pid, syscall.SIGTERM)
+			_ = syscall.Kill(pid, syscall.SIGTERM)
 			killed++
 		}
 	}
