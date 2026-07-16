@@ -13,7 +13,7 @@ on:
       - master
 
 env:
-  GO_VERSION: '1.26'
+  GO_VERSION: '1.26.5'
   NODE_VERSION: '24'
 
 permissions:
