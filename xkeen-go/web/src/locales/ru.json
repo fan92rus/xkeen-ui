@@ -183,6 +183,11 @@
     "subs_section": "Подписки",
     "metrics_section": "Метрики",
     "net_section": "Диагностика сети",
+    "net_check_title": "Проверка IP выхода",
+    "net_check_desc": "Запрос выполняется через тот же канал, что и загрузка подписок. Показывает реальный IP выхода.",
+    "net_check_btn": "Проверить",
+    "net_checking": "Проверка…",
+    "net_exit_ip": "IP выхода",
     "lang_section": "Язык",
     "lang_label": "Язык интерфейса",
     "mode": "Режим",
@@ -321,13 +326,7 @@
     "apply_close": "Закрыть",
     "source_proxy": "VPN",
     "source_direct": "Напрямую",
-    "source_awg": "Локальный",
-    "net_check": "Проверить IP",
-    "net_check_title": "Проверить, через какой IP идут запросы",
-    "net_check_desc": "Запрос выполняется через тот же канал, что и загрузка подписок. Показывает реальный IP выхода.",
-    "net_check_btn": "Проверить",
-    "net_checking": "Проверка...",
-    "net_exit_ip": "IP выхода"
+    "source_awg": "Локальный"
   },
   "toast": {
     "copied": "Вывод скопирован в буфер обмена",
