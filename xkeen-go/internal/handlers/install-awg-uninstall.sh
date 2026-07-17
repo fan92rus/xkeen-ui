@@ -25,10 +25,10 @@ if command -v awg-quick >/dev/null 2>&1; then
   fi
 fi
 
-# ── Remove init script ──
-if [ -f /opt/etc/init.d/awg ]; then
+# ── Remove init script (both S90awg and legacy awg) ──
+if [ -f /opt/etc/init.d/S90awg ] || [ -f /opt/etc/init.d/awg ]; then
   echo "CLEANING:removing init script..."
-  rm -f /opt/etc/init.d/awg
+  rm -f /opt/etc/init.d/S90awg /opt/etc/init.d/awg
 fi
 
 # ── Remove via opkg ──

@@ -28,6 +28,14 @@ var installAWGUninstallScript string
 //go:embed install-awg-init.sh
 var installAWGInitScript string
 
+// AWG init script paths.  The script must have an S-prefix (S90awg) so that
+// Entware's rc.unslung picks it up at boot — without it, WARP and other AWG
+// client interfaces never auto-start after a reboot.
+const (
+	awgInitScriptPath    = "/opt/etc/init.d/S90awg"
+	awgInitScriptPathOld = "/opt/init.d/awg" // legacy path without S-prefix
+)
+
 // InstallHandler handles AWG installation.
 type InstallHandler struct {
 	mu         sync.Mutex
@@ -75,12 +83,19 @@ func (h *InstallHandler) Status(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
-	// Check init script
-	_, err := os.Stat("/opt/etc/init.d/awg")
+	// Check init script (new S90awg or legacy awg without prefix)
+	_, err := os.Stat(awgInitScriptPath)
+	if err != nil {
+		_, err = os.Stat(awgInitScriptPathOld)
+	}
 	resp.HasInitScript = err == nil
 
 	// Check interfaces
-	if data, err := exec.Command("/opt/etc/init.d/awg", "status").Output(); err == nil {
+	initScript := awgInitScriptPath
+	if _, statErr := os.Stat(initScript); statErr != nil {
+		initScript = awgInitScriptPathOld
+	}
+	if data, err := exec.Command(initScript, "status").Output(); err == nil {
 		resp.Interfaces = strings.TrimSpace(string(data))
 	}
 
@@ -96,7 +111,7 @@ type InitScriptResponse struct {
 // SetupInitScript creates or updates the AWG init script.
 // POST /api/install/awg/init
 func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, _ *http.Request) {
-	targetPath := "/opt/etc/init.d/awg"
+	targetPath := awgInitScriptPath
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0o750); err != nil {
@@ -116,10 +131,16 @@ func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, _ *http.Request)
 		return
 	}
 
+	// Remove legacy non-S-prefixed script so rc.unslung doesn't get
+	// confused and there's a single source of truth.
+	if err := os.Remove(awgInitScriptPathOld); err != nil && !os.IsNotExist(err) {
+		log.Printf("[install] Warning: failed to remove legacy %s: %v", awgInitScriptPathOld, err)
+	}
+
 	log.Printf("[install] AWG init script written to %s", targetPath)
 	respondJSON(w, http.StatusOK, InitScriptResponse{
 		Success: true,
-		Message: "init script updated",
+		Message: "init script updated (auto-starts at boot as S90awg)",
 	})
 }
 
@@ -270,9 +291,10 @@ waitExit:
 
 	if cmd.ProcessState.ExitCode() == 0 {
 		// Auto-create init script after successful install
-		targetPath := "/opt/etc/init.d/awg"
+		targetPath := awgInitScriptPath
 		_ = os.MkdirAll(filepath.Dir(targetPath), 0o750)
 		if werr := os.WriteFile(targetPath, []byte(installAWGInitScript), 0o755); werr == nil { //nolint:gosec // AWG init script needs execute
+			_ = os.Remove(awgInitScriptPathOld) // clean up legacy
 			log.Printf("[install] AWG init script auto-created at %s", targetPath)
 		} else {
 			log.Printf("[install] Warning: failed to create init script: %v", werr)
