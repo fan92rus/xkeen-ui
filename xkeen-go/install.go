@@ -167,23 +167,18 @@ func install() error {
 	// break boot on some Keenetic setups (non-zero exit aborts rc.unslung).
 	cleanupStaleInitScripts()
 
-	// Create cron watchdog for auto-restart on crash
-	cronDir := "/opt/etc/cron.d"
-	cronFile := filepath.Join(cronDir, "xkeen-ui-watchdog")
-	cronContent := fmt.Sprintf(
-		"* * * * * root %s check || %s start >> %s 2>&1\n",
-		installSymlink, installSymlink, installLogFile,
-	)
-	if err := os.MkdirAll(cronDir, 0o750); err != nil {
-		fmt.Printf("Warning: failed to create cron directory: %v\n", err)
-	} else if err := os.WriteFile(cronFile, []byte(cronContent), 0o600); err != nil {
-		fmt.Printf("Warning: failed to create cron watchdog: %v\n", err)
+	// Create cron watchdog for auto-restart on crash.
+	//
+	// Keenetic's busybox crond does NOT scan /opt/etc/cron.d/ — it only reads
+	// user crontabs ("crontab -l/-e").  Many installations were bitten by this:
+	// the watchdog file was written but never executed, so xkeen-ui stayed dead
+	// after a reboot or crash.  We now install the watchdog into the root user's
+	// crontab directly.
+	if err := installCronWatchdog(installAutoStart, installLogFile); err != nil {
+		fmt.Printf("Warning: failed to install cron watchdog: %v\n", err)
 	} else {
-		fmt.Println("Cron watchdog created (checks every minute, restart if down)")
+		fmt.Println("Cron watchdog installed (checks every minute, restart if down)")
 	}
-
-	// Restart cron to pick up new watchdog
-	_ = exec.Command("killall", "-HUP", "crond").Run()
 
 	fmt.Println()
 	fmt.Println("===================================")
@@ -335,4 +330,57 @@ func cleanupStaleInitScripts() {
 			}
 		}
 	}
+}
+
+// cronWatchdogMarker is the comment that identifies our watchdog line in the
+// root crontab, so we can find and replace it on upgrade without duplicating.
+const cronWatchdogMarker = "# xkeen-ui-watchdog (auto-managed)"
+
+// installCronWatchdog installs a per-minute watchdog into the root user's
+// crontab (the only place Keenetic busybox crond actually scans).  The
+// watchdog runs "xkeen-ui check || xkeen-ui start", so a crashed or
+// reboot-killed service is revived within 60 seconds.
+//
+// We also remove any stale /opt/etc/cron.d/xkeen-ui-watchdog left by older
+// builds — busybox crond never read it, but it is misleading to leave behind.
+func installCronWatchdog(initScript, logFile string) error {
+	// 1. Remove legacy cron.d file (busybox crond does not read it).
+	_ = os.Remove("/opt/etc/cron.d/xkeen-ui-watchdog")
+
+	// 2. Read current root crontab.
+	var current []byte
+	if out, err := exec.Command("crontab", "-l").Output(); err == nil {
+		current = out
+	}
+
+	markerLine := cronWatchdogMarker
+	watchdogLine := fmt.Sprintf(
+		"* * * * * %s check || %s start >> %s 2>&1",
+		initScript, initScript, logFile,
+	)
+
+	// 3. Rebuild crontab: keep all non-xkeen-ui lines, then append fresh entry.
+	var kept []string
+	for _, line := range strings.Split(string(current), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(line, "xkeen-ui") || trimmed == markerLine {
+			continue // drop old watchdog entries
+		}
+		if trimmed != "" {
+			kept = append(kept, line)
+		}
+	}
+	newCrontab := strings.Join(kept, "\n")
+	if newCrontab != "" {
+		newCrontab += "\n"
+	}
+	newCrontab += markerLine + "\n" + watchdogLine + "\n"
+
+	// 4. Install via "crontab -".
+	cmd := exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(newCrontab)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("crontab update failed: %w", err)
+	}
+	return nil
 }

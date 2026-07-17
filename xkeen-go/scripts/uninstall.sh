@@ -50,11 +50,12 @@ done
 # 3. Remove PID file
 rm -f "$PIDFILE"
 
-# 4. Remove cron watchdog
+# 4. Remove cron watchdog from both cron.d (legacy) and root crontab
 log "Removing cron watchdog..."
 rm -f "/opt/etc/cron.d/xkeen-ui-watchdog"
-# Restart cron to apply
-killall -HUP crond 2>/dev/null || true
+# Remove xkeen-ui lines from root crontab (Keenetic busybox crond reads
+# user crontabs, not cron.d).
+crontab -l 2>/dev/null | grep -v 'xkeen-ui' | grep -v '# xkeen-ui-watchdog' | crontab - 2>/dev/null || true
 
 # 5. Remove rc.d symlinks
 log "Removing rc.d symlinks..."
