@@ -178,6 +178,11 @@ func install() error {
 		fmt.Println("Cron watchdog installed (checks every minute, restart if down)")
 	}
 
+	// Run one-time migrations (like DB migrations: each runs exactly once).
+	fmt.Println()
+	fmt.Println("Running migrations...")
+	runMigrations()
+
 	fmt.Println()
 	fmt.Println("===================================")
 	fmt.Println("XKEEN-UI installed successfully!")
