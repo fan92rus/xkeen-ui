@@ -56,6 +56,11 @@ linters:
   exclusions:
     presets:
       - common-false-positives
+    paths:
+      - web/node_modules
+      - web/static/dist
+      - vendor
+      - third_party
     rules:
       - path: _test\.go
         linters:
