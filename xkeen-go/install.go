@@ -165,8 +165,6 @@ func install() error {
 
 	// Clean up stale init scripts from older xkeen-ui versions that can
 	// break boot on some Keenetic setups (non-zero exit aborts rc.unslung).
-	cleanupStaleInitScripts()
-
 	// Create cron watchdog for auto-restart on crash.
 	//
 	// Keenetic's busybox crond does NOT scan /opt/etc/cron.d/ — it only reads
@@ -296,42 +294,6 @@ func generateSecret() string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// cleanupStaleInitScripts removes legacy init scripts that can break the
-// Entware boot sequence. On some Keenetic setups, rc.unslung sources each
-// S* script and aborts the entire sequence when one returns non-zero.
-// We disable known-offending scripts that belong to superseded setups.
-func cleanupStaleInitScripts() {
-	// S89amnezia-wg-quick: old AmneziaWG client script that references
-	// /opt/etc/amnezia/amneziawg/awg0.conf — typically missing on systems
-	// that have migrated to xkeen-managed AWG (server.conf). Its failure
-	// (awg-quick: ... does not exist) aborts rc.unslung before S99 runs.
-	stale := []string{
-		"/opt/etc/init.d/S89amnezia-wg-quick",
-	}
-	for _, s := range stale {
-		if _, err := os.Stat(s); err != nil {
-			continue // script not present, nothing to do
-		}
-		disabled := s + ".disabled"
-		if _, err := os.Stat(disabled); err != nil {
-			// No existing .disabled — rename the script to .disabled
-			if err := os.Rename(s, disabled); err != nil {
-				fmt.Printf("Warning: failed to disable stale init script %s: %v\n", s, err)
-			} else {
-				fmt.Printf("Disabled stale init script: %s (was breaking boot)\n", s)
-			}
-		} else {
-			// .disabled already exists from a previous run — just remove
-			// the active script, keeping the original .disabled backup.
-			if err := os.Remove(s); err != nil {
-				fmt.Printf("Warning: failed to remove stale init script %s: %v\n", s, err)
-			} else {
-				fmt.Printf("Removed stale init script: %s (backup at %s)\n", s, disabled)
-			}
-		}
-	}
-}
-
 // cronWatchdogMarker is the comment that identifies our watchdog line in the
 // root crontab, so we can find and replace it on upgrade without duplicating.
 const cronWatchdogMarker = "# xkeen-ui-watchdog (auto-managed)"
@@ -359,12 +321,25 @@ func installCronWatchdog(initScript, logFile string) error {
 		initScript, initScript, logFile,
 	)
 
-	// 3. Rebuild crontab: keep all non-xkeen-ui lines, then append fresh entry.
+	// 3. Rebuild crontab: keep all lines except our previous watchdog entries.
+	//
+	// CRITICAL: the filter must be narrow.  Other crontab entries (log
+	// rotation, monitoring) legitimately reference "xkeen-ui" in file
+	// paths like /opt/var/log/xkeen-ui.log.  We only want to strip our
+	// own watchdog lines, which always contain the init.d path + "check".
 	var kept []string
 	for _, line := range strings.Split(string(current), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.Contains(line, "xkeen-ui") || trimmed == markerLine {
-			continue // drop old watchdog entries
+		if trimmed == markerLine {
+			continue // drop our marker comment
+		}
+		// Match watchdog commands: references init.d + xkeen-ui + check.
+		// This preserves log rotation and unrelated entries that merely
+		// mention xkeen-ui.log without referencing the init script.
+		if strings.Contains(line, "init.d") &&
+			strings.Contains(line, "xkeen-ui") &&
+			strings.Contains(line, "check") {
+			continue // drop old watchdog command
 		}
 		if trimmed != "" {
 			kept = append(kept, line)
