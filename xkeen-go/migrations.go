@@ -34,14 +34,9 @@ var allMigrations = []migration{
 		run:         migrateAWGInitS90,
 	},
 	{
-		name:        "002-awg-init-consolidate",
-		description: "Replace custom S89awg-server + minimal S90awg with universal full template (server + WARP clients + firewall)",
-		run:         migrateAWGInitConsolidate,
-	},
-	{
-		name:        "003-awg-init-fix-shebang",
-		description: "Fix broken shebang in S90awg (was #!/bin/sh /opt/etc/init.d/COMMAND, should be #!/bin/sh)",
-		run:         migrateAWGInitFixShebang,
+		name:        "002-awg-init-universal",
+		description: "Replace custom S89awg-server + minimal S90awg with ONE universal full template (server + WARP clients + firewall + correct shebang)",
+		run:         migrateAWGInitUniversal,
 	},
 }
 
