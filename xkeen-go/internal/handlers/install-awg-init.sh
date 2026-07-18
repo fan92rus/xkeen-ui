@@ -94,11 +94,25 @@ get_tunnel_subnet() {
 }
 
 # --- Firewall management ---
+# is_firewall_applied returns 0 (true) if the INPUT rule for this port
+# already exists, preventing duplicate rules on repeated start/check calls.
+is_firewall_applied() {
+  port="$1"
+  iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
+}
+
 apply_server_firewall() {
   iface="$1"
   port=$(get_listen_port "$iface")
   [ -z "$port" ] && port=443
   subnet=$(get_tunnel_subnet "$iface")
+
+  # Idempotent: skip if firewall rules already in place
+  if is_firewall_applied "$port"; then
+    echo "  Firewall already applied: port=$port subnet=$subnet"
+    return
+  fi
+
   echo "  Applying firewall: port=$port subnet=$subnet lan=$LAN_IFACE wan=$WAN_IFACE"
   iptables -I INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null
   iptables -I FORWARD -i "$iface" -o "$LAN_IFACE" -j ACCEPT 2>/dev/null
@@ -128,6 +142,15 @@ remove_server_firewall() {
 start() {
   for iface in $(get_confs); do
     role=$(get_role "$iface")
+    # Idempotent: skip interfaces that are already up
+    if ip link show "$iface" >/dev/null 2>&1; then
+      echo "AWG interface $iface ($role) already up, skipping"
+      # Ensure firewall is in place (safe — apply_server_firewall is idempotent)
+      if [ "$role" = "server" ]; then
+        apply_server_firewall "$iface"
+      fi
+      continue
+    fi
     echo "Starting AWG interface: $iface ($role)"
     "$AWG_QUICK" up "$CONFIG_DIR/$iface.conf" 2>&1
     if [ "$role" = "server" ]; then
@@ -163,15 +186,13 @@ status() {
   done
 }
 
-# check: restore firewall rules for active server interfaces (for cron watchdog)
+# check: restore firewall rules for active server interfaces (for cron watchdog).
+# Idempotent: apply_server_firewall skips if rules already present.
 check() {
   for iface in $(get_confs); do
     role=$(get_role "$iface")
-    if [ "$role" = "server" ]; then
-      if ip link show "$iface" >/dev/null 2>&1; then
-        echo "Restoring firewall for: $iface"
-        apply_server_firewall "$iface"
-      fi
+    if [ "$role" = "server" ] && ip link show "$iface" >/dev/null 2>&1; then
+      apply_server_firewall "$iface"
     fi
   done
 }

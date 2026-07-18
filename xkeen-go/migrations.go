@@ -38,6 +38,11 @@ var allMigrations = []migration{
 		description: "Replace custom S89awg-server + minimal S90awg with ONE universal full template (server + WARP clients + firewall + correct shebang)",
 		run:         migrateAWGInitUniversal,
 	},
+	{
+		name:        "003-awg-init-idempotent",
+		description: "Rewrite S90awg with idempotent start/check (skip if interface already up, no duplicate firewall rules)",
+		run:         migrateAWGInitUniversal,
+	},
 }
 
 // runMigrations executes all pending migrations, tracking state in a file
