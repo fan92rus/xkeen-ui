@@ -8,10 +8,6 @@ export async function getAWGStatus() {
     return api.get('/api/install/awg/status');
 }
 
-export async function setupAWGInit() {
-    return api.post('/api/install/awg/init', {});
-}
-
 /**
  * Uninstall AmneziaWG via SSE streaming.
  * Calls onProgress({ percent, status }) as the backend reports phases.

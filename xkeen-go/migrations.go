@@ -33,6 +33,11 @@ var allMigrations = []migration{
 		description: "Rename AWG init script to S90awg so all AWG interfaces auto-start at boot",
 		run:         migrateAWGInitS90,
 	},
+	{
+		name:        "002-awg-init-consolidate",
+		description: "Replace custom S89awg-server + minimal S90awg with universal full template (server + WARP clients + firewall)",
+		run:         migrateAWGInitConsolidate,
+	},
 }
 
 // runMigrations executes all pending migrations, tracking state in a file

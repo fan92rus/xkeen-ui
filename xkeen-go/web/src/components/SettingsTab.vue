@@ -101,13 +101,12 @@ const sections = [
   { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
 ];
 
-const awg = ref({ installed: false, hasInitScript: false, interfaces: '', installing: false, uninstalling: false, initSaving: false, error: '', progress: '' });
+const awg = ref({ installed: false, interfaces: '', installing: false, uninstalling: false, error: '', progress: '' });
 
 async function checkAWG() {
   try {
     const s = await installApi.getAWGStatus();
     awg.value.installed = s.installed;
-    awg.value.hasInitScript = s.has_init_script;
     awg.value.interfaces = s.interfaces || '';
   } catch (e) { /* not available */ }
 }
@@ -170,23 +169,6 @@ async function uninstallAWG() {
     awg.value.uninstalling = false;
     awg.value.error = e.message || i18n.t('settings.awg_uninstall_error');
     awg.value.progress = '';
-  }
-}
-
-async function setupAWGInit() {
-  awg.value.initSaving = true;
-  try {
-    const r = await installApi.setupAWGInit();
-    if (r.success) {
-      app.showToast(i18n.t('settings.awg_init_created_ok'), 'success');
-      checkAWG();
-    } else {
-      app.showToast(r.message || i18n.t('settings.awg_init_error'), 'error');
-    }
-  } catch (e) {
-    app.showToast(e.message || i18n.t('settings.error_generic'), 'error');
-  } finally {
-    awg.value.initSaving = false;
   }
 }
 
@@ -475,29 +457,6 @@ onMounted(() => {
                 {{ i18n.t('settings.awg_uninstall_btn') }}
               </button>
               <button v-if="awg.uninstalling" disabled class="btn btn-danger">{{ i18n.t('settings.awg_uninstalling') }}</button>
-            </div>
-          </div>
-
-          <!-- Init script -->
-          <div v-if="awg.installed" class="s-block">
-            <div class="s-row">
-              <div class="s-row-main">
-                <div class="s-row-label">{{ i18n.t('settings.awg_init_title') }}</div>
-                <div class="s-row-desc">{{ i18n.t('settings.awg_init_desc') }}</div>
-              </div>
-              <div v-if="awg.hasInitScript" class="badge badge-success">{{ i18n.t('settings.awg_init_created') }}</div>
-              <div v-else class="badge badge-muted">{{ i18n.t('settings.awg_init_not_created') }}</div>
-            </div>
-            <div v-if="awg.interfaces" class="s-callout s-callout-info">
-              <pre style="margin:0;font-size:12px">{{ awg.interfaces }}</pre>
-            </div>
-            <div class="s-row s-row-actions">
-              <button v-if="!awg.hasInitScript" :disabled="awg.initSaving" class="btn btn-primary" @click="setupAWGInit()">
-                {{ awg.initSaving ? i18n.t('settings.awg_init_creating') : i18n.t('settings.awg_create_init') }}
-              </button>
-              <button v-if="awg.hasInitScript" :disabled="awg.initSaving" class="btn" @click="setupAWGInit()">
-                {{ awg.initSaving ? i18n.t('settings.awg_init_updating') : i18n.t('settings.awg_update_init') }}
-              </button>
             </div>
           </div>
         </section>

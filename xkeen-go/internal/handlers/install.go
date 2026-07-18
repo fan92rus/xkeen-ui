@@ -26,7 +26,11 @@ var installAWGScript string
 var installAWGUninstallScript string
 
 //go:embed install-awg-init.sh
-var installAWGInitScript string
+// InstallAWGInitScript is the universal AWG init script template embedded
+// at build time. Exported so the main package's migration system can write
+// the same full-featured script (role detection, firewall rules, check
+// command) without duplicating the content.
+var InstallAWGInitScript string
 
 // AWG init script paths.  The script must have an S-prefix (S90awg) so that
 // Entware's rc.unslung picks it up at boot — without it, WARP and other AWG
@@ -102,48 +106,6 @@ func (h *InstallHandler) Status(w http.ResponseWriter, _ *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
-// InitScriptResponse is the response for init script operations.
-type InitScriptResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-}
-
-// SetupInitScript creates or updates the AWG init script.
-// POST /api/install/awg/init
-func (h *InstallHandler) SetupInitScript(w http.ResponseWriter, _ *http.Request) {
-	targetPath := awgInitScriptPath
-
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o750); err != nil {
-		respondJSON(w, http.StatusInternalServerError, InitScriptResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to create init.d dir: %v", err),
-		})
-		return
-	}
-
-	//nolint:gosec // AWG init script needs execute
-	if err := os.WriteFile(targetPath, []byte(installAWGInitScript), 0o755); err != nil {
-		respondJSON(w, http.StatusInternalServerError, InitScriptResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to write init script: %v", err),
-		})
-		return
-	}
-
-	// Remove legacy non-S-prefixed script so rc.unslung doesn't get
-	// confused and there's a single source of truth.
-	if err := os.Remove(awgInitScriptPathOld); err != nil && !os.IsNotExist(err) {
-		log.Printf("[install] Warning: failed to remove legacy %s: %v", awgInitScriptPathOld, err)
-	}
-
-	log.Printf("[install] AWG init script written to %s", targetPath)
-	respondJSON(w, http.StatusOK, InitScriptResponse{
-		Success: true,
-		Message: "init script updated (auto-starts at boot as S90awg)",
-	})
-}
-
 // AWGInstallProgress is sent as SSE events during installation.
 type AWGInstallProgress struct {
 	Percent int    `json:"percent"`
@@ -157,7 +119,6 @@ func RegisterInstallRoutes(apiRouter *mux.Router, h *InstallHandler) {
 	sub.HandleFunc("/awg/status", h.Status).Methods("GET")
 	sub.HandleFunc("/awg/install", h.Install).Methods("POST")
 	sub.HandleFunc("/awg/uninstall", h.Uninstall).Methods("POST")
-	sub.HandleFunc("/awg/init", h.SetupInitScript).Methods("POST")
 }
 
 // Install downloads and installs amneziawg-go and amneziawg-tools.
@@ -293,7 +254,7 @@ waitExit:
 		// Auto-create init script after successful install
 		targetPath := awgInitScriptPath
 		_ = os.MkdirAll(filepath.Dir(targetPath), 0o750)
-		if werr := os.WriteFile(targetPath, []byte(installAWGInitScript), 0o755); werr == nil { //nolint:gosec // AWG init script needs execute
+		if werr := os.WriteFile(targetPath, []byte(InstallAWGInitScript), 0o755); werr == nil { //nolint:gosec // AWG init script needs execute
 			_ = os.Remove(awgInitScriptPathOld) // clean up legacy
 			log.Printf("[install] AWG init script auto-created at %s", targetPath)
 		} else {

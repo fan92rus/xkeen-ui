@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/fan92rus/xkeen-ui/internal/handlers"
 )
 
 // migrateAWGInitS90 renames the legacy AWG init script (/opt/etc/init.d/awg,
@@ -92,3 +94,57 @@ case "$1" in
   *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
 esac
 `
+
+// migrateAWGInitConsolidate replaces the zoo of AWG init scripts with ONE
+// universal S90awg written from the full embedded template.
+//
+// Before this migration users could have:
+//   - S89awg-server (custom): starts ONLY server.conf, ignores WARP clients
+//   - S90awg (minimal, from migration 001 or old xkeen-ui): no firewall rules
+//
+// After this migration there is exactly ONE script: S90awg, written from
+// handlers.InstallAWGInitScript which includes:
+//   - Role detection (server vs client via ListenPort/Endpoint)
+//   - Firewall rules for server configs (auto-detected port/subnet/interfaces)
+//   - 'check' command for cron watchdogs
+//
+// The old S89awg-server is deleted (not backed up) because the universal
+// template is a strict superset of its functionality.
+//
+// Safe to run multiple times: idempotent.
+func migrateAWGInitConsolidate() error {
+	const (
+		s89Path = "/opt/etc/init.d/S89awg-server" // custom: only server.conf
+		newPath = "/opt/etc/init.d/S90awg"        // universal: all .conf
+		confDir = "/opt/etc/awg"
+	)
+
+	// Step 1: Delete custom S89awg-server. The universal S90awg template is
+	// a strict superset: it starts server.conf AND all WARP clients, with
+	// auto-detected firewall rules instead of hardcoded values.
+	if _, err := os.Stat(s89Path); err == nil {
+		if err := os.Remove(s89Path); err != nil {
+			return fmt.Errorf("remove %s: %w", s89Path, err)
+		}
+		fmt.Printf("  Removed custom %s (replaced by universal S90awg)\n", s89Path)
+	}
+
+	// Step 2: Only write S90awg if there are AWG configs to manage.
+	matches, _ := filepath.Glob(filepath.Join(confDir, "*.conf"))
+	if len(matches) == 0 {
+		fmt.Printf("  No AWG setup detected, skipping\n")
+		return nil
+	}
+
+	// Step 3: Always overwrite S90awg with the full universal template.
+	// This upgrades users who had a minimal script (from migration 001 case 3
+	// or old xkeen-ui versions) to the full-featured one with firewall rules.
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o750); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(newPath), err)
+	}
+	if err := os.WriteFile(newPath, []byte(handlers.InstallAWGInitScript), 0o755); err != nil { //nolint:gosec // init script needs execute
+		return fmt.Errorf("write %s: %w", newPath, err)
+	}
+	fmt.Printf("  Wrote universal %s (%d config(s): server + clients)\n", newPath, len(matches))
+	return nil
+}
