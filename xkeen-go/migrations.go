@@ -38,6 +38,11 @@ var allMigrations = []migration{
 		description: "Replace custom S89awg-server + minimal S90awg with universal full template (server + WARP clients + firewall)",
 		run:         migrateAWGInitConsolidate,
 	},
+	{
+		name:        "003-awg-init-fix-shebang",
+		description: "Fix broken shebang in S90awg (was #!/bin/sh /opt/etc/init.d/COMMAND, should be #!/bin/sh)",
+		run:         migrateAWGInitFixShebang,
+	},
 }
 
 // runMigrations executes all pending migrations, tracking state in a file

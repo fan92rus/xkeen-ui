@@ -148,3 +148,33 @@ func migrateAWGInitConsolidate() error {
 	fmt.Printf("  Wrote universal %s (%d config(s): server + clients)\n", newPath, len(matches))
 	return nil
 }
+
+// migrateAWGInitFixShebang fixes the broken shebang that migration 002 wrote
+// to S90awg. The template had '#!/bin/sh /opt/etc/init.d/COMMAND' which makes
+// the kernel try to execute /opt/etc/init.d/COMMAND (a file that does not
+// exist on most Entware installs), so direct invocation './S90awg start'
+// failed with 'can't open COMMAND'. The correct shebang is '#!/bin/sh'.
+//
+// We re-write the whole file from the (now-fixed) template so future
+// invocations work correctly. Safe to run multiple times.
+func migrateAWGInitFixShebang() error {
+	const (
+		newPath = "/opt/etc/init.d/S90awg"
+		confDir = "/opt/etc/awg"
+	)
+
+	matches, _ := filepath.Glob(filepath.Join(confDir, "*.conf"))
+	if len(matches) == 0 {
+		fmt.Printf("  No AWG setup detected, skipping\n")
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o750); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(newPath), err)
+	}
+	if err := os.WriteFile(newPath, []byte(handlers.InstallAWGInitScript), 0o755); err != nil { //nolint:gosec // init script needs execute
+		return fmt.Errorf("write %s: %w", newPath, err)
+	}
+	fmt.Printf("  Rewrote %s with fixed shebang\n", newPath)
+	return nil
+}
