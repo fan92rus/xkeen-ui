@@ -69,10 +69,10 @@ async function saveAutoApply() {
 import { fmtTime as fmtNextRun } from '../utils/format.js';
 
 /* ---- network diagnostics ---- */
-const netCheck = ref({ loading: false, ip: '', source: '', latency: null, error: '', checked: false });
+const netCheck = ref({ loading: false, ip: '', source: '', latency: null, domain: '', error: '', checked: false });
 
 async function runNetworkCheck() {
-  netCheck.value = { loading: true, ip: '', source: '', latency: null, error: '', checked: false };
+  netCheck.value = { loading: true, ip: '', source: '', latency: null, domain: '', error: '', checked: false };
   try {
     const r = await checkNetwork();
     netCheck.value = {
@@ -80,11 +80,12 @@ async function runNetworkCheck() {
       ip: r.exit_ip || '',
       source: r.source || '',
       latency: r.latency_ms ?? null,
+      domain: r.check_domain || '',
       error: r.error || '',
       checked: true,
     };
   } catch (e) {
-    netCheck.value = { loading: false, ip: '', source: '', latency: null, error: e.message || String(e), checked: true };
+    netCheck.value = { loading: false, ip: '', source: '', latency: null, domain: '', error: e.message || String(e), checked: true };
   }
 }
 
@@ -409,9 +410,7 @@ onMounted(() => {
                     <span v-if="netCheck.latency !== null" style="color: var(--text-gray); margin-left: 8px">{{ netCheck.latency }}ms</span>
                   </div>
                   <div class="s-row-desc">
-                    <span v-if="netCheck.source === 'direct'" class="badge badge-muted">{{ i18n.t('subs.source_direct') }}</span>
-                    <span v-else class="badge badge-success">VPN</span>
-                    <span style="margin-left: 8px">{{ netCheck.source }}</span>
+                    {{ i18n.t('settings.net_check_domain') }}: <code>{{ netCheck.domain }}</code>
                   </div>
                 </template>
               </div>

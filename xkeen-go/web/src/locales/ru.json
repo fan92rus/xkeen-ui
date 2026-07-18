@@ -188,6 +188,7 @@
     "net_check_btn": "Проверить",
     "net_checking": "Проверка…",
     "net_exit_ip": "IP выхода",
+    "net_check_domain": "Домен проверки",
     "lang_section": "Язык",
     "lang_label": "Язык интерфейса",
     "mode": "Режим",

@@ -16,6 +16,11 @@ type DiagnosticsHandler struct {
 	fetcher *subscription.Fetcher
 }
 
+// ipCheckDomain is the domain used for exit-IP verification. Exposed in the
+// API response so the user can add it to Xray routing rules to control
+// whether the check goes through VPN or direct.
+const ipCheckDomain = "api.ipify.org"
+
 // NewDiagnosticsHandler creates a new DiagnosticsHandler.
 func NewDiagnosticsHandler(fetcher *subscription.Fetcher) *DiagnosticsHandler {
 	return &DiagnosticsHandler{fetcher: fetcher}
@@ -28,10 +33,11 @@ func RegisterDiagnosticsRoutes(r *mux.Router, h *DiagnosticsHandler) {
 
 // exitIPResponse is the JSON response for the network check endpoint.
 type exitIPResponse struct {
-	ExitIP  string `json:"exit_ip"`
-	Source  string `json:"source"`
-	Latency int64  `json:"latency_ms"`
-	Error   string `json:"error,omitempty"`
+	ExitIP       string `json:"exit_ip"`
+	Source       string `json:"source"`
+	Latency      int64  `json:"latency_ms"`
+	CheckDomain  string `json:"check_domain"`
+	Error        string `json:"error,omitempty"`
 }
 
 // CheckNetwork performs an HTTP request to api.ipify.org through the same
@@ -58,7 +64,7 @@ func (h *DiagnosticsHandler) checkExitIP(ctx context.Context) exitIPResponse {
 
 	start := time.Now()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.ipify.org", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+ipCheckDomain, http.NoBody)
 	if err != nil {
 		return exitIPResponse{Error: "failed to create request: " + err.Error()}
 	}
@@ -86,8 +92,9 @@ func (h *DiagnosticsHandler) checkExitIP(ctx context.Context) exitIPResponse {
 	source := h.fetcher.ProxyStatus()
 
 	return exitIPResponse{
-		ExitIP:  ip,
-		Source:  source,
-		Latency: latency,
+		ExitIP:      ip,
+		Source:      source,
+		Latency:     latency,
+		CheckDomain: ipCheckDomain,
 	}
 }
