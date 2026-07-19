@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 
+	"github.com/fan92rus/xkeen-ui/internal/config"
 	"github.com/fan92rus/xkeen-ui/internal/handlers"
 )
 
@@ -147,5 +150,32 @@ func migrateAWGInitUniversal() error {
 		return fmt.Errorf("write %s: %w", newPath, err)
 	}
 	fmt.Printf("  Wrote universal %s (%d config(s): server + clients)\n", newPath, len(matches))
+	return nil
+}
+
+// reconcileProxyEntware ensures xkeen -pr is "on" when proxy_entware is enabled
+// in the config. Runs on every server startup as a startup migration.
+//
+// This reconciles state: if the user toggled proxy_entware on (config saved)
+// but xkeen -pr was reset (e.g. by a xkeen reconfigure or reinstall), this
+// re-enables the iptables OUTPUT rules that route router-originated traffic
+// into Xray.
+//
+// Silent when disabled or when xkeen -pr is already on (xkeen handles the
+// idempotent case itself).
+func reconcileProxyEntware() error {
+	cfg, err := config.LoadConfig(installConfig)
+	if err != nil {
+		// Config not readable — nothing to reconcile.
+		return nil
+	}
+	if !cfg.ProxyEntware {
+		return nil
+	}
+	cmd := exec.Command(cfg.XkeenBinary, "-pr", "on") //nolint:gosec // cfg.XkeenBinary is admin-controlled
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("xkeen -pr on: %w: %s", err, string(out))
+	}
+	log.Printf("[startup] proxy_entware: xkeen -pr on reconciled")
 	return nil
 }

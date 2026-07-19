@@ -59,10 +59,11 @@ var allMigrations = []migration{
 //   - must be FAST when nothing needs to change (stat a file, return)
 //   - only print/log when an action is actually taken
 var startupMigrations = []migration{
-	// To add a startup task:
-	//   1. Implement an idempotent func() error
-	//   2. Add a migration entry here with a unique name
-	//   3. The task runs on every server launch via runStartupMigrations()
+	{
+		name:        "proxy-entware-reconcile",
+		description: "Ensure xkeen -pr is on when proxy_entware is enabled in config",
+		run:         reconcileProxyEntware,
+	},
 }
 
 // runMigrations executes all pending migrations, tracking state in a file

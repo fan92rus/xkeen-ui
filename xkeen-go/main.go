@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -215,19 +214,9 @@ func runServer() {
 	log.Printf("Allowed roots: %v", cfg.AllowedRoots)
 
 	// Run startup migrations: idempotent self-healing tasks that run on
-	// every boot (e.g. recreate deleted config files). Not tracked.
+	// every boot (e.g. recreate deleted config files, reconcile state).
+	// Not tracked.
 	runStartupMigrations()
-
-	// Reconcile proxy_entware state: if enabled in config, ensure xkeen -pr is on.
-	// xkeen -pr on/off is idempotent (xkeen prints "already enabled" and returns 0).
-	if cfg.ProxyEntware {
-		cmd := exec.Command(cfg.XkeenBinary, "-pr", "on")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("Warning: xkeen -pr on failed at startup: %v: %s", err, string(out))
-		} else {
-			log.Printf("proxy_entware: xkeen -pr on reconciled")
-		}
-	}
 
 	// Create server with embedded web files
 	srv, err := server.NewServer(cfg, configPath, GetWebFS())
