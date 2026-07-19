@@ -1313,3 +1313,67 @@ func TestGenerateOutboundsJSON_DirectBlockTags(t *testing.T) {
 		t.Errorf("expected blackhole outbound with tag %q, not found in %d outbounds", BlockTag, len(outbounds))
 	}
 }
+
+// TestGenerateRoutingJSON_FallbackMultipleProfiles verifies that multiple
+// profiles with different fallback settings each produce their own balancer
+// with the correct fallbackTag.
+func TestGenerateRoutingJSON_FallbackMultipleProfiles(t *testing.T) {
+	proxies := makeProxies()
+	profiles := []Profile{
+		{
+			ID: "default", Name: "Default", Enabled: true, IsDefault: true,
+			Filter:   Filter{IncludeCountries: []string{}, ExcludeCountries: []string{}, IncludeRegexes: []string{}, ExcludeRegexes: []string{}},
+			Strategy: RoutingStrategy{Type: "random", Fallback: "direct"},
+		},
+		{
+			ID: "blocker", Name: "Blocker", Enabled: true,
+			Filter:   Filter{IncludeCountries: []string{}, ExcludeCountries: []string{}, IncludeRegexes: []string{}, ExcludeRegexes: []string{}},
+			Strategy: RoutingStrategy{Type: "roundrobin", Fallback: "block"},
+		},
+		{
+			ID: "noFallback", Name: "NoFallback", Enabled: true,
+			Filter:   Filter{IncludeCountries: []string{}, ExcludeCountries: []string{}, IncludeRegexes: []string{}, ExcludeRegexes: []string{}},
+			Strategy: RoutingStrategy{Type: "leastping", Fallback: ""},
+		},
+	}
+
+	data, err := GenerateRoutingJSON(proxies, profiles, nil)
+	if err != nil {
+		t.Fatalf("GenerateRoutingJSON: %v", err)
+	}
+	var result map[string]json.RawMessage
+	_ = json.Unmarshal(data, &result)
+	var routing struct {
+		Balancers []map[string]json.RawMessage `json:"balancers"`
+	}
+	_ = json.Unmarshal(result["routing"], &routing)
+	if len(routing.Balancers) != 3 {
+		t.Fatalf("expected 3 balancers, got %d", len(routing.Balancers))
+	}
+	expected := map[string]string{
+		"default-balancer": DirectTag,
+		"blocker-balancer": BlockTag,
+	}
+	found := map[string]string{}
+	for _, b := range routing.Balancers {
+		var tag string
+		_ = json.Unmarshal(b["tag"], &tag)
+		rawFallback, ok := b["fallbackTag"]
+		if ok {
+			var fb string
+			_ = json.Unmarshal(rawFallback, &fb)
+			found[tag] = fb
+		} else {
+			found[tag] = ""
+		}
+	}
+	for tag, want := range expected {
+		if found[tag] != want {
+			t.Errorf("balancer %q: fallbackTag = %q, want %q", tag, found[tag], want)
+		}
+	}
+	// noFallback profile must have no fallbackTag
+	if found["noFallback-balancer"] != "" {
+		t.Errorf("noFallback-balancer should have no fallbackTag, got %q", found["noFallback-balancer"])
+	}
+}

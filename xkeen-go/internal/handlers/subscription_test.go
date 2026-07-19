@@ -1891,3 +1891,21 @@ func TestRegenerateOutbounds(t *testing.T) {
 		t.Errorf("mark=255 should produce sockopt section, got: %s", data)
 	}
 }
+
+// TestRegenerateOutbounds_EmptyStore verifies that calling RegenerateOutbounds
+// when no proxies exist is a no-op (returns nil), not an error.
+// proxy_entware toggle may be invoked before any subscription is fetched.
+func TestRegenerateOutbounds_EmptyStore(t *testing.T) {
+	h, xrayDir := newTestHandler(t)
+
+	// No proxies added to the store
+	h.SetMark(255)
+	err := h.RegenerateOutbounds()
+	if err != nil {
+		t.Errorf("RegenerateOutbounds on empty store should return nil, got: %v", err)
+	}
+	// Verify no file was written
+	if _, err := os.Stat(filepath.Join(xrayDir, "04_outbounds.json")); err == nil {
+		t.Error("outbounds file should not be created when there are no proxies")
+	}
+}

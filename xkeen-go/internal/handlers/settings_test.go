@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -782,6 +783,8 @@ func TestRegisterSettingsRoutes_RouteMethods(t *testing.T) {
 		{"GET settings", "GET", "/xray/settings", 200},
 		{"POST log-level no body", "POST", "/xray/settings/log-level", 400},
 		{"GET backups", "GET", "/xray/settings/backups", 200},
+		{"GET proxy-entware", "GET", "/settings/proxy-entware", 200},
+		{"POST proxy-entware no body", "POST", "/settings/proxy-entware", 400},
 	}
 
 	for _, tt := range tests {
@@ -924,5 +927,106 @@ func TestUpdateLogLevel_WrittenFileIsValidJSON(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(xrayDir, "01_log.json"))
 	if !json.Valid(data) {
 		t.Errorf("written file is not valid JSON: %s", string(data))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// proxy_entware handler tests
+// ---------------------------------------------------------------------------
+
+// TestGetProxyEntware_DefaultFalse verifies the default state is disabled.
+func TestGetProxyEntware_DefaultFalse(t *testing.T) {
+	handler, _, _ := setupSettingsTest(t)
+	router := newSettingsRouter(handler)
+
+	resp := settingsRequest(t, router, "GET", "/settings/proxy-entware", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result["enabled"] != false {
+		t.Errorf("expected enabled=false by default, got %v", result["enabled"])
+	}
+}
+
+// TestUpdateProxyEntware_OnOff covers the happy-path toggle round-trip.
+func TestUpdateProxyEntware_OnOff(t *testing.T) {
+	handler, _, _ := setupSettingsTest(t)
+	router := newSettingsRouter(handler)
+
+	// Enable
+	resp := settingsRequest(t, router, "POST", "/settings/proxy-entware", map[string]interface{}{"enabled": true})
+	if resp.StatusCode != 200 {
+		t.Fatalf("enable: expected 200, got %d", resp.StatusCode)
+	}
+	var result map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	if result["enabled"] != true {
+		t.Errorf("enable: expected enabled=true, got %v", result["enabled"])
+	}
+
+	// Verify via GET
+	resp = settingsRequest(t, router, "GET", "/settings/proxy-entware", nil)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	if result["enabled"] != true {
+		t.Errorf("GET after enable: expected true, got %v", result["enabled"])
+	}
+	if !handler.cfg.ProxyEntware {
+		t.Errorf("expected cfg.ProxyEntware=true")
+	}
+
+	// Disable
+	resp = settingsRequest(t, router, "POST", "/settings/proxy-entware", map[string]interface{}{"enabled": false})
+	if resp.StatusCode != 200 {
+		t.Fatalf("disable: expected 200, got %d", resp.StatusCode)
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	if result["enabled"] != false {
+		t.Errorf("disable: expected enabled=false, got %v", result["enabled"])
+	}
+	if handler.cfg.ProxyEntware {
+		t.Errorf("expected cfg.ProxyEntware=false")
+	}
+}
+
+// TestUpdateProxyEntware_InvalidBody verifies malformed JSON → 400.
+func TestUpdateProxyEntware_InvalidBody(t *testing.T) {
+	handler, _, _ := setupSettingsTest(t)
+	router := newSettingsRouter(handler)
+
+	req := httptest.NewRequest("POST", "/settings/proxy-entware", strings.NewReader("{not json"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Errorf("expected 400 for invalid JSON, got %d", rec.Code)
+	}
+}
+
+// TestUpdateProxyEntware_CallbackError verifies that when the change callback
+// fails, the handler returns 500 with the error field (but keeps the setting
+// saved — this is documented behavior).
+func TestUpdateProxyEntware_CallbackError(t *testing.T) {
+	handler, _, _ := setupSettingsTest(t)
+	handler.SetProxyEntwareChange(func(_ bool) error {
+		return fmt.Errorf("xkeen not found")
+	})
+	router := newSettingsRouter(handler)
+
+	resp := settingsRequest(t, router, "POST", "/settings/proxy-entware", map[string]interface{}{"enabled": true})
+	if resp.StatusCode != 500 {
+		t.Fatalf("expected 500 on callback error, got %d", resp.StatusCode)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result["enabled"] != true {
+		t.Errorf("expected enabled=true in response (saved despite callback error), got %v", result["enabled"])
+	}
+	if result["error"] == nil || result["error"] == "" {
+		t.Errorf("expected non-empty error field in response")
 	}
 }

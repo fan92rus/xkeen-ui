@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -589,5 +590,39 @@ func TestIsPathAllowed_ExactlyRoot(t *testing.T) {
 	// The root itself is technically "within" itself via filepath.Rel returning "."
 	if !cfg.IsPathAllowed("/opt/etc/xray") {
 		t.Error("root path itself should be allowed")
+	}
+}
+
+// TestConfig_ProxyEntwareRoundtrip verifies that the ProxyEntware field
+// survives JSON marshaling/unmarshaling without loss.
+func TestConfig_ProxyEntwareRoundtrip(t *testing.T) {
+	original := DefaultConfig()
+	original.ProxyEntware = true
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Verify the field is present in JSON
+	if !bytes.Contains(data, []byte(`"proxy_entware":true`)) {
+		t.Errorf("expected proxy_entware:true in JSON, got: %s", data)
+	}
+
+	var loaded Config
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if loaded.ProxyEntware != true {
+		t.Errorf("ProxyEntware did not roundtrip: got %v, want true", loaded.ProxyEntware)
+	}
+
+	// Verify absent field defaults to false (backward compat for old configs)
+	legacy := []byte(`{"port":8089,"allowed_roots":["/tmp"],"auth":{"password_hash":"$2a$12$abc"}}`)
+	var legacyCfg Config
+	if err := json.Unmarshal(legacy, &legacyCfg); err != nil {
+		t.Fatalf("unmarshal legacy: %v", err)
+	}
+	if legacyCfg.ProxyEntware != false {
+		t.Errorf("legacy config without proxy_entware should default to false, got %v", legacyCfg.ProxyEntware)
 	}
 }
