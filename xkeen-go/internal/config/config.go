@@ -42,6 +42,13 @@ type Config struct {
 	// Can be an IP address or domain name (e.g. "funnyhome.netcraze.pro").
 	AWGEndpoint string `json:"awg_endpoint"`
 
+	// ProxyEntware routes router-originated (Entware) traffic through Xray.
+	// When enabled, outbounds get sockopt.mark:255 (so Xray-originated packets
+	// bypass the OUTPUT chain redirect via iptables `-m mark --mark 255 -j RETURN`)
+	// and `xkeen -pr on` is executed to add iptables OUTPUT rules that redirect
+	// router process traffic into Xray.
+	ProxyEntware bool `json:"proxy_entware"`
+
 	// MetricsPort is the port for Xray metrics endpoint (0 = disabled).
 	MetricsPort int `json:"metrics_port"`
 

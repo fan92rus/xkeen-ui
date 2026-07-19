@@ -6,6 +6,7 @@ import * as sub from '../services/subscription.js';
 import * as metrics from '../services/metrics.js';
 import * as installApi from '../services/install.js';
 import { checkNetwork } from '../services/diagnostics.js';
+import { getProxyEntware, setProxyEntware } from '../services/routing.js';
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -89,6 +90,38 @@ async function runNetworkCheck() {
   }
 }
 
+const proxyEntware = ref({ loading: true, enabled: false, saving: false, error: '' });
+
+async function loadProxyEntware() {
+  proxyEntware.value.loading = true;
+  try {
+    const data = await getProxyEntware();
+    proxyEntware.value.enabled = !!data.enabled;
+    proxyEntware.value.error = '';
+  } catch (e) {
+    proxyEntware.value.error = e.message || String(e);
+  } finally {
+    proxyEntware.value.loading = false;
+  }
+}
+
+async function toggleProxyEntware() {
+  const next = !proxyEntware.value.enabled;
+  proxyEntware.value.saving = true;
+  proxyEntware.value.error = '';
+  try {
+    const data = await setProxyEntware(next);
+    proxyEntware.value.enabled = !!data.enabled;
+    if (data.error) {
+      proxyEntware.value.error = data.error;
+    }
+  } catch (e) {
+    proxyEntware.value.error = e.message || String(e);
+  } finally {
+    proxyEntware.value.saving = false;
+  }
+}
+
 const sections = [
   { id: 'mode', icon: '⚡', label: i18n.t('settings.mode_section') },
   { id: 'logging', icon: '📋', label: i18n.t('settings.logs_section') },
@@ -96,6 +129,7 @@ const sections = [
   { id: 'security', icon: '🔒', label: i18n.t('settings.security_section') },
   { id: 'autoapply', icon: '📅', label: i18n.t('settings.subs_section') },
   { id: 'network', icon: '🔍', label: i18n.t('settings.net_section') },
+  { id: 'routing', icon: '🔀', label: i18n.t('settings.routing_section') },
   { id: 'metrics', icon: '📊', label: i18n.t('settings.metrics_section') },
   { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
   { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
@@ -177,6 +211,7 @@ onMounted(() => {
 	loadMetricsPort();
 	app.loadXraySettings();
   checkAWG();
+  loadProxyEntware();
 });
 </script>
 
@@ -395,6 +430,36 @@ onMounted(() => {
                     {{ i18n.t('settings.net_check_domain') }}: <code>{{ netCheck.domain }}</code>
                   </div>
                 </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Routing (proxy_entware) -->
+        <section id="routing" class="s-section">
+          <h2 class="s-title">🔀 {{ i18n.t('settings.routing_section') }}</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-content">
+                <div class="s-row-label">{{ i18n.t('settings.proxy_entware_title') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.proxy_entware_desc') }}</div>
+              </div>
+              <button
+                :disabled="proxyEntware.loading || proxyEntware.saving"
+                class="btn"
+                :class="proxyEntware.enabled ? 'btn-danger' : 'btn-primary'"
+                @click="toggleProxyEntware()"
+              >
+                {{ proxyEntware.saving
+                  ? i18n.t('settings.proxy_entware_saving')
+                  : (proxyEntware.enabled
+                      ? i18n.t('settings.proxy_entware_off')
+                      : i18n.t('settings.proxy_entware_on')) }}
+              </button>
+            </div>
+            <div v-if="proxyEntware.error" class="s-row">
+              <div class="s-row-content">
+                <div class="s-row-desc" style="color: var(--danger, #e74c3c)">{{ proxyEntware.error }}</div>
               </div>
             </div>
           </div>

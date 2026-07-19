@@ -40,6 +40,10 @@ type Scheduler struct {
 	// metricsPort is the Xray metrics port (0 = disabled).
 	metricsPort int
 
+	// mark is the sockopt.mark value applied to all outbounds during generation
+	// (0 = none, 255 = proxy_entware on).
+	mark int
+
 	// applyMu serializes config-file generation+writes between auto-apply and the HTTP Apply handler.
 	applyMu sync.Mutex
 }
@@ -80,6 +84,12 @@ func (s *Scheduler) SetMetricsPort(port int) {
 	} else {
 		_ = os.Remove(metricsPath)
 	}
+}
+
+// SetMark sets the sockopt.mark value applied to all outbounds during generation.
+// 0 disables marking; 255 enables Entware traffic proxy mode.
+func (s *Scheduler) SetMark(mark int) {
+	s.mark = mark
 }
 
 // recoverPanic catches a panic in a scheduler goroutine, logs it, and lets the
@@ -258,7 +268,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	// Generate outbounds for ALL proxies (filtering is handled per-profile via
 	// balancer selectors). Both outbounds and routing receive the SAME allProxies
 	// list so the first-proxy "proxy" tag and selectors stay consistent.
-	outboundsJSON, err := GenerateOutboundsJSON(allProxies)
+	outboundsJSON, err := GenerateOutboundsJSON(allProxies, s.mark)
 	if err != nil {
 		return fmt.Errorf("generate outbounds: %w", err)
 	}

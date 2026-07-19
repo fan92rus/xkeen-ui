@@ -47,6 +47,11 @@ type SettingsHandler struct {
 	configPath      string
 	OnMetricsChange func(int) *MetricsHandler
 	updateMetrics   func(port int) // called to update scheduler + write config file
+
+	// onProxyEntwareChange is called when the proxy_entware setting is toggled.
+	// The callback (wired in server.go) regenerates outbounds, restarts xray,
+	// and runs `xkeen -pr on/off`.
+	onProxyEntwareChange func(enabled bool) error
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
@@ -311,6 +316,12 @@ func (h *SettingsHandler) SetUpdateMetrics(fn func(int)) {
 	h.updateMetrics = fn
 }
 
+// SetProxyEntwareChange sets the callback invoked when proxy_entware is toggled.
+// The callback regenerates outbounds, restarts xray, and runs xkeen -pr on/off.
+func (h *SettingsHandler) SetProxyEntwareChange(fn func(enabled bool) error) {
+	h.onProxyEntwareChange = fn
+}
+
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
 func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, _ *http.Request) {
@@ -439,6 +450,56 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// GetProxyEntware returns the current proxy_entware setting.
+// GET /api/settings/proxy-entware
+func (h *SettingsHandler) GetProxyEntware(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled": h.cfg.ProxyEntware,
+	})
+}
+
+// UpdateProxyEntware toggles routing of router-originated (Entware) traffic through Xray.
+// POST /api/settings/proxy-entware {"enabled": true/false}
+//
+// When enabling: saves config, then the wired callback regenerates outbounds
+// with sockopt.mark:255, restarts xray, and runs `xkeen -pr on`.
+// When disabling: saves config and runs `xkeen -pr off` immediately (the mark
+// on existing outbounds becomes harmless once iptables OUTPUT rules are gone).
+func (h *SettingsHandler) UpdateProxyEntware(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	h.cfg.ProxyEntware = req.Enabled
+	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+		http.Error(w, "Failed to save config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if h.onProxyEntwareChange != nil {
+		if err := h.onProxyEntwareChange(req.Enabled); err != nil {
+			// Config was saved; report the apply error but don't revert the setting.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"enabled": req.Enabled,
+				"error":   err.Error(),
+			})
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled": req.Enabled,
+	})
+}
+
 // RegisterSettingsRoutes registers settings-related routes.
 func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/xray/settings", handler.GetXraySettings).Methods("GET")
@@ -448,4 +509,6 @@ func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/settings/metrics", handler.UpdateMetricsPort).Methods("PUT")
 	r.HandleFunc("/settings/awg-interfaces", handler.GetAWGInterfaces).Methods("GET")
 	r.HandleFunc("/settings/awg-interfaces", handler.UpdateAWGInterfaces).Methods("PUT")
+	r.HandleFunc("/settings/proxy-entware", handler.GetProxyEntware).Methods("GET")
+	r.HandleFunc("/settings/proxy-entware", handler.UpdateProxyEntware).Methods("POST")
 }

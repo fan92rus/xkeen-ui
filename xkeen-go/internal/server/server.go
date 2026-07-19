@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -159,6 +160,13 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	// Wire subscription apply restart to service handler restart
 	s.subscriptionHandler.SetRestartFn(func() { s.serviceHandler.RestartService() })
 
+	// Apply proxy_entware mark to outbound generation when enabled
+	if cfg.ProxyEntware {
+		mark := 255
+		s.subscriptionHandler.SetMark(mark)
+		subScheduler.SetMark(mark)
+	}
+
 	// AWG handler
 	s.awgHandler = handlers.NewAWGHandler(subStore, cfg.AWGConfigDir, cfg)
 
@@ -183,6 +191,30 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		if s.metricsHandler != nil {
 			s.metricsHandler.UpdateProxyNames(buildProxyNames())
 		}
+	})
+
+	// Wire proxy_entware toggle: update mark on handler+scheduler, run xkeen -pr on/off.
+	// Regeneration of outbounds happens on the next subscription apply/refresh.
+	// xkeen -pr on/off itself restarts xray (rebuilding iptables OUTPUT rules).
+	s.settingsHandler.SetProxyEntwareChange(func(enabled bool) error {
+		mark := 0
+		if enabled {
+			mark = 255
+		}
+		s.subscriptionHandler.SetMark(mark)
+		subScheduler.SetMark(mark)
+
+		arg := "off"
+		if enabled {
+			arg = "on"
+		}
+		cmd := exec.Command(cfg.XkeenBinary, "-pr", arg) //nolint:gosec // cfg.XkeenBinary is admin-controlled, arg is a hardcoded literal
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("[proxy-entware] xkeen -pr %s failed: %v: %s", arg, err, string(out))
+			return fmt.Errorf("xkeen -pr %s: %w", arg, err)
+		}
+		log.Printf("[proxy-entware] xkeen -pr %s completed", arg)
+		return nil
 	})
 
 	// Wire scheduler OnUpdate: push proxy names after each fetch
@@ -300,7 +332,7 @@ func (s *Server) healthCheck(w http.ResponseWriter, _ *http.Request) {
 }
 
 type csrfTokenResponse struct {
-	OK       bool   `json:"ok"`
+	OK        bool   `json:"ok"`
 	CSRFToken string `json:"csrf_token"`
 }
 

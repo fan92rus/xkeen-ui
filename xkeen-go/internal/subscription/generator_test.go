@@ -28,7 +28,7 @@ func defaultProfiles(strategy RoutingStrategy) []Profile {
 
 func TestGenerateOutboundsJSON_Basic(t *testing.T) {
 	proxies := makeProxies()
-	data, err := GenerateOutboundsJSON(proxies)
+	data, err := GenerateOutboundsJSON(proxies, 0)
 	if err != nil {
 		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGenerateOutboundsJSON_Basic(t *testing.T) {
 
 func TestGenerateOutboundsJSON_BlockHasHTTPResponse(t *testing.T) {
 	proxies := makeProxies()
-	data, err := GenerateOutboundsJSON(proxies)
+	data, err := GenerateOutboundsJSON(proxies, 0)
 	if err != nil {
 		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestGenerateOutboundsJSON_BlockHasHTTPResponse(t *testing.T) {
 }
 
 func TestGenerateOutboundsJSON_EmptyProxies(t *testing.T) {
-	_, err := GenerateOutboundsJSON([]*ProxyEntry{})
+	_, err := GenerateOutboundsJSON([]*ProxyEntry{}, 0)
 	if err == nil {
 		t.Fatal("expected error for empty proxy list")
 	}
@@ -129,7 +129,7 @@ func TestGenerateOutboundsJSON_EmptyProxies(t *testing.T) {
 
 func TestGenerateOutboundsJSON_MuxPresent(t *testing.T) {
 	proxies := makeProxies()
-	data, err := GenerateOutboundsJSON(proxies)
+	data, err := GenerateOutboundsJSON(proxies, 0)
 	if err != nil {
 		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestOutboundTagBalancersMatchOutbounds(t *testing.T) {
 	profiles := defaultProfiles(RoutingStrategy{Type: "leastping"})
 
 	// Generate both outbounds and routing
-	obData, err := GenerateOutboundsJSON(proxies)
+	obData, err := GenerateOutboundsJSON(proxies, 0)
 	if err != nil {
 		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestNeedsObservatory(t *testing.T) {
 
 func TestGenerateOutboundsJSON_ValidJSON(t *testing.T) {
 	proxies := makeProxies()
-	data, err := GenerateOutboundsJSON(proxies)
+	data, err := GenerateOutboundsJSON(proxies, 0)
 	if err != nil {
 		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
 	}
@@ -1078,7 +1078,7 @@ func TestApplyPath_NoDanglingSelector_WhenFirstProxyFiltered(t *testing.T) {
 	if len(filtered) == 0 {
 		t.Fatal("expected at least one proxy to survive the filter")
 	}
-	obData, err := GenerateOutboundsJSON(filtered)
+	obData, err := GenerateOutboundsJSON(filtered, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1116,5 +1116,118 @@ func TestApplyPath_NoDanglingSelector_WhenFirstProxyFiltered(t *testing.T) {
 				t.Errorf("DANGLING balancer selector %q (balancer %q) not found in outbounds %v", sel, b.Tag, actual)
 			}
 		}
+	}
+}
+
+// --- applyMark / GenerateOutboundsJSON mark tests ---
+
+func TestGenerateOutboundsJSON_MarkZero_NoStreamSettings(t *testing.T) {
+	// mark=0 should NOT add sockopt.mark to any outbound
+	proxies := makeProxies()
+	data, err := GenerateOutboundsJSON(proxies, 0)
+	if err != nil {
+		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
+	}
+	var result struct {
+		Outbounds []map[string]interface{} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	for i, ob := range result.Outbounds {
+		ss, ok := ob["streamSettings"].(map[string]interface{})
+		if !ok {
+			continue // no streamSettings is fine
+		}
+		if sockopt, ok := ss["sockopt"].(map[string]interface{}); ok {
+			if _, hasMark := sockopt["mark"]; hasMark {
+				t.Errorf("outbound[%d] (tag=%v) should NOT have sockopt.mark when mark=0", i, ob["tag"])
+			}
+		}
+	}
+}
+
+func TestGenerateOutboundsJSON_Mark255_AllOutbounds(t *testing.T) {
+	// mark=255 should add streamSettings.sockopt.mark=255 to ALL outbounds
+	proxies := makeProxies()
+	data, err := GenerateOutboundsJSON(proxies, 255)
+	if err != nil {
+		t.Fatalf("GenerateOutboundsJSON failed: %v", err)
+	}
+	var result struct {
+		Outbounds []map[string]interface{} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	// 3 proxies + direct + block = 5
+	if len(result.Outbounds) != 5 {
+		t.Fatalf("expected 5 outbounds, got %d", len(result.Outbounds))
+	}
+	for i, ob := range result.Outbounds {
+		ss, ok := ob["streamSettings"].(map[string]interface{})
+		if !ok {
+			t.Errorf("outbound[%d] (tag=%v) missing streamSettings", i, ob["tag"])
+			continue
+		}
+		sockopt, ok := ss["sockopt"].(map[string]interface{})
+		if !ok {
+			t.Errorf("outbound[%d] (tag=%v) missing sockopt", i, ob["tag"])
+			continue
+		}
+		mark, ok := sockopt["mark"].(float64)
+		if !ok {
+			t.Errorf("outbound[%d] (tag=%v) sockopt.mark missing or wrong type", i, ob["tag"])
+			continue
+		}
+		if int(mark) != 255 {
+			t.Errorf("outbound[%d] (tag=%v) mark=%d, want 255", i, ob["tag"], int(mark))
+		}
+	}
+}
+
+func TestApplyMark_PreservesExistingStreamSettings(t *testing.T) {
+	// outbound already has streamSettings with tlsSettings — mark merge must preserve it
+	outbound := map[string]interface{}{
+		"protocol": "vless",
+		"streamSettings": map[string]interface{}{
+			"network": "tcp",
+			"tlsSettings": map[string]interface{}{
+				"serverName": "example.com",
+			},
+			"sockopt": map[string]interface{}{
+				"tcpKeepAliveInterval": 30,
+			},
+		},
+	}
+	applyMark(outbound, 255)
+
+	ss := outbound["streamSettings"].(map[string]interface{})
+	// tlsSettings must be preserved
+	if _, ok := ss["tlsSettings"]; !ok {
+		t.Error("tlsSettings was removed by applyMark")
+	}
+	// network must be preserved
+	if ss["network"] != "tcp" {
+		t.Error("network was removed by applyMark")
+	}
+	// existing sockopt field must be preserved (int value from literal, not float)
+	sockopt := ss["sockopt"].(map[string]interface{})
+	if v, ok := sockopt["tcpKeepAliveInterval"]; !ok || v != 30 {
+		t.Errorf("existing sockopt.tcpKeepAliveInterval was lost: %v", sockopt["tcpKeepAliveInterval"])
+	}
+	// mark must be added (added by applyMark as int)
+	if v, ok := sockopt["mark"]; !ok || v != 255 {
+		t.Errorf("sockopt.mark = %v, want 255", sockopt["mark"])
+	}
+}
+
+func TestApplyMark_ZeroIsNoop(t *testing.T) {
+	outbound := map[string]interface{}{
+		"protocol": "vless",
+	}
+	applyMark(outbound, 0)
+	if _, ok := outbound["streamSettings"]; ok {
+		t.Error("mark=0 should not add streamSettings")
 	}
 }

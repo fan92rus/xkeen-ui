@@ -74,7 +74,14 @@ func CollectFilteredProxies(allProxies []*ProxyEntry, profiles []Profile) []*Pro
 // GenerateOutboundsJSON generates the content for 04_outbounds.json.
 // The first proxy gets tag "proxy" (the default outbound). All others keep
 // their assigned tags. "direct" and "block" outbounds are appended at the end.
-func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
+//
+// If mark > 0, every outbound (proxies + direct + block) gets
+// streamSettings.sockopt.mark set to the given value. This is required when
+// routing Entware traffic through Xray: `xkeen -pr on` adds iptables OUTPUT
+// rules that redirect router process traffic to Xray, and packets emitted
+// by Xray must carry fwmark (e.g. 255) so the `-m mark --mark 255 -j RETURN`
+// rule bypasses the redirect (otherwise traffic loops back into Xray).
+func GenerateOutboundsJSON(proxies []*ProxyEntry, mark int) ([]byte, error) {
 	if len(proxies) == 0 {
 		return nil, fmt.Errorf("no proxies to generate outbounds from")
 	}
@@ -88,6 +95,7 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 		}
 
 		outbound["tag"] = outboundTag(proxies, p)
+		applyMark(outbound, mark)
 
 		raw, err := json.Marshal(outbound)
 		if err != nil {
@@ -101,6 +109,7 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 		"tag":      "direct",
 		"protocol": "freedom",
 	}
+	applyMark(direct, mark)
 	directRaw, _ := json.Marshal(direct)
 	outbounds = append(outbounds, directRaw)
 
@@ -114,6 +123,7 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 			},
 		},
 	}
+	applyMark(block, mark)
 	blockRaw, _ := json.Marshal(block)
 	outbounds = append(outbounds, blockRaw)
 
@@ -122,6 +132,27 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(result, "", "  ")
+}
+
+// applyMark merges streamSettings.sockopt.mark into an outbound map.
+// If mark == 0, the outbound is left untouched.
+// If mark > 0, the mark is set/overwritten while preserving all existing
+// streamSettings and sockopt fields (tlsSettings, wsSettings, etc.).
+func applyMark(outbound map[string]interface{}, mark int) {
+	if mark == 0 {
+		return
+	}
+	ss, _ := outbound["streamSettings"].(map[string]interface{})
+	if ss == nil {
+		ss = map[string]interface{}{}
+	}
+	sockopt, _ := ss["sockopt"].(map[string]interface{})
+	if sockopt == nil {
+		sockopt = map[string]interface{}{}
+	}
+	sockopt["mark"] = mark
+	ss["sockopt"] = sockopt
+	outbound["streamSettings"] = ss
 }
 
 // GenerateRoutingJSON generates or updates the content for 05_routing.json.

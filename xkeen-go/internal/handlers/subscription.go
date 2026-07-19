@@ -18,78 +18,67 @@ import (
 
 // API response types for subscription handlers.
 
-
 type listSubscriptionsResponse struct {
-	Subscriptions	interface{} `json:"subscriptions"`
-	Filters	interface{} `json:"filters"`
-	Strategy	interface{} `json:"strategy"`
-	GeneratedAt	interface{} `json:"generated_at,omitempty"`
+	Subscriptions interface{} `json:"subscriptions"`
+	Filters       interface{} `json:"filters"`
+	Strategy      interface{} `json:"strategy"`
+	GeneratedAt   interface{} `json:"generated_at,omitempty"`
 }
-
 
 type subSuccessResponse struct {
-	Success	bool `json:"success"`
-	Subscription	interface{} `json:"subscription,omitempty"`
+	Success      bool        `json:"success"`
+	Subscription interface{} `json:"subscription,omitempty"`
 }
-
 
 type subDeleteResponse struct {
-	Success	bool `json:"success"`
-	ID	string `json:"id"`
+	Success bool   `json:"success"`
+	ID      string `json:"id"`
 }
-
 
 type subFetchResponse struct {
-	Success	bool `json:"success"`
-	ProxyCount	int `json:"proxy_count"`
-	Total	int `json:"total"`
-	Proxies	interface{} `json:"proxies"`
+	Success    bool        `json:"success"`
+	ProxyCount int         `json:"proxy_count"`
+	Total      int         `json:"total"`
+	Proxies    interface{} `json:"proxies"`
 }
-
 
 type subProxiesResponse struct {
-	Total	int `json:"total"`
-	Proxies	interface{} `json:"proxies"`
+	Total   int         `json:"total"`
+	Proxies interface{} `json:"proxies"`
 }
-
 
 type subFiltersResponse struct {
-	Success	bool `json:"success"`
-	Filters	interface{} `json:"filters"`
+	Success bool        `json:"success"`
+	Filters interface{} `json:"filters"`
 }
-
 
 type subStrategyResponse struct {
-	Success	bool `json:"success"`
-	Strategy	interface{} `json:"strategy"`
+	Success  bool        `json:"success"`
+	Strategy interface{} `json:"strategy"`
 }
-
 
 type subApplyResponse struct {
-	Success	bool `json:"success"`
-	ProxyCount	int `json:"proxy_count"`
-	Files	map[string]string `json:"files"`
-	RestartInitiated	bool `json:"restart_initiated,omitempty"`
+	Success          bool              `json:"success"`
+	ProxyCount       int               `json:"proxy_count"`
+	Files            map[string]string `json:"files"`
+	RestartInitiated bool              `json:"restart_initiated,omitempty"`
 }
-
 
 type subPreviewResponse struct {
-	ProxyCount	int `json:"proxy_count"`
-	FilteredProxyCount	int `json:"filtered_proxy_count"`
-	Outbounds	interface{} `json:"outbounds,omitempty"`
-	Routing	interface{} `json:"routing,omitempty"`
-	Observatory	interface{} `json:"observatory,omitempty"`
-	Message	string `json:"message,omitempty"`
-	Profiles	interface{} `json:"profiles,omitempty"`
+	ProxyCount         int         `json:"proxy_count"`
+	FilteredProxyCount int         `json:"filtered_proxy_count"`
+	Outbounds          interface{} `json:"outbounds,omitempty"`
+	Routing            interface{} `json:"routing,omitempty"`
+	Observatory        interface{} `json:"observatory,omitempty"`
+	Message            string      `json:"message,omitempty"`
+	Profiles           interface{} `json:"profiles,omitempty"`
 }
-
 
 type subScheduleResponse struct {
-	Enabled	bool `json:"enabled"`
-	Cron	string `json:"cron"`
-	NextRun	interface{} `json:"next_run,omitempty"`
+	Enabled bool        `json:"enabled"`
+	Cron    string      `json:"cron"`
+	NextRun interface{} `json:"next_run,omitempty"`
 }
-
 
 // SubscriptionHandler handles subscription management endpoints.
 type SubscriptionHandler struct {
@@ -101,6 +90,7 @@ type SubscriptionHandler struct {
 	awgDir      string // awg config directory for scanning .conf files
 	currentMode string // "xray" or "mihomo" — set on construction from config
 	restartFn   func() // optional restart function wired from server.go
+	mark        int    // sockopt.mark for outbounds (0 = none, 255 = proxy_entware on)
 }
 
 // NewSubscriptionHandler creates a new SubscriptionHandler.
@@ -119,6 +109,12 @@ func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fet
 // SetRestartFn sets the restart function called when Apply receives restart:true.
 func (h *SubscriptionHandler) SetRestartFn(fn func()) {
 	h.restartFn = fn
+}
+
+// SetMark sets the sockopt.mark value applied to all outbounds during generation.
+// 0 disables marking; 255 enables Entware traffic proxy mode.
+func (h *SubscriptionHandler) SetMark(mark int) {
+	h.mark = mark
 }
 
 // Stop gracefully stops the scheduler.
@@ -397,7 +393,7 @@ func (h *SubscriptionHandler) UpdateStrategy(w http.ResponseWriter, r *http.Requ
 // POST /api/subscriptions/apply
 func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Restart          bool   `json:"restart"`
+		Restart            bool `json:"restart"`
 		ConvertXrayRouting bool `json:"convert_xray_routing,omitempty"`
 	}
 	// Body is optional
@@ -439,7 +435,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := h.scheduler.WithApplyLock(func() error {
-		outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
+		outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies, h.mark)
 		if err != nil {
 			return fmt.Errorf("failed to generate outbounds: %v", err)
 		}
@@ -594,7 +590,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies)
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies, h.mark)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return
@@ -671,8 +667,8 @@ func (h *SubscriptionHandler) ListProfiles(w http.ResponseWriter, _ *http.Reques
 
 	type profileWithCount struct {
 		subscription.Profile
-		ProxyCount  int `json:"proxy_count"`
-		TotalProxy  int `json:"total_proxy"`
+		ProxyCount int `json:"proxy_count"`
+		TotalProxy int `json:"total_proxy"`
 	}
 
 	result := make([]profileWithCount, len(profiles))
@@ -818,4 +814,3 @@ func RegisterSubscriptionRoutes(r *mux.Router, handler *SubscriptionHandler) {
 	r.HandleFunc("/subscriptions/{id}", handler.DeleteSubscription).Methods("DELETE")
 	r.HandleFunc("/subscriptions/{id}/fetch", handler.FetchSubscription).Methods("POST")
 }
-
