@@ -3,11 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/fan92rus/xkeen-ui/internal/handlers"
-	"github.com/fan92rus/xkeen-ui/internal/subscription"
 )
 
 // migrateAWGInitS90 renames the legacy AWG init script (/opt/etc/init.d/awg,
@@ -18,9 +16,9 @@ import (
 // Safe to run multiple times: if S90awg already exists, just removes old awg.
 func migrateAWGInitS90() error {
 	const (
-		oldPath = "/opt/etc/init.d/awg"    // legacy: no S-prefix, never ran at boot
-		newPath = "/opt/etc/init.d/S90awg" // S-prefix: rc.unslung picks it up
-		confDir = "/opt/etc/awg"           // AWG config directory
+		oldPath = "/opt/etc/init.d/awg"      // legacy: no S-prefix, never ran at boot
+		newPath = "/opt/etc/init.d/S90awg"   // S-prefix: rc.unslung picks it up
+		confDir = "/opt/etc/awg"             // AWG config directory
 	)
 
 	// Case 1: S90awg already exists — just clean up legacy if present.
@@ -150,74 +148,4 @@ func migrateAWGInitUniversal() error {
 	}
 	fmt.Printf("  Wrote universal %s (%d config(s): server + clients)\n", newPath, len(matches))
 	return nil
-}
-
-// migrateXkeenUISocksInbound ensures the managed SOCKS5 inbound file exists
-// in the Xray config directory. This runs on every server startup (as a
-// startup migration) so the file is self-healing: if it gets deleted by
-// the user, xkeen, or any other process, it is recreated on next startup.
-//
-// Why this exists: on transparent-proxy Xray configs (which only hook
-// iptables PREROUTING for LAN clients, not OUTPUT for router-originated
-// traffic), all HTTP requests made by xkeen-ui bypass the VPN entirely.
-// A local SOCKS5 inbound lets the fetcher route through the VPN tunnel.
-//
-// The inbound listens on 127.0.0.1 only (loopback, not exposed) and is
-// detected automatically by DetectInboundProxy.
-//
-// Xray routing rules remain entirely under the user's control — xkeen-ui
-// does not modify routing. Existing routing rules (which typically match
-// Cloudflare and CDN IPs by ipset) apply to SOCKS5 traffic the same way
-// they apply to transparent-proxy traffic.
-//
-// Idempotent and silent when there's nothing to do:
-//   - user has their own SOCKS5/HTTP inbound → skip silently
-//   - managed file exists → skip silently
-//   - managed file missing → create + restart xray
-func migrateXkeenUISocksInbound() error {
-	return ensureManagedSocksInbound(installXrayConfigDir)
-}
-
-// ensureManagedSocksInbound is the core logic, separated so it can accept
-// the actual config directory (useful for testing).
-func ensureManagedSocksInbound(xrayConfigDir string) error {
-	// Step 1: If the user already has a SOCKS5/HTTP inbound, we don't need
-	// our own. DetectInboundProxy checks all inbound files including ours.
-	if existing := subscription.DetectInboundProxy(xrayConfigDir); existing != "" {
-		return nil // user has their own inbound, nothing to do
-	}
-
-	// Step 2: If our managed file already exists, it means DetectInboundProxy
-	// failed to parse it (corrupt JSON?) or the inbound in it isn't socks/http.
-	// Don't blindly overwrite — the user may have edited it intentionally.
-	path := filepath.Join(xrayConfigDir, subscription.ManagedSocksInboundFile)
-	if _, err := os.Stat(path); err == nil {
-		return nil // file exists, leave it alone
-	}
-
-	// Step 3: File is missing — recreate it.
-	if err := os.MkdirAll(xrayConfigDir, 0o750); err != nil {
-		return fmt.Errorf("mkdir %s: %w", xrayConfigDir, err)
-	}
-	if err := os.WriteFile(path, []byte(subscription.ManagedSocksInboundConfig()), 0o644); err != nil { //nolint:gosec // config file is not executable
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	fmt.Printf("[startup] Created %s (SOCKS5 on 127.0.0.1:%d for VPN-routed fetches)\n",
-		path, subscription.ManagedSocksPort)
-
-	// Step 4: Restart Xray so the new inbound takes effect.
-	if err := restartXrayViaXkeen(); err != nil {
-		// Non-fatal: the file is created and will be picked up on next xray restart.
-		fmt.Printf("[startup] ⚠ Could not restart xray (will apply on next restart): %v\n", err)
-	} else {
-		fmt.Printf("[startup] Xray restarted to load the new inbound\n")
-	}
-	return nil
-}
-
-// restartXrayViaXkeen restarts the xray service via the xkeen binary.
-// This is the same mechanism used by the service handler.
-func restartXrayViaXkeen() error {
-	cmd := exec.Command("xkeen", "-restart")
-	return cmd.Run()
 }

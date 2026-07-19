@@ -394,9 +394,6 @@ onMounted(() => {
                   <div class="s-row-desc">
                     {{ i18n.t('settings.net_check_domain') }}: <code>{{ netCheck.domain }}</code>
                   </div>
-                  <div v-if="netCheck.source && netCheck.source !== 'direct'" class="s-row-desc">
-                    {{ i18n.t('settings.net_proxy') }}: <code>{{ netCheck.source }}</code>
-                  </div>
                 </template>
               </div>
             </div>

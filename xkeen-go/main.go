@@ -20,9 +20,9 @@ import (
 
 // Build information (set via ldflags)
 var (
-	appVersion = "0.1.0"
-	buildDate  = "unknown"
-	gitCommit  = "unknown"
+	appVersion   = "0.1.0"
+	buildDate = "unknown"
+	gitCommit = "unknown"
 )
 
 // Installation paths for Keenetic/Entware
@@ -39,10 +39,6 @@ const (
 	// and abort the Entware rc.unslung boot sequence. S99 was too late.
 	installAutoStart    = "/opt/etc/init.d/S70xkeen-ui"
 	installOldAutoStart = "/opt/etc/init.d/S99xkeen-ui"
-
-	// installXrayConfigDir is the default Xray config directory on Keenetic/Entware.
-	// Used by migrations that need to write to the Xray config directory.
-	installXrayConfigDir = "/opt/etc/xray/configs"
 )
 
 // binaryName is the architecture-specific binary name
@@ -217,10 +213,6 @@ func runServer() {
 	log.Printf("Xray config dir: %s", cfg.XrayConfigDir)
 	log.Printf("Allowed roots: %v", cfg.AllowedRoots)
 
-	// Run startup migrations: self-healing tasks that run on every boot
-	// (e.g. ensure managed SOCKS5 inbound file exists). Must be idempotent.
-	runStartupMigrations()
-
 	// Create server with embedded web files
 	srv, err := server.NewServer(cfg, configPath, GetWebFS())
 	if err != nil {
@@ -270,3 +262,4 @@ func runServer() {
 	}
 	log.Println("Server exited normally")
 }
+

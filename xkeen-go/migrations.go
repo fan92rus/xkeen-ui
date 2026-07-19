@@ -19,7 +19,7 @@ type migration struct {
 	run         func() error
 }
 
-// allMigrations is the ordered list of known one-time migrations.
+// allMigrations is the ordered list of known migrations.
 // Append new migrations here. They run in order, each exactly once.
 //
 // Guidelines:
@@ -42,26 +42,6 @@ var allMigrations = []migration{
 		name:        "003-awg-init-idempotent",
 		description: "Rewrite S90awg with idempotent start/check (skip if interface already up, no duplicate firewall rules)",
 		run:         migrateAWGInitUniversal,
-	},
-}
-
-// startupMigrations is the list of tasks that run on EVERY server startup.
-// Unlike one-time migrations, these are not tracked in the state file —
-// they must be fully idempotent and cheap when there's nothing to do.
-//
-// Use cases:
-//   - self-healing: recreate files/configs that may have been deleted
-//   - reconciliation: ensure expected state is maintained
-//
-// Guidelines:
-//   - must be safe to run on every startup (idempotent)
-//   - must be FAST when nothing needs to change (stat a file, return)
-//   - only print/log when an action is actually taken
-var startupMigrations = []migration{
-	{
-		name:        "socks5-inbound",
-		description: "Ensure managed SOCKS5 inbound exists for VPN-routed subscription fetches",
-		run:         migrateXkeenUISocksInbound,
 	},
 }
 
@@ -94,17 +74,6 @@ func runMigrations() {
 	if !anyRan {
 		count := len(applied)
 		fmt.Printf("Migrations: all up to date (%d applied)\n", count)
-	}
-}
-
-// runStartupMigrations executes tasks that must run on EVERY server startup.
-// These are not tracked in the state file — they must be idempotent and
-// silent when there's nothing to do.
-func runStartupMigrations() {
-	for _, m := range startupMigrations {
-		if err := m.run(); err != nil {
-			fmt.Printf("Startup task %s: ⚠ %v\n", m.name, err)
-		}
 	}
 }
 
