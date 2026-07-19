@@ -33,11 +33,11 @@ func RegisterDiagnosticsRoutes(r *mux.Router, h *DiagnosticsHandler) {
 
 // exitIPResponse is the JSON response for the network check endpoint.
 type exitIPResponse struct {
-	ExitIP       string `json:"exit_ip"`
-	Source       string `json:"source"`
-	Latency      int64  `json:"latency_ms"`
-	CheckDomain  string `json:"check_domain"`
-	Error        string `json:"error,omitempty"`
+	ExitIP      string `json:"exit_ip"`
+	Source      string `json:"source"`
+	Latency     int64  `json:"latency_ms"`
+	CheckDomain string `json:"check_domain"`
+	Error       string `json:"error,omitempty"`
 }
 
 // CheckNetwork performs an HTTP request to api.ipify.org through the same

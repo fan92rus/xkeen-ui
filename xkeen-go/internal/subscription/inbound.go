@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +12,22 @@ import (
 
 // inboundPattern matches Xray inbound config files like "01_inbounds.json".
 var inboundPattern = regexp.MustCompile(`^.*_inbounds\.json$`)
+
+// ManagedSocksInboundFile is the filename xkeen-ui writes to the Xray config
+// directory to add a local SOCKS5 inbound for routing subscription fetches
+// through the VPN tunnel. Loaded by Xray alongside the user's own files.
+const ManagedSocksInboundFile = "99_xkeen_ui_socks.json"
+
+// ManagedSocksPort is the port the managed SOCKS5 inbound listens on.
+const ManagedSocksPort = 10808
+
+// managedSocksInboundPattern matches the xkeen-ui-managed SOCKS5 inbound file.
+var managedSocksInboundPattern = regexp.MustCompile(`^` + regexp.QuoteMeta(ManagedSocksInboundFile) + `$`)
+
+// isInboundFile reports whether name is a file that may contain Xray inbounds.
+func isInboundFile(name string) bool {
+	return inboundPattern.MatchString(name) || managedSocksInboundPattern.MatchString(name)
+}
 
 // xrayInbound represents a single inbound entry in an Xray config.
 type xrayInbound struct {
@@ -36,7 +53,7 @@ func DetectInboundProxy(dir string) string {
 	// Collect matching files, sorted by name for deterministic precedence.
 	var matches []string
 	for _, e := range entries {
-		if !e.IsDir() && inboundPattern.MatchString(e.Name()) {
+		if !e.IsDir() && isInboundFile(e.Name()) {
 			matches = append(matches, e.Name())
 		}
 	}
@@ -74,4 +91,29 @@ func DetectInboundProxy(dir string) string {
 	}
 
 	return "" // no usable inbound found
+}
+
+// ManagedSocksInboundConfig returns the JSON content for the xkeen-ui-managed
+// SOCKS5 inbound file. This file is placed in the Xray config directory so
+// that Xray loads it as an additional inbound, allowing subscription
+// fetches to route through the VPN tunnel.
+//
+// The inbound listens on 127.0.0.1 only (not exposed externally) and accepts
+// unauthenticated connections (safe because it's loopback-only).
+func ManagedSocksInboundConfig() string {
+	return fmt.Sprintf(`{
+  "inbounds": [
+    {
+      "port": %d,
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "settings": {
+        "auth": "noauth",
+        "udp": false
+      },
+      "tag": "xkeen-ui"
+    }
+  ]
+}
+`, ManagedSocksPort)
 }

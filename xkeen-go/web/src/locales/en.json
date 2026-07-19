@@ -189,6 +189,7 @@
     "net_checking": "Checking…",
     "net_exit_ip": "Exit IP",
     "net_check_domain": "Check domain",
+    "net_proxy": "Proxy",
     "lang_section": "Language",
     "lang_label": "Interface language",
     "mode": "Mode",
