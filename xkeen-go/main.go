@@ -213,6 +213,10 @@ func runServer() {
 	log.Printf("Xray config dir: %s", cfg.XrayConfigDir)
 	log.Printf("Allowed roots: %v", cfg.AllowedRoots)
 
+	// Run startup migrations: idempotent self-healing tasks that run on
+	// every boot (e.g. recreate deleted config files). Not tracked.
+	runStartupMigrations()
+
 	// Create server with embedded web files
 	srv, err := server.NewServer(cfg, configPath, GetWebFS())
 	if err != nil {
