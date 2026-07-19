@@ -425,7 +425,7 @@ func (s *Store) defaultProfile() *Profile {
 			IncludeRegexes:   []string{},
 			ExcludeRegexes:   []string{},
 		},
-		Strategy: RoutingStrategy{Type: "all"},
+		Strategy: RoutingStrategy{Type: "all", Fallback: "direct"},
 	})
 	return &s.config.Profiles[len(s.config.Profiles)-1]
 }

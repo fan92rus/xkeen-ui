@@ -6,6 +6,14 @@ import (
 	"sort"
 )
 
+// Tags for the service outbounds that GenerateOutboundsJSON always appends.
+// Balancer fallbackTag and routing rules reference these constants so that
+// outbounds and routing never disagree on the direct/block tag names.
+const (
+	DirectTag = "direct" // freedom outbound
+	BlockTag  = "block"  // blackhole outbound
+)
+
 // outboundTag returns the tag that will be assigned to proxy p in the outbounds JSON.
 // The first proxy in the slice always gets tag "proxy" (the default outbound contract);
 // all others keep their assigned ProxyEntry.Tag. Both the outbounds and routing generators
@@ -106,7 +114,7 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry, mark int) ([]byte, error) {
 
 	// Append direct outbound
 	direct := map[string]interface{}{
-		"tag":      "direct",
+		"tag":      DirectTag,
 		"protocol": "freedom",
 	}
 	applyMark(direct, mark)
@@ -115,7 +123,7 @@ func GenerateOutboundsJSON(proxies []*ProxyEntry, mark int) ([]byte, error) {
 
 	// Append block outbound
 	block := map[string]interface{}{
-		"tag":      "block",
+		"tag":      BlockTag,
 		"protocol": "blackhole",
 		"settings": map[string]interface{}{
 			"response": map[string]interface{}{
@@ -271,6 +279,15 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 			"tag":      profile.ID + "-balancer",
 			"selector": selector,
 			"strategy": map[string]interface{}{"type": sType},
+		}
+
+		// fallbackTag: when all outbounds in the selector are unreachable (per
+		// observatory/strategy), traffic is routed to this service outbound instead.
+		switch profile.Strategy.Fallback {
+		case "direct":
+			balancer["fallbackTag"] = DirectTag
+		case "block":
+			balancer["fallbackTag"] = BlockTag
 		}
 
 		balancers = append(balancers, balancer)

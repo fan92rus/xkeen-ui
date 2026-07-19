@@ -1231,3 +1231,85 @@ func TestApplyMark_ZeroIsNoop(t *testing.T) {
 		t.Error("mark=0 should not add streamSettings")
 	}
 }
+
+// TestGenerateRoutingJSON_Fallback verifies that profile.Strategy.Fallback
+// controls the balancer's fallbackTag field.
+func TestGenerateRoutingJSON_Fallback(t *testing.T) {
+	proxies := makeProxies()
+	tests := []struct {
+		name      string
+		fallback  string
+		want      string // expected fallbackTag value, "" means field must be absent
+		wantField bool   // whether fallbackTag field should be present
+	}{
+		{name: "off", fallback: "", wantField: false},
+		{name: "direct", fallback: "direct", want: "direct", wantField: true},
+		{name: "block", fallback: "block", want: "block", wantField: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profiles := defaultProfiles(RoutingStrategy{Type: "random", Fallback: tt.fallback})
+			data, err := GenerateRoutingJSON(proxies, profiles, nil)
+			if err != nil {
+				t.Fatalf("GenerateRoutingJSON: %v", err)
+			}
+			var result map[string]json.RawMessage
+			_ = json.Unmarshal(data, &result)
+			var routing struct {
+				Balancers []map[string]json.RawMessage `json:"balancers"`
+			}
+			_ = json.Unmarshal(result["routing"], &routing)
+			if len(routing.Balancers) != 1 {
+				t.Fatalf("expected 1 balancer, got %d", len(routing.Balancers))
+			}
+			balancer := routing.Balancers[0]
+			rawTag, hasField := balancer["fallbackTag"]
+			if tt.wantField {
+				if !hasField {
+					t.Fatalf("expected fallbackTag field present, but it is missing")
+				}
+				var tagStr string
+				_ = json.Unmarshal(rawTag, &tagStr)
+				if tagStr != tt.want {
+					t.Errorf("fallbackTag = %q, want %q", tagStr, tt.want)
+				}
+			} else if hasField {
+				t.Errorf("fallbackTag field should be absent for fallback=%q, got %s", tt.fallback, string(rawTag))
+			}
+		})
+	}
+}
+
+// TestGenerateOutboundsJSON_DirectBlockTags verifies that the service outbounds
+// (direct/block) use the DirectTag/BlockTag constants so routing rules and
+// balancer fallbackTag always reference existing tags.
+func TestGenerateOutboundsJSON_DirectBlockTags(t *testing.T) {
+	proxies := makeProxies()
+	data, err := GenerateOutboundsJSON(proxies, 0)
+	if err != nil {
+		t.Fatalf("GenerateOutboundsJSON: %v", err)
+	}
+	var root map[string]json.RawMessage
+	_ = json.Unmarshal(data, &root)
+	var outbounds []map[string]interface{}
+	_ = json.Unmarshal(root["outbounds"], &outbounds)
+
+	// Verify both service outbounds exist with the expected tags and protocols.
+	foundDirect, foundBlock := false, false
+	for _, ob := range outbounds {
+		proto, _ := ob["protocol"].(string)
+		tag, _ := ob["tag"].(string)
+		if proto == "freedom" && tag == DirectTag {
+			foundDirect = true
+		}
+		if proto == "blackhole" && tag == BlockTag {
+			foundBlock = true
+		}
+	}
+	if !foundDirect {
+		t.Errorf("expected freedom outbound with tag %q, not found in %d outbounds", DirectTag, len(outbounds))
+	}
+	if !foundBlock {
+		t.Errorf("expected blackhole outbound with tag %q, not found in %d outbounds", BlockTag, len(outbounds))
+	}
+}

@@ -45,7 +45,7 @@ type Subscription struct {
 	LastFetch  time.Time   `json:"last_fetch"`
 	LastError  string      `json:"last_error"`
 	ProxyCount int         `json:"proxy_count"`
-	IsBuiltin  bool        `json:"is_builtin"` // system subscription, cannot be deleted
+	IsBuiltin  bool        `json:"is_builtin"`  // system subscription, cannot be deleted
 	LastSource string      `json:"last_source"` // how last successful fetch reached us: "xray-proxy" | "direct" (empty for legacy)
 }
 
@@ -77,6 +77,7 @@ type Filter struct {
 type RoutingStrategy struct {
 	Type               string `json:"type"`                 // "all", "random", "roundrobin", "leastping", "leastload"
 	ReplaceBalancerTag bool   `json:"replace_balancer_tag"` // if true, replace existing balancerTag rules with new ones
+	Fallback           string `json:"fallback"`             // "": off, "direct": freedom, "block": blackhole
 }
 
 // Profile is a named group of proxies with its own balancer.
@@ -113,9 +114,9 @@ const (
 // AWGConfig tracks an AWG interface configuration with mark persistence
 // and role classification.
 type AWGConfig struct {
-	Name string   `json:"name"` // config name (filename without .conf)
-	Mark int      `json:"mark"` // fwmark for routing (100+)
-	Role AWGRole  `json:"role"` // auto-detected or overridden role
+	Name string  `json:"name"` // config name (filename without .conf)
+	Mark int     `json:"mark"` // fwmark for routing (100+)
+	Role AWGRole `json:"role"` // auto-detected or overridden role
 }
 
 // Config is the persisted subscription configuration.

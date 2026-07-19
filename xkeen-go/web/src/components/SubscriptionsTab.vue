@@ -35,6 +35,12 @@ const STRATS = [
     { v: 'leastload', l: i18n.t('subs.strategy_minload'), tip: i18n.t('subs.strategy_minload_desc') }
 ];
 
+const FALLBACKS = [
+    { v: '', l: i18n.t('subs.fallback_off'), tip: i18n.t('subs.fallback_off_desc') },
+    { v: 'direct', l: i18n.t('subs.fallback_direct'), tip: i18n.t('subs.fallback_direct_desc') },
+    { v: 'block', l: i18n.t('subs.fallback_block'), tip: i18n.t('subs.fallback_block_desc') }
+];
+
 /* ---- active profile computed ---- */
 const activeProfile = computed(() => {
     if (!activeProfileId.value) return profiles.value.find(p => p.is_default) || null;
@@ -232,6 +238,15 @@ async function setStrategy(type) {
     await loadProfiles();
 }
 
+async function setFallback(v) {
+    const p = activeProfile.value;
+    if (!p) return;
+    if (!p.strategy) p.strategy = { type: 'all' };
+    p.strategy.fallback = v;
+    await _persistProfile();
+    await loadProfiles();
+}
+
 /* ---- preview & apply ---- */
 async function preview() {
     busy.value = true;
@@ -291,7 +306,7 @@ async function confirmNewProfile() {
         await api.createProfile({
             name,
             enabled: true,
-            strategy: { type: 'random' }
+            strategy: { type: 'random', fallback: 'direct' }
         });
         showNewProfileInput.value = false;
         await loadProfiles();
@@ -451,6 +466,22 @@ onMounted(async () => {
                 :title="s.tip" @click="setStrategy(s.v)"
               >
                 {{ s.l }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Fallback pills -->
+          <div style="margin-bottom:6px">
+            <div class="sub-row-label">{{ i18n.t('subs.fallback') }}</div>
+            <div class="strat-pills">
+              <button
+                v-for="f in FALLBACKS" :key="f.v || 'off'" class="spill"
+                :class="{ active: (strategy.fallback || '') === f.v }"
+                :title="f.tip"
+                :disabled="strategy.type === 'all'"
+                @click="setFallback(f.v)"
+              >
+                {{ f.l }}
               </button>
             </div>
           </div>
