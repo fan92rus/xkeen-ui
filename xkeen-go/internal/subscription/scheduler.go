@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -41,8 +42,9 @@ type Scheduler struct {
 	metricsPort int
 
 	// mark is the sockopt.mark value applied to all outbounds during generation
-	// (0 = none, 255 = proxy_entware on).
-	mark int
+	// (0 = none, 255 = proxy_entware on). Atomic because SetMark is called from
+	// an HTTP handler while writeConfigFiles runs from the scheduler goroutine.
+	mark atomic.Int64
 
 	// applyMu serializes config-file generation+writes between auto-apply and the HTTP Apply handler.
 	applyMu sync.Mutex
@@ -89,7 +91,7 @@ func (s *Scheduler) SetMetricsPort(port int) {
 // SetMark sets the sockopt.mark value applied to all outbounds during generation.
 // 0 disables marking; 255 enables Entware traffic proxy mode.
 func (s *Scheduler) SetMark(mark int) {
-	s.mark = mark
+	s.mark.Store(int64(mark))
 }
 
 // recoverPanic catches a panic in a scheduler goroutine, logs it, and lets the
@@ -268,7 +270,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	// Generate outbounds for ALL proxies (filtering is handled per-profile via
 	// balancer selectors). Both outbounds and routing receive the SAME allProxies
 	// list so the first-proxy "proxy" tag and selectors stay consistent.
-	outboundsJSON, err := GenerateOutboundsJSON(allProxies, s.mark)
+	outboundsJSON, err := GenerateOutboundsJSON(allProxies, int(s.mark.Load()))
 	if err != nil {
 		return fmt.Errorf("generate outbounds: %w", err)
 	}

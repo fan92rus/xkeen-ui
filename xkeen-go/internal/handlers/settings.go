@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
 
@@ -52,6 +53,10 @@ type SettingsHandler struct {
 	// The callback (wired in server.go) regenerates outbounds, restarts xray,
 	// and runs `xkeen -pr on/off`.
 	onProxyEntwareChange func(enabled bool) error
+
+	// cfgMu protects concurrent access to cfg.ProxyEntware between
+	// GetProxyEntware (reader) and UpdateProxyEntware (writer) HTTP handlers.
+	cfgMu sync.RWMutex
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
@@ -453,9 +458,12 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 // GetProxyEntware returns the current proxy_entware setting.
 // GET /api/settings/proxy-entware
 func (h *SettingsHandler) GetProxyEntware(w http.ResponseWriter, _ *http.Request) {
+	h.cfgMu.RLock()
+	enabled := h.cfg.ProxyEntware
+	h.cfgMu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"enabled": h.cfg.ProxyEntware,
+		"enabled": enabled,
 	})
 }
 
@@ -475,7 +483,9 @@ func (h *SettingsHandler) UpdateProxyEntware(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	h.cfgMu.Lock()
 	h.cfg.ProxyEntware = req.Enabled
+	h.cfgMu.Unlock()
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		http.Error(w, "Failed to save config: "+err.Error(), http.StatusInternalServerError)
 		return

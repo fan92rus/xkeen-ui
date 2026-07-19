@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -90,7 +91,7 @@ type SubscriptionHandler struct {
 	awgDir      string // awg config directory for scanning .conf files
 	currentMode string // "xray" or "mihomo" — set on construction from config
 	restartFn   func() // optional restart function wired from server.go
-	mark        int    // sockopt.mark for outbounds (0 = none, 255 = proxy_entware on)
+	mark        atomic.Int64 // sockopt.mark for outbounds (0 = none, 255 = proxy_entware on)
 }
 
 // NewSubscriptionHandler creates a new SubscriptionHandler.
@@ -114,7 +115,7 @@ func (h *SubscriptionHandler) SetRestartFn(fn func()) {
 // SetMark sets the sockopt.mark value applied to all outbounds during generation.
 // 0 disables marking; 255 enables Entware traffic proxy mode.
 func (h *SubscriptionHandler) SetMark(mark int) {
-	h.mark = mark
+	h.mark.Store(int64(mark))
 }
 
 // RegenerateOutbounds regenerates only the 04_outbounds.json file with the current
@@ -126,7 +127,13 @@ func (h *SubscriptionHandler) SetMark(mark int) {
 // and the iptables `--mark 255 -j RETURN` rule won't match Xray-originated packets.
 func (h *SubscriptionHandler) RegenerateOutbounds() error {
 	allProxies := h.store.GetProxies()
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies, h.mark)
+	if len(allProxies) == 0 {
+		// No proxies yet — nothing to mark. Direct/block outbounds will be
+		// created on the first subscription apply. Treat as success so the
+		// proxy_entware toggle doesn't abort when no subscription is configured yet.
+		return nil
+	}
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies, int(h.mark.Load()))
 	if err != nil {
 		return fmt.Errorf("generate outbounds: %w", err)
 	}
@@ -458,7 +465,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := h.scheduler.WithApplyLock(func() error {
-		outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies, h.mark)
+		outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies, int(h.mark.Load()))
 		if err != nil {
 			return fmt.Errorf("failed to generate outbounds: %v", err)
 		}
@@ -613,7 +620,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies, h.mark)
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(filteredProxies, int(h.mark.Load()))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate outbounds: %v", err))
 		return

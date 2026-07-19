@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/fan92rus/xkeen-ui/internal/config"
 )
 
 // migrationsStateFile stores which migrations have been applied (one name per line).
@@ -58,12 +60,21 @@ var allMigrations = []migration{
 //   - must be safe to run on every startup (idempotent)
 //   - must be FAST when nothing needs to change (stat a file, return)
 //   - only print/log when an action is actually taken
-var startupMigrations = []migration{
-	{
-		name:        "proxy-entware-reconcile",
-		description: "Ensure xkeen -pr is on when proxy_entware is enabled in config",
-		run:         reconcileProxyEntware,
-	},
+// startupMigrations holds startup tasks that run on EVERY server launch.
+// Populated by runServer() (which has the loaded config) via registerStartupMigrations().
+// Kept empty here by design — callers wire closures over the real config.
+var startupMigrations []migration
+
+// registerStartupMigrations populates startupMigrations with tasks that need
+// access to the loaded config. Called once from runServer() before runStartupMigrations().
+func registerStartupMigrations(cfg *config.Config) {
+	startupMigrations = []migration{
+		{
+			name:        "proxy-entware-reconcile",
+			description: "Ensure xkeen -pr is on when proxy_entware is enabled in config",
+			run:         func() error { return reconcileProxyEntware(cfg) },
+		},
+	}
 }
 
 // runMigrations executes all pending migrations, tracking state in a file

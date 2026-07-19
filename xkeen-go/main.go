@@ -215,7 +215,9 @@ func runServer() {
 
 	// Run startup migrations: idempotent self-healing tasks that run on
 	// every boot (e.g. recreate deleted config files, reconcile state).
-	// Not tracked.
+	// Not tracked. Register cfg-dependent tasks first so they see the
+	// already-loaded config (and respect a non-default -config path).
+	registerStartupMigrations(cfg)
 	runStartupMigrations()
 
 	// Create server with embedded web files

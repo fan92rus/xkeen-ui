@@ -208,15 +208,25 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		// restarts xray. Without this, xray loads old unmarked outbounds and
 		// the iptables `--mark 255 -j RETURN` rule won't match Xray-originated
 		// packets, causing a routing loop.
+		//
+		// When enabling: a regen failure is fatal — abort before xkeen -pr on
+		// to avoid the routing loop described above.
+		// When disabling: a regen failure is harmless — leftover mark on outbounds
+		// is inert once iptables OUTPUT rules are removed, so proceed.
 		if err := s.subscriptionHandler.RegenerateOutbounds(); err != nil {
-			log.Printf("[proxy-entware] warning: failed to regenerate outbounds: %v (mark will apply on next subscription refresh)", err)
+			if enabled {
+				return fmt.Errorf("regenerate outbounds before xkeen -pr on: %w", err)
+			}
+			log.Printf("[proxy-entware] warning: failed to regenerate outbounds on disable: %v", err)
 		}
 
 		arg := "off"
 		if enabled {
 			arg = "on"
 		}
-		cmd := exec.Command(cfg.XkeenBinary, "-pr", arg) //nolint:gosec // cfg.XkeenBinary is admin-controlled, arg is a hardcoded literal
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, cfg.XkeenBinary, "-pr", arg) //nolint:gosec // cfg.XkeenBinary is admin-controlled, arg is a hardcoded literal
 		if out, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("[proxy-entware] xkeen -pr %s failed: %v: %s", arg, err, string(out))
 			return fmt.Errorf("xkeen -pr %s: %w", arg, err)

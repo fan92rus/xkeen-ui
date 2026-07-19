@@ -163,13 +163,11 @@ func migrateAWGInitUniversal() error {
 //
 // Silent when disabled or when xkeen -pr is already on (xkeen handles the
 // idempotent case itself).
-func reconcileProxyEntware() error {
-	cfg, err := config.LoadConfig(installConfig)
-	if err != nil {
-		// Config not readable — nothing to reconcile.
-		return nil
-	}
-	if !cfg.ProxyEntware {
+//
+// Accepts the already-loaded config from main.go to avoid re-reading the
+// config file (and to respect a non-default -config path).
+func reconcileProxyEntware(cfg *config.Config) error {
+	if cfg == nil || !cfg.ProxyEntware {
 		return nil
 	}
 	cmd := exec.Command(cfg.XkeenBinary, "-pr", "on") //nolint:gosec // cfg.XkeenBinary is admin-controlled
