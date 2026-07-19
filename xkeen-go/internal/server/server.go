@@ -193,9 +193,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		}
 	})
 
-	// Wire proxy_entware toggle: update mark on handler+scheduler, run xkeen -pr on/off.
-	// Regeneration of outbounds happens on the next subscription apply/refresh.
-	// xkeen -pr on/off itself restarts xray (rebuilding iptables OUTPUT rules).
+	// Wire proxy_entware toggle: update mark on handler+scheduler, regenerate
+	// outbounds (so the mark is on disk before xkeen restarts), and run
+	// xkeen -pr on/off.
 	s.settingsHandler.SetProxyEntwareChange(func(enabled bool) error {
 		mark := 0
 		if enabled {
@@ -203,6 +203,14 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		}
 		s.subscriptionHandler.SetMark(mark)
 		subScheduler.SetMark(mark)
+
+		// Regenerate 04_outbounds.json with the new mark BEFORE xkeen -pr
+		// restarts xray. Without this, xray loads old unmarked outbounds and
+		// the iptables `--mark 255 -j RETURN` rule won't match Xray-originated
+		// packets, causing a routing loop.
+		if err := s.subscriptionHandler.RegenerateOutbounds(); err != nil {
+			log.Printf("[proxy-entware] warning: failed to regenerate outbounds: %v (mark will apply on next subscription refresh)", err)
+		}
 
 		arg := "off"
 		if enabled {

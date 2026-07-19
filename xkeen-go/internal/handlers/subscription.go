@@ -117,6 +117,29 @@ func (h *SubscriptionHandler) SetMark(mark int) {
 	h.mark = mark
 }
 
+// RegenerateOutbounds regenerates only the 04_outbounds.json file with the current
+// mark setting and writes it to disk. Does NOT touch routing/observatory.
+// Does NOT restart xray (caller's responsibility — e.g. xkeen -pr restarts it).
+//
+// Used by the proxy_entware toggle: the mark must be written to the config file
+// BEFORE xkeen -pr on restarts xray, otherwise xray loads old unmarked outbounds
+// and the iptables `--mark 255 -j RETURN` rule won't match Xray-originated packets.
+func (h *SubscriptionHandler) RegenerateOutbounds() error {
+	allProxies := h.store.GetProxies()
+	outboundsJSON, err := subscription.GenerateOutboundsJSON(allProxies, h.mark)
+	if err != nil {
+		return fmt.Errorf("generate outbounds: %w", err)
+	}
+	outboundsPath := h.xrayDir + "/04_outbounds.json"
+	if err := os.MkdirAll(h.xrayDir, 0o750); err != nil {
+		return fmt.Errorf("mkdir %s: %w", h.xrayDir, err)
+	}
+	if err := atomicWriteAll(map[string][]byte{outboundsPath: outboundsJSON}); err != nil {
+		return fmt.Errorf("write %s: %w", outboundsPath, err)
+	}
+	return nil
+}
+
 // Stop gracefully stops the scheduler.
 func (h *SubscriptionHandler) Stop() {
 	if h.scheduler != nil {

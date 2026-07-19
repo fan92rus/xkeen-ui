@@ -1840,3 +1840,54 @@ func containsStr(s, substr string) bool {
 	}
 	return false
 }
+
+// TestRegenerateOutbounds verifies that RegenerateOutbounds writes the
+// 04_outbounds.json file with the current mark setting.
+func TestRegenerateOutbounds(t *testing.T) {
+	h, xrayDir := newTestHandler(t)
+
+	// Add a subscription + proxy so generation has something to work with
+	sub := &subscription.Subscription{
+		ID:       "sub1",
+		Name:     "Test",
+		URL:      "https://example.com/sub",
+		Enabled:  true,
+		Interval: subscription.FlexibleInt(60),
+	}
+	if err := h.store.AddSubscription(sub); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	outboundJSON := []byte("{\"protocol\":\"vless\",\"settings\":{\"vnext\":[{\"address\":\"1.2.3.4\",\"port\":443}]}}")
+	h.store.SetProxies([]*subscription.ProxyEntry{
+		{SubscriptionID: "sub1", Protocol: "vless", Outbound: outboundJSON},
+	})
+
+	// mark=0: no mark in output
+	h.SetMark(0)
+	if err := h.RegenerateOutbounds(); err != nil {
+		t.Fatalf("RegenerateOutbounds (mark=0): %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(xrayDir, "04_outbounds.json"))
+	if err != nil {
+		t.Fatalf("read outbounds: %v", err)
+	}
+	if bytes.Contains(data, []byte("mark")) {
+		t.Errorf("mark=0 should not produce 'mark' in output, got: %s", data)
+	}
+
+	// mark=255: mark should appear in streamSettings.sockopt
+	h.SetMark(255)
+	if err := h.RegenerateOutbounds(); err != nil {
+		t.Fatalf("RegenerateOutbounds (mark=255): %v", err)
+	}
+	data, err = os.ReadFile(filepath.Join(xrayDir, "04_outbounds.json"))
+	if err != nil {
+		t.Fatalf("read outbounds: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"mark": 255`)) {
+		t.Errorf("mark=255 should produce \"mark\": 255 in output, got: %s", data)
+	}
+	if !bytes.Contains(data, []byte("sockopt")) {
+		t.Errorf("mark=255 should produce sockopt section, got: %s", data)
+	}
+}
