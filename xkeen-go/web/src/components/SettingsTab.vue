@@ -20,6 +20,8 @@ const metricsPort = ref(0);
 const metricsLoading = ref(false);
 const metricsSaving = ref(false);
 
+const observatoryConcurrency = ref(false);
+
 async function loadMetricsPort() {
 	metricsLoading.value = true;
 	try {
@@ -28,6 +30,25 @@ async function loadMetricsPort() {
 	} catch { /* ignore */ }
 	finally {
 		metricsLoading.value = false;
+	}
+}
+
+async function loadObservatoryConcurrency() {
+	try {
+		const d = await metrics.getObservatoryConcurrency();
+		observatoryConcurrency.value = d.enabled || false;
+	} catch { /* ignore */ }
+}
+
+async function saveObservatoryConcurrency() {
+	try {
+		await metrics.updateObservatoryConcurrency(observatoryConcurrency.value);
+		app.showToast(
+			observatoryConcurrency.value ? 'Observatory: parallel probes ON' : 'Observatory: sequential (default)',
+			'success',
+		);
+	} catch (e) {
+		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
 	}
 }
 
@@ -209,6 +230,7 @@ async function uninstallAWG() {
 onMounted(() => {
 	loadAutoApply();
 	loadMetricsPort();
+	loadObservatoryConcurrency();
 	app.loadXraySettings();
   checkAWG();
   loadProxyEntware();
@@ -493,6 +515,16 @@ onMounted(() => {
               <button :disabled="metricsSaving" class="btn btn-primary" @click="saveMetricsPort()">
                 {{ metricsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }} }}
               </button>
+            </div>
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">Observatory concurrency</div>
+                <div class="s-row-desc">Parallel proxy health probes (faster updates, more load on router)</div>
+              </div>
+              <label class="toggle">
+                <input v-model="observatoryConcurrency" type="checkbox" @change="saveObservatoryConcurrency()">
+                <span class="toggle-slider" />
+              </label>
             </div>
           </div>
         </section>

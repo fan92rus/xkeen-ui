@@ -46,6 +46,9 @@ type Scheduler struct {
 	// an HTTP handler while writeConfigFiles runs from the scheduler goroutine.
 	mark atomic.Int64
 
+	// observatoryConcurrency enables parallel health probes in Xray observatory.
+	observatoryConcurrency bool
+
 	// applyMu serializes config-file generation+writes between auto-apply and the HTTP Apply handler.
 	applyMu sync.Mutex
 }
@@ -92,6 +95,14 @@ func (s *Scheduler) SetMetricsPort(port int) {
 // 0 disables marking; 255 enables Entware traffic proxy mode.
 func (s *Scheduler) SetMark(mark int) {
 	s.mark.Store(int64(mark))
+}
+
+// SetObservatoryConcurrency enables or disables parallel probe concurrency
+// in the Xray observatory health-check app.
+func (s *Scheduler) SetObservatoryConcurrency(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observatoryConcurrency = enabled
 }
 
 // recoverPanic catches a panic in a scheduler goroutine, logs it, and lets the
@@ -306,7 +317,7 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	// Observatory
 	obsPath := dir + "/07_observatory.json"
 	if NeedsObservatory(profiles) {
-		obsJSON, err := GenerateObservatoryJSON()
+		obsJSON, err := GenerateObservatoryJSON(s.observatoryConcurrency)
 		if err != nil {
 			return fmt.Errorf("generate observatory: %w", err)
 		}

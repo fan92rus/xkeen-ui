@@ -333,13 +333,19 @@ func replaceBalancerRules(rulesRaw json.RawMessage) json.RawMessage {
 }
 
 // GenerateObservatoryJSON generates 07_observatory.json for leastping/leastload strategies.
-func GenerateObservatoryJSON() ([]byte, error) {
+// enableConcurrency=true probes all outbounds in parallel (one sleep after all finish);
+// false (default) probes sequentially with probeInterval between each.
+func GenerateObservatoryJSON(enableConcurrency bool) ([]byte, error) {
+	obs := map[string]interface{}{
+		"subjectSelector": []string{"proxy"},
+		"probeURL":        "https://www.google.com/generate_204",
+		"probeInterval":   "30s",
+	}
+	if enableConcurrency {
+		obs["enableConcurrency"] = true
+	}
 	observatory := map[string]interface{}{
-		"observatory": map[string]interface{}{
-			"subjectSelector": []string{"proxy"},
-			"probeURL":        "https://www.google.com/generate_204",
-			"probeInterval":   "30s",
-		},
+		"observatory": obs,
 	}
 
 	return json.MarshalIndent(observatory, "", "  ")

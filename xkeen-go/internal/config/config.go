@@ -52,6 +52,10 @@ type Config struct {
 	// MetricsPort is the port for Xray metrics endpoint (0 = disabled).
 	MetricsPort int `json:"metrics_port"`
 
+	// ObservatoryConcurrency enables parallel proxy health probes in Xray observatory.
+	// When false (default), probes are sequential with probeInterval between each.
+	ObservatoryConcurrency bool `json:"observatory_concurrency"`
+
 	// AllowedRoots defines the allowed directories for file operations.
 	AllowedRoots []string `json:"allowed_roots"`
 

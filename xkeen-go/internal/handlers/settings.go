@@ -54,6 +54,10 @@ type SettingsHandler struct {
 	// and runs `xkeen -pr on/off`.
 	onProxyEntwareChange func(enabled bool) error
 
+	// onObservatoryChange is called when observatory concurrency is toggled
+	// (wired in server.go to update subscriptionHandler + subScheduler).
+	onObservatoryChange func(enabled bool)
+
 	// cfgMu protects concurrent access to cfg.ProxyEntware between
 	// GetProxyEntware (reader) and UpdateProxyEntware (writer) HTTP handlers.
 	cfgMu sync.RWMutex
@@ -327,6 +331,11 @@ func (h *SettingsHandler) SetProxyEntwareChange(fn func(enabled bool) error) {
 	h.onProxyEntwareChange = fn
 }
 
+// SetObservatoryChange sets the callback invoked when observatory concurrency is toggled.
+func (h *SettingsHandler) SetObservatoryChange(fn func(enabled bool)) {
+	h.onObservatoryChange = fn
+}
+
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
 func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, _ *http.Request) {
@@ -467,6 +476,43 @@ func (h *SettingsHandler) GetProxyEntware(w http.ResponseWriter, _ *http.Request
 	})
 }
 
+// GetObservatoryConcurrency returns the current observatory concurrency setting.
+// GET /api/settings/observatory
+func (h *SettingsHandler) GetObservatoryConcurrency(w http.ResponseWriter, _ *http.Request) {
+	enabled := h.cfg.ObservatoryConcurrency
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":      true,
+		"enabled": enabled,
+	})
+}
+
+// UpdateObservatoryConcurrency updates the observatory concurrency setting.
+// PUT /api/settings/observatory
+func (h *SettingsHandler) UpdateObservatoryConcurrency(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	h.cfg.ObservatoryConcurrency = req.Enabled
+	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to save config")
+		return
+	}
+
+	if h.onObservatoryChange != nil {
+		h.onObservatoryChange(req.Enabled)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":      true,
+		"enabled": req.Enabled,
+	})
+}
+
 // UpdateProxyEntware toggles routing of router-originated (Entware) traffic through Xray.
 // POST /api/settings/proxy-entware {"enabled": true/false}
 //
@@ -521,4 +567,6 @@ func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/settings/awg-interfaces", handler.UpdateAWGInterfaces).Methods("PUT")
 	r.HandleFunc("/settings/proxy-entware", handler.GetProxyEntware).Methods("GET")
 	r.HandleFunc("/settings/proxy-entware", handler.UpdateProxyEntware).Methods("POST")
+	r.HandleFunc("/settings/observatory", handler.GetObservatoryConcurrency).Methods("GET")
+	r.HandleFunc("/settings/observatory", handler.UpdateObservatoryConcurrency).Methods("PUT")
 }

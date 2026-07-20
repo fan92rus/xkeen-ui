@@ -178,3 +178,5 @@ export const getMetricsObservatory = () => api.get('/api/metrics/observatory');
 export const getMetricsPort = () => api.get('/api/settings/metrics');
 export const updateMetricsPort = (port) => api.put('/api/settings/metrics', { metrics_port: port });
 export const getProxyNames = () => api.get('/api/metrics/proxy-names');
+export const getObservatoryConcurrency = () => api.get('/api/settings/observatory');
+export const updateObservatoryConcurrency = (enabled) => api.put('/api/settings/observatory', { enabled });

@@ -92,6 +92,8 @@ type SubscriptionHandler struct {
 	currentMode string // "xray" or "mihomo" — set on construction from config
 	restartFn   func() // optional restart function wired from server.go
 	mark        atomic.Int64 // sockopt.mark for outbounds (0 = none, 255 = proxy_entware on)
+
+	observatoryConcurrency bool // parallel probe flag for Xray observatory
 }
 
 // NewSubscriptionHandler creates a new SubscriptionHandler.
@@ -110,6 +112,12 @@ func NewSubscriptionHandler(store *subscription.Store, fetcher *subscription.Fet
 // SetRestartFn sets the restart function called when Apply receives restart:true.
 func (h *SubscriptionHandler) SetRestartFn(fn func()) {
 	h.restartFn = fn
+}
+
+// SetObservatoryConcurrency enables or disables parallel probe concurrency
+// in the Xray observatory health-check app (affects 07_observatory.json).
+func (h *SubscriptionHandler) SetObservatoryConcurrency(enabled bool) {
+	h.observatoryConcurrency = enabled
 }
 
 // SetMark sets the sockopt.mark value applied to all outbounds during generation.
@@ -481,7 +489,7 @@ func (h *SubscriptionHandler) Apply(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if subscription.NeedsObservatory(profiles) {
-			observatoryJSON, err = subscription.GenerateObservatoryJSON()
+			observatoryJSON, err = subscription.GenerateObservatoryJSON(h.observatoryConcurrency)
 			if err != nil {
 				return fmt.Errorf("failed to generate observatory: %v", err)
 			}
@@ -642,7 +650,7 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, _ *http.Request) {
 
 	var observatoryJSON json.RawMessage
 	if subscription.NeedsObservatory(profiles) {
-		if obs, err := subscription.GenerateObservatoryJSON(); err == nil {
+		if obs, err := subscription.GenerateObservatoryJSON(h.observatoryConcurrency); err == nil {
 			observatoryJSON = obs
 		}
 	}

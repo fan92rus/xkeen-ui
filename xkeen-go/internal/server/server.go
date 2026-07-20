@@ -163,6 +163,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	subScheduler := subscription.NewScheduler(subStore, subFetcher)
 	subScheduler.SetXrayDir(cfg.XrayConfigDir)
 	subScheduler.SetMetricsPort(cfg.MetricsPort)
+	subScheduler.SetObservatoryConcurrency(cfg.ObservatoryConcurrency)
 	s.subscriptionHandler = handlers.NewSubscriptionHandler(subStore, subFetcher, subScheduler, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, cfg.Mode)
 
 	// Wire subscription apply restart to service handler restart
@@ -174,6 +175,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		s.subscriptionHandler.SetMark(mark)
 		subScheduler.SetMark(mark)
 	}
+
+	// Apply observatory concurrency to subscription handler
+	s.subscriptionHandler.SetObservatoryConcurrency(cfg.ObservatoryConcurrency)
 
 	// AWG handler
 	s.awgHandler = handlers.NewAWGHandler(subStore, cfg.AWGConfigDir, cfg)
@@ -241,6 +245,12 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		}
 		log.Printf("[proxy-entware] xkeen -pr %s completed", arg)
 		return nil
+	})
+
+	// Wire observatory concurrency toggle: propagate to handler + scheduler
+	s.settingsHandler.SetObservatoryChange(func(enabled bool) {
+		s.subscriptionHandler.SetObservatoryConcurrency(enabled)
+		subScheduler.SetObservatoryConcurrency(enabled)
 	})
 
 	// Wire scheduler OnUpdate: push proxy names after each fetch

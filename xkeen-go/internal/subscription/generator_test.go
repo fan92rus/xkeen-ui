@@ -555,7 +555,7 @@ func TestGenerateRoutingJSON_FirstProxyInBalancerUsesProxyTag(t *testing.T) {
 // --- GenerateObservatoryJSON ---
 
 func TestGenerateObservatoryJSON(t *testing.T) {
-	data, err := GenerateObservatoryJSON()
+	data, err := GenerateObservatoryJSON(false)
 	if err != nil {
 		t.Fatalf("GenerateObservatoryJSON failed: %v", err)
 	}
@@ -640,7 +640,7 @@ func TestGenerateRoutingJSON_ValidJSON(t *testing.T) {
 }
 
 func TestGenerateObservatoryJSON_ValidJSON(t *testing.T) {
-	data, err := GenerateObservatoryJSON()
+	data, err := GenerateObservatoryJSON(false)
 	if err != nil {
 		t.Fatalf("GenerateObservatoryJSON failed: %v", err)
 	}
