@@ -59,11 +59,12 @@ func (s *Server) setupRoutes() {
 		handlers.RegisterDiagnosticsRoutes(apiRouter, s.diagnosticsHandler)
 	}
 
-	// Metrics routes (optional)
-	if s.metricsHandler != nil {
-		handlers.RegisterMetricsRoutes(apiRouter, s.metricsHandler)
-		handlers.RegisterMetricsWSRoute(s.router, s.metricsHandler, s.middleware.AuthMiddleware)
-	}
+	// Metrics routes. Always registered — under Option E the metrics handler
+	// is created once at startup and stays alive for the whole process
+	// lifetime, so these routes are never missing (fixes the 404 on /ws/metrics
+	// when metrics were enabled at runtime after a startup with port 0).
+	handlers.RegisterMetricsRoutes(apiRouter, s.metricsHandler)
+	handlers.RegisterMetricsWSRoute(s.router, s.metricsHandler, s.middleware.AuthMiddleware)
 
 	// WebSocket routes (auth required, but no CSRF - WebSocket cannot send custom headers)
 	handlers.RegisterLogsWSRoute(s.router, s.logsHandler, s.middleware.AuthMiddleware)

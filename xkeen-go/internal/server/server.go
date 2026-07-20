@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -43,10 +44,14 @@ type Server struct {
 	interactiveHandler  *handlers.InteractiveHandler
 	subscriptionHandler *handlers.SubscriptionHandler
 	metricsHandler      *handlers.MetricsHandler
-	commandRegistry     *handlers.CommandRegistry
-	installHandler      *handlers.InstallHandler
-	awgHandler          *handlers.AWGHandler
-	diagnosticsHandler  *handlers.DiagnosticsHandler
+	// metricsPort mirrors cfg.MetricsPort for lock-free reads from the
+	// poller goroutine. 0 = disabled. Updated by the OnMetricsChange
+	// callback; the handler's urlFn reads it on every poll.
+	metricsPort        atomic.Int64
+	commandRegistry    *handlers.CommandRegistry
+	installHandler     *handlers.InstallHandler
+	awgHandler         *handlers.AWGHandler
+	diagnosticsHandler *handlers.DiagnosticsHandler
 
 	// Shutdown state
 	shutdown    bool
@@ -90,28 +95,31 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, configPath, cfg.Mode)
 	s.serviceHandler = handlers.NewServiceHandler()
 	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
-		func(port int) *handlers.MetricsHandler {
-			// Stop old handler if any
-			if s.metricsHandler != nil {
-				s.metricsHandler.Close()
-			}
-			s.metricsHandler = nil
-			if port > 0 {
-				s.metricsHandler = handlers.NewMetricsHandlerWithOrigins(
-					fmt.Sprintf("http://127.0.0.1:%d", port),
-					5*time.Second,
-					cfg.CORS.AllowedOrigins,
-				)
-				log.Printf("Metrics enabled: listening on 127.0.0.1:%d", port)
-			}
-			return s.metricsHandler
+		func(port int) {
+			// Option E: enabling/disabling metrics is a data update, not a
+			// lifecycle operation. The handler stays alive for the whole
+			// process; we just mirror the new port so the poller picks it up
+			// on the next tick. No handler recreation, no Close, no race.
+			s.metricsPort.Store(int64(port))
 		},
 	)
 
-	// Initialize metrics handler with initial config value
-	if cfg.MetricsPort > 0 {
-		s.settingsHandler.OnMetricsChange(cfg.MetricsPort)
-	}
+	// Always create the metrics handler (one instance for the whole process
+	// lifetime). Its urlFn resolves the target from the live metricsPort
+	// atomic: empty string when disabled (port 0) → reports unavailable
+	// without polling Xray; non-empty when enabled → polls Xray.
+	s.metricsPort.Store(int64(cfg.MetricsPort))
+	s.metricsHandler = handlers.NewMetricsHandlerDynamic(
+		func() string {
+			p := s.metricsPort.Load()
+			if p == 0 {
+				return ""
+			}
+			return fmt.Sprintf("http://127.0.0.1:%d", p)
+		},
+		5*time.Second,
+		cfg.CORS.AllowedOrigins,
+	)
 
 	s.logsHandler = handlers.NewLogsHandler(handlers.LogsConfig{
 		AllowedRoots:   cfg.AllowedRoots,

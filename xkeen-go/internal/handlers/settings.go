@@ -46,7 +46,7 @@ type SettingsHandler struct {
 	backupDir       string
 	cfg             *config.Config
 	configPath      string
-	OnMetricsChange func(int) *MetricsHandler
+	OnMetricsChange func(int)      // called when the metrics port changes (data update, not lifecycle)
 	updateMetrics   func(port int) // called to update scheduler + write config file
 
 	// onProxyEntwareChange is called when the proxy_entware setting is toggled.
@@ -60,7 +60,7 @@ type SettingsHandler struct {
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
-func NewSettingsHandler(allowedRoots []string, xrayConfigDir, backupDir string, cfg *config.Config, configPath string, onMetricsChange func(int) *MetricsHandler) *SettingsHandler {
+func NewSettingsHandler(allowedRoots []string, xrayConfigDir, backupDir string, cfg *config.Config, configPath string, onMetricsChange func(int)) *SettingsHandler {
 	validator, err := utils.NewPathValidator(allowedRoots)
 	if err != nil {
 		log.Printf("Warning: failed to create path validator: %v", err)

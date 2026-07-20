@@ -50,6 +50,21 @@ function redirectInvalidTab() {
     }
 }
 
+// Reload the metrics-enabled flag. Called by SettingsTab after the user
+// toggles metrics on/off so the Metrics tab appears/disappears immediately
+// without requiring a page reload (injected as 'reloadMetricsState').
+async function reloadMetricsState() {
+    try {
+        const m = await getMetricsPort();
+        metricsEnabled.value = m.enabled;
+    } catch {
+        // keep current state on error
+    }
+    // If the active tab is no longer valid (e.g. metrics disabled while
+    // viewing it), bounce to the first tab.
+    redirectInvalidTab();
+}
+
 const tabs = computed(() => {
 		const list = [
 			{ id: 'editor', label: i18n.t('nav.editor') },
@@ -95,6 +110,7 @@ const icons = {
 
 const editorRef = ref(null);
 provide('isDark', isDark);
+provide('reloadMetricsState', reloadMetricsState);
 
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {

@@ -65,14 +65,20 @@ type WSMessage struct {
 // stores a sparse history (20-second intervals, ~20 min), and streams live
 // updates (2-second intervals) to connected WebSocket clients.
 type MetricsHandler struct {
-	baseURL string
-	client  *http.Client
+	// urlFn resolves the Xray metrics base URL on every poll. Returning ""
+	// means metrics are disabled — the handler reports unavailable without
+	// contacting Xray. This lets a single handler instance stay alive across
+	// runtime port changes (always-on handler; enable/disable is a data
+	// update, not a lifecycle operation).
+	urlFn  func() string
+	client *http.Client
 
 	// Cache for /debug/vars responses
-	mu       sync.RWMutex
-	cached   []byte
-	cachedAt time.Time
-	cacheTTL time.Duration
+	mu        sync.RWMutex
+	cached    []byte
+	cachedAt  time.Time
+	cacheTTL  time.Duration
+	cachedURL string // invalidates cache when the target URL (port) changes
 
 	// History ring buffer (sparse, every 20s, ~20 min)
 	histMu  sync.RWMutex
@@ -113,7 +119,7 @@ func NewMetricsHandlerWithOrigins(baseURL string, timeout time.Duration, allowed
 	}
 
 	h := &MetricsHandler{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
+		urlFn: staticURLFn(baseURL),
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -141,7 +147,7 @@ func NewMetricsHandlerWithOrigins(baseURL string, timeout time.Duration, allowed
 // Used for testing the legacy HTTP endpoints without goroutine interference.
 func NewMetricsHandlerHTTPOnly(baseURL string, timeout time.Duration) *MetricsHandler {
 	h := &MetricsHandler{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
+		urlFn: staticURLFn(baseURL),
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -160,6 +166,49 @@ func NewMetricsHandlerHTTPOnly(baseURL string, timeout time.Duration) *MetricsHa
 	}
 
 	return h
+}
+
+// NewMetricsHandlerDynamic creates a MetricsHandler whose target URL is
+// resolved on every poll via urlFn. Returning "" from urlFn disables metrics
+// (the handler reports unavailable without contacting Xray). This lets one
+// handler instance serve for the whole process lifetime, even as the metrics
+// port is changed at runtime — the server uses it so enable/disable and port
+// changes become data updates rather than handler lifecycle operations.
+func NewMetricsHandlerDynamic(urlFn func() string, timeout time.Duration, allowedOrigins []string) *MetricsHandler {
+	originsMap := make(map[string]bool)
+	for _, o := range allowedOrigins {
+		originsMap[o] = true
+	}
+	if urlFn == nil {
+		urlFn = func() string { return "" }
+	}
+	h := &MetricsHandler{
+		urlFn: urlFn,
+		client: &http.Client{
+			Timeout: timeout,
+		},
+		cacheTTL:       2 * time.Second,
+		clients:        make(map[*websocket.Conn]bool),
+		broadcast:      make(chan WSMessage, 64),
+		history:        make([]MetricsSnapshot, 0, metricsHistoryCapacity),
+		allowedOrigins: originsMap,
+		proxyNames:     make(map[string]string),
+	}
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 4096,
+		CheckOrigin:     h.checkOrigin,
+	}
+	h.startWorkers()
+	return h
+}
+
+// staticURLFn returns a URL resolver that always reports the given base URL
+// (trailing slash trimmed). Used by the static-URL constructors so existing
+// callers/tests are unaffected by the dynamic-URL capability.
+func staticURLFn(baseURL string) func() string {
+	u := strings.TrimSuffix(baseURL, "/")
+	return func() string { return u }
 }
 
 // Close gracefully stops all background goroutines.
@@ -189,9 +238,12 @@ func (h *MetricsHandler) startWorkers() {
 		ticker := time.NewTicker(metricsHistoryInterval)
 		defer ticker.Stop()
 
-		// Take an initial sample immediately
+		// Take an initial sample immediately (skip unavailable so disabled
+		// state doesn't fill the ring buffer with empty snapshots).
 		snap := h.collectSnapshot()
-		h.appendHistory(snap)
+		if snap.Available {
+			h.appendHistory(snap)
+		}
 
 		for {
 			select {
@@ -199,7 +251,9 @@ func (h *MetricsHandler) startWorkers() {
 				return
 			case <-ticker.C:
 				snap := h.collectSnapshot()
-				h.appendHistory(snap)
+				if snap.Available {
+					h.appendHistory(snap)
+				}
 			}
 		}
 	}()
@@ -268,17 +322,19 @@ func (h *MetricsHandler) getHistory() []MetricsSnapshot {
 	return result
 }
 
-// fetchVars fetches /debug/vars from Xray, using cache if fresh.
-func (h *MetricsHandler) fetchVars() (data []byte, cached bool, err error) {
+// fetchVars fetches /debug/vars from Xray at the given base URL, using cache
+// if fresh. u must be a non-empty base URL (the caller handles the disabled
+// case before calling).
+func (h *MetricsHandler) fetchVars(u string) (data []byte, cached bool, err error) {
 	h.mu.RLock()
-	if h.cached != nil && time.Since(h.cachedAt) < h.cacheTTL {
+	if h.cachedURL == u && h.cached != nil && time.Since(h.cachedAt) < h.cacheTTL {
 		data := h.cached
 		h.mu.RUnlock()
 		return data, true, nil
 	}
 	h.mu.RUnlock()
 
-	resp, err := h.client.Get(h.baseURL + "/debug/vars")
+	resp, err := h.client.Get(u + "/debug/vars")
 	if err != nil {
 		return nil, false, err
 	}
@@ -292,6 +348,7 @@ func (h *MetricsHandler) fetchVars() (data []byte, cached bool, err error) {
 	h.mu.Lock()
 	h.cached = body
 	h.cachedAt = time.Now()
+	h.cachedURL = u
 	h.mu.Unlock()
 
 	return body, true, nil
@@ -303,7 +360,15 @@ func (h *MetricsHandler) collectSnapshot() MetricsSnapshot {
 		Timestamp: time.Now().Unix(),
 	}
 
-	body, available, err := h.fetchVars()
+	u := h.urlFn()
+	if u == "" {
+		// Metrics disabled (port 0): no Xray endpoint to poll.
+		snap.Available = false
+		snap.Debug = "metrics disabled"
+		return snap
+	}
+
+	body, available, err := h.fetchVars(u)
 	if !available {
 		snap.Available = false
 		snap.Debug = fmt.Sprintf("metrics unavailable: %v", err)
