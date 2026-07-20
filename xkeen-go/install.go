@@ -325,6 +325,15 @@ func installCronWatchdog(initScript, logFile string) error {
 		"* * * * * %s check || %s start >> %s 2>&1",
 		initScript, initScript, logFile,
 	)
+	// @reboot ensures xkeen-ui starts as soon as crond is up at boot,
+	// without waiting for the next minute boundary.  On some Keenetic
+	// setups rc.unslung never runs (NDM does not call /etc/init.d/rcS),
+	// so the S70 symlink is never processed and crond is the only
+	// reliable startup path.
+	rebootLine := fmt.Sprintf(
+		"@reboot sleep 10 && %s start >> %s 2>&1",
+		initScript, logFile,
+	)
 
 	// 3. Rebuild crontab: keep all lines except our previous watchdog entries.
 	//
@@ -346,6 +355,12 @@ func installCronWatchdog(initScript, logFile string) error {
 			strings.Contains(line, "check") {
 			continue // drop old watchdog command
 		}
+		// Drop old @reboot line (references init.d + xkeen-ui + start).
+		if strings.HasPrefix(trimmed, "@reboot") &&
+			strings.Contains(line, "init.d") &&
+			strings.Contains(line, "xkeen-ui") {
+			continue
+		}
 		if trimmed != "" {
 			kept = append(kept, line)
 		}
@@ -354,7 +369,7 @@ func installCronWatchdog(initScript, logFile string) error {
 	if newCrontab != "" {
 		newCrontab += "\n"
 	}
-	newCrontab += markerLine + "\n" + watchdogLine + "\n"
+	newCrontab += markerLine + "\n" + watchdogLine + "\n" + rebootLine + "\n"
 
 	// 4. Install via "crontab -".
 	cmd := exec.Command("crontab", "-")

@@ -22,6 +22,12 @@ func filterCrontab(current, markerLine string) string {
 			strings.Contains(line, "check") {
 			continue
 		}
+		// Drop old @reboot line
+		if strings.HasPrefix(trimmed, "@reboot") &&
+			strings.Contains(line, "init.d") &&
+			strings.Contains(line, "xkeen-ui") {
+			continue
+		}
 		if trimmed != "" {
 			kept = append(kept, line)
 		}
@@ -31,7 +37,8 @@ func filterCrontab(current, markerLine string) string {
 		result += "\n"
 	}
 	result += markerLine + "\n" +
-		"* * * * * /opt/etc/init.d/S70xkeen-ui check || /opt/etc/init.d/S70xkeen-ui start\n"
+		"* * * * * /opt/etc/init.d/S70xkeen-ui check || /opt/etc/init.d/S70xkeen-ui start\n" +
+		"@reboot sleep 10 && /opt/etc/init.d/S70xkeen-ui start\n"
 	return result
 }
 
@@ -57,6 +64,10 @@ func TestFilterCrontab_PreservesLogRotation(t *testing.T) {
 	if !strings.Contains(result, "S70xkeen-ui check ||") {
 		t.Fatal("new S70 watchdog was not added")
 	}
+	// @reboot MUST be present.
+	if !strings.Contains(result, "@reboot") {
+		t.Fatal("@reboot line was not added")
+	}
 }
 
 func TestFilterCrontab_RemovesOldWatchdog(t *testing.T) {
@@ -73,7 +84,8 @@ func TestFilterCrontab_RemovesOldWatchdog(t *testing.T) {
 
 func TestFilterCrontab_RemovesNewWatchdog(t *testing.T) {
 	input := `# xkeen-ui-watchdog (auto-managed)
-* * * * * /opt/etc/init.d/S70xkeen-ui check || /opt/etc/init.d/S70xkeen-ui start >> /opt/var/log/xkeen-ui.log 2>&1`
+* * * * * /opt/etc/init.d/S70xkeen-ui check || /opt/etc/init.d/S70xkeen-ui start >> /opt/var/log/xkeen-ui.log 2>&1
+@reboot sleep 10 && /opt/etc/init.d/S70xkeen-ui start >> /opt/var/log/xkeen-ui.log 2>&1`
 	result := filterCrontab(input, testCronWatchdogMarker)
 
 	// Should not duplicate.
@@ -82,6 +94,9 @@ func TestFilterCrontab_RemovesNewWatchdog(t *testing.T) {
 	}
 	if strings.Count(result, testCronWatchdogMarker) != 1 {
 		t.Fatalf("expected exactly 1 marker, got: %s", result)
+	}
+	if strings.Count(result, "@reboot") != 1 {
+		t.Fatalf("expected exactly 1 @reboot, got: %s", result)
 	}
 }
 
