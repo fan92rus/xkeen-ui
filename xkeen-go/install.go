@@ -403,12 +403,20 @@ func installCronWatchdog(initScript, logFile string) error {
 }
 
 // installNDMHook creates a script in /opt/etc/ndm/netfilter.d/ that starts
-// xkeen-ui when NDM initializes the firewall.  This is the PRIMARY autostart
-// mechanism on Keenetic routers, where NDM does not call rc.unslung at boot.
+// xkeen-ui and AWG interfaces when NDM initializes the firewall.  This is
+// the PRIMARY autostart mechanism on Keenetic routers, where NDM does not
+// call rc.unslung at boot.
 //
 // NDM fires netfilter.d scripts at boot (during firewall init) and on every
 // firewall change.  The hook runs 'check || start', so it is a near-instant
 // no-op when xkeen-ui is already running and revives it when down.
+//
+// The hook also starts AWG interfaces if the init script exists.  This is
+// critical because NDM resets iptables on every firewall change, which
+// wipes AWG's custom rules (INPUT/FORWARD/NAT for server configs).
+// Running 'S90awg start' after each firewall event restores them.
+// 'start' is idempotent: it skips already-up interfaces and checks
+// is_firewall_applied before adding duplicate rules.
 func installNDMHook(initScript, logFile string) error {
 	hookDir := filepath.Dir(installNDMHookPath)
 	//nolint:gosec // NDM hook dir needs 0755 — other hooks (proxy.sh, nfqws2) use the same
@@ -420,12 +428,21 @@ func installNDMHook(initScript, logFile string) error {
 	_ = os.Remove(installNDMHookPath)
 
 	hookContent := fmt.Sprintf(`#!/bin/sh
-# xkeen-ui autostart via NDM netfilter hook (auto-generated).
+# xkeen-ui + AWG autostart via NDM netfilter hook (auto-generated).
 # NDM fires netfilter.d scripts at boot (firewall init) and on firewall
-# changes.  The check is near-instant (PID file + signal 0); start only
-# fires when xkeen-ui is down, making this safe to call on every event.
+# changes.  This hook ensures both xkeen-ui and AWG interfaces are up.
+
+# 1. Start xkeen-ui if down (check is near-instant: PID file + signal 0).
 %s check 2>/dev/null || %s start >>%s 2>&1 &
-`, initScript, initScript, logFile)
+
+# 2. Start/recheck AWG interfaces.  NDM resets iptables on firewall changes,
+# which wipes AWG server rules (INPUT/FORWARD/NAT).  'start' is idempotent:
+# skips already-up interfaces, only re-applies missing firewall rules.
+# Only runs if AWG is installed (init script exists and is executable).
+if [ -x /opt/etc/init.d/S90awg ]; then
+	/opt/etc/init.d/S90awg start >>%s 2>&1 &
+fi
+`, initScript, initScript, logFile, logFile)
 
 	//nolint:gosec // NDM hook script needs execute permission
 	if err := os.WriteFile(installNDMHookPath, []byte(hookContent), 0o755); err != nil {
