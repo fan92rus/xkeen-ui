@@ -129,6 +129,7 @@ func DefaultConfig() *Config {
 			Enabled:        false,
 			AllowedOrigins: []string{},
 		},
+		ObservatoryConcurrency: true,
 		Auth: AuthConfig{
 			PasswordHash:     "", // Will be generated on first run
 			SessionTimeout:   24,
