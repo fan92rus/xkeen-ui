@@ -669,26 +669,39 @@ func (h *SubscriptionHandler) Preview(w http.ResponseWriter, _ *http.Request) {
 // If any write or rename fails, leftover .tmp files are cleaned up and the error is returned.
 // Already-renamed files are NOT rolled back (each rename is atomic).
 func atomicWriteAll(files map[string][]byte) error {
-	// Track tmp files for cleanup on error
-	tmpFiles := make([]string, 0, len(files))
+	// Two-phase commit: write ALL temp files first, then rename ALL.
+	// This prevents partial updates where some files are already
+	// overwritten while others failed.
 
+	// Phase 1: Write all temp files.
+	type pending struct{ tmp, dst string }
+	pendingRenames := make([]pending, 0, len(files))
 	for path, data := range files {
 		tmpPath := path + ".tmp"
 		if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
-			// Clean up all tmp files
-			for _, tf := range tmpFiles {
-				_ = os.Remove(tf)
+			// Clean up all temp files written so far.
+			for _, p := range pendingRenames {
+				_ = os.Remove(p.tmp)
 			}
 			return fmt.Errorf("failed to write %s: %w", tmpPath, err)
 		}
-		tmpFiles = append(tmpFiles, tmpPath)
+		pendingRenames = append(pendingRenames, pending{tmp: tmpPath, dst: path})
+	}
 
-		if err := os.Rename(tmpPath, path); err != nil {
-			// Clean up all tmp files
-			for _, tf := range tmpFiles {
-				_ = os.Remove(tf)
+	// Phase 2: Atomically rename all temp files to their targets.
+	// If a rename fails, the earlier renames are already committed
+	// (rename is destructive and cannot be rolled back on most
+	// filesystems), but at least every temp file was fully written
+	// and validated before any commit began.
+	for _, p := range pendingRenames {
+		if err := os.Rename(p.tmp, p.dst); err != nil {
+			// Clean up remaining temp files that were not yet renamed.
+			for _, remaining := range pendingRenames {
+				if remaining.tmp != p.tmp {
+					_ = os.Remove(remaining.tmp)
+				}
 			}
-			return fmt.Errorf("failed to rename %s -> %s: %w", tmpPath, path, err)
+			return fmt.Errorf("failed to rename %s -> %s: %w", p.tmp, p.dst, err)
 		}
 	}
 

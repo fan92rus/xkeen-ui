@@ -66,6 +66,7 @@ const strategySettings = computed(() => strategy.value.settings || {});
 /* ---- new profile inline ---- */
 const showNewProfileInput = ref(false);
 const newProfileName = ref('');
+const newProfileInputRef = ref(null);
 
 /* ---- regex inline input state ---- */
 const newIncRegex = ref('');
@@ -395,7 +396,7 @@ function openNewProfile() {
     showNewProfileInput.value = true;
     newProfileName.value = '';
     nextTick(() => {
-        const input = document.querySelector('.profile-tabs .ptab-new-input');
+        const input = newProfileInputRef.value;
         if (input) input.focus();
     });
 }
@@ -548,6 +549,7 @@ onMounted(async () => {
           </button>
           <template v-if="showNewProfileInput">
             <input
+              ref="newProfileInputRef"
               v-model="newProfileName"
               class="ptab-new-input new-profile-name"
               :placeholder="i18n.t('subs.profile_name_ph')"

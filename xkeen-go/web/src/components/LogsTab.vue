@@ -61,8 +61,8 @@ onUnmounted(disconnect);
       <select v-model="app.logFilter">
         <option value="all">{{ i18n.t('logs.all') }}</option>
         <option value="error">{{ i18n.t('logs.errors') }}</option>
-        <option value="warn">Warning</option>
-        <option value="info">Info</option>
+        <option value="warn">{{ i18n.t('logs.warning') }}</option>
+        <option value="info">{{ i18n.t('logs.info') }}</option>
       </select>
       <button class="btn btn-sm" @click="app.clearLogs()">{{ i18n.t('logs.clear') }}</button>
     </div>

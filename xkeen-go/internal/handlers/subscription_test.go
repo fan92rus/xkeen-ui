@@ -761,9 +761,11 @@ func TestAtomicWriteAll_CleanupOnError(t *testing.T) {
 		t.Fatal("expected error when target directory doesn't exist")
 	}
 
-	// path1 WAS atomically renamed (rename is atomic, not rolled back)
-	if _, statErr := os.Stat(path1); os.IsNotExist(statErr) {
-		t.Error("expected path1 to exist (atomic rename), but it doesn't")
+	// path1 should NOT exist — two-phase commit prevents partial writes.
+	// The temp file for path1 was written but not yet renamed when path2
+	// failed, so it should be cleaned up.
+	if _, statErr := os.Stat(path1); !os.IsNotExist(statErr) {
+		t.Error("expected path1 to NOT exist (two-phase commit prevents partial writes)")
 	}
 
 	// path2 should NOT exist

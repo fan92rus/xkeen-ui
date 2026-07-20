@@ -44,7 +44,7 @@ async function saveObservatoryConcurrency() {
 	try {
 		await metrics.updateObservatoryConcurrency(observatoryConcurrency.value);
 		app.showToast(
-			observatoryConcurrency.value ? 'Observatory: parallel probes ON' : 'Observatory: sequential (default)',
+			observatoryConcurrency.value ? i18n.t('settings.obs_concurrency') + ': ON' : i18n.t('settings.obs_concurrency') + ': OFF',
 			'success',
 		);
 	} catch (e) {
@@ -518,8 +518,8 @@ onMounted(() => {
             </div>
             <div class="s-row">
               <div class="s-row-main">
-                <div class="s-row-label">Observatory concurrency</div>
-                <div class="s-row-desc">Parallel proxy health probes (faster updates, more load on router)</div>
+                <div class="s-row-label">{{ i18n.t('settings.obs_concurrency') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.obs_concurrency_desc') }}</div>
               </div>
               <label class="toggle">
                 <input v-model="observatoryConcurrency" type="checkbox" @change="saveObservatoryConcurrency()">

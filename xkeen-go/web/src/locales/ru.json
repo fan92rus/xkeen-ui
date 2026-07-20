@@ -48,7 +48,8 @@
     "mihomo_missing": "Mihomo не установлен",
     "xray_missing": "Xray не установлен",
     "mode_switched": "Переключено на {mode}",
-    "mode_switch_error": "Не удалось переключить режим"
+    "mode_switch_error": "Не удалось переключить режим",
+    "diff": "Сравнить"
   },
   "awg": {
     "tab_clients": "Клиенты",
@@ -147,6 +148,9 @@
     "search": "Поиск…",
     "all": "Все",
     "errors": "Ошибки",
+    "warning": "Предупреждения",
+    "info": "Инфо",
+    "debug": "Отладка",
     "clear": "Очистить"
   },
   "metrics": {
@@ -195,6 +199,8 @@
     "proxy_entware_on": "Включить",
     "proxy_entware_off": "Отключить",
     "proxy_entware_saving": "...",
+    "obs_concurrency": "Параллельные пробы Observatory",
+    "obs_concurrency_desc": "Параллельное тестирование всех прокси (быстрее, но требует больше ресурсов)",
     "lang_section": "Язык",
     "lang_label": "Язык интерфейса",
     "mode": "Режим",

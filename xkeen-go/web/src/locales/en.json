@@ -48,7 +48,8 @@
     "mihomo_missing": "Mihomo not installed",
     "xray_missing": "Xray not installed",
     "mode_switched": "Switched to {mode}",
-    "mode_switch_error": "Failed to switch mode"
+    "mode_switch_error": "Failed to switch mode",
+    "diff": "Diff"
   },
   "awg": {
     "tab_clients": "Clients",
@@ -147,6 +148,9 @@
     "search": "Search…",
     "all": "All",
     "errors": "Errors",
+    "warning": "Warnings",
+    "info": "Info",
+    "debug": "Debug",
     "clear": "Clear"
   },
   "metrics": {
@@ -195,6 +199,8 @@
     "proxy_entware_on": "Enable",
     "proxy_entware_off": "Disable",
     "proxy_entware_saving": "...",
+    "obs_concurrency": "Observatory concurrency",
+    "obs_concurrency_desc": "Test all proxies in parallel (faster, but uses more resources)",
     "lang_section": "Language",
     "lang_label": "Interface language",
     "mode": "Mode",

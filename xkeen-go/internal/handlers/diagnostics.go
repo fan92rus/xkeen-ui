@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"time"
@@ -50,8 +49,7 @@ func (h *DiagnosticsHandler) CheckNetwork(w http.ResponseWriter, r *http.Request
 
 	result := h.checkExitIP(ctx)
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(result)
+	respondJSON(w, http.StatusOK, result)
 }
 
 // checkExitIP does the actual network request and returns the result.

@@ -482,8 +482,7 @@ func (h *SettingsHandler) GetProxyEntware(w http.ResponseWriter, _ *http.Request
 	h.cfgMu.RLock()
 	enabled := h.cfg.ProxyEntware
 	h.cfgMu.RUnlock()
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled": enabled,
 	})
 }
@@ -556,9 +555,7 @@ func (h *SettingsHandler) UpdateProxyEntware(w http.ResponseWriter, r *http.Requ
 	if h.onProxyEntwareChange != nil {
 		if err := h.onProxyEntwareChange(req.Enabled); err != nil {
 			// Config was saved; report the apply error but don't revert the setting.
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"enabled": req.Enabled,
 				"error":   err.Error(),
 			})
@@ -566,8 +563,7 @@ func (h *SettingsHandler) UpdateProxyEntware(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled": req.Enabled,
 	})
 }

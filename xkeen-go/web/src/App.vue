@@ -6,6 +6,7 @@ import { useI18nStore } from './stores/i18n.js';
 import { renderAnsi } from './utils/ansi-format.js';
 import { getAWGStatus } from './services/install.js';
 import { getMetricsPort } from './services/metrics.js';
+import { useFocusTrap } from './composables/useFocusTrap.js';
 const EditorTab = defineAsyncComponent(() => import('./components/EditorTab.vue'));
 import SubscriptionsTab from './components/SubscriptionsTab.vue';
 import LogsTab from './components/LogsTab.vue';
@@ -109,8 +110,11 @@ const icons = {
 };
 
 const editorRef = ref(null);
+const outputModalRef = ref(null);
 provide('isDark', isDark);
 provide('reloadMetricsState', reloadMetricsState);
+
+useFocusTrap(outputModalRef, computed(() => app.modal.show));
 
 function onKeydown(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -208,7 +212,7 @@ onUnmounted(() => {
             <span v-if="app.currentFile" class="status-badge" :class="app.isValidJson === false ? 'invalid' : 'valid'">
               {{ app.isValidJson === false ? '✗ JSON' : '✓ JSON' }}
             </span>
-            <button class="btn btn-sm" @click="doDiff()">Diff</button>
+            <button class="btn btn-sm" @click="doDiff()">{{ i18n.t('app.diff') }}</button>
             <button class="btn btn-sm" @click="app.showBackups()">{{ i18n.t('app.backups') }}</button>
             <button class="btn btn-sm btn-primary" @click="doSave()">{{ i18n.t('app.save') }}</button>
           </template>
@@ -226,7 +230,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Output Modal -->
-    <div v-show="app.modal.show" class="modal-overlay" @click.self="app.closeModal()">
+    <div v-show="app.modal.show" ref="outputModalRef" class="modal-overlay" @click.self="app.closeModal()">
       <div class="modal">
         <div class="modal-header">
           <h3>{{ i18n.t('app.output') }} <span>{{ app.modal.command }}</span></h3>

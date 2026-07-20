@@ -1,7 +1,7 @@
 // services/metrics.js - WebSocket client for Xray metrics with localStorage caching
 
 import { error as logError } from '../utils/logger.js';
-import { computeBackoffDelay } from '../utils/backoff.js';
+import { ReconnectingWebSocket } from '../utils/rws.js';
 
 const STORAGE_KEY = 'xkeen_metrics_history';
 const STORAGE_TTL = 10 * 60 * 1000; // 10 minutes in ms
@@ -26,78 +26,52 @@ export class MetricsWS {
 		this.onData = onData;
 		this.onError = onError || (() => {});
 		this.onStatus = onStatus || (() => {});
-		this.ws = null;
-		this.reconnectTimer = null;
-		this.reconnectAttempts = 0; // reset to 0 on every successful connect
-		this.stopped = false;
-		this._mergeBuffer = []; // buffer for merging incoming snapshots
+		this._mergeBuffer = [];
+
+		this.rws = new ReconnectingWebSocket(
+			ReconnectingWebSocket.buildURL('/ws/metrics'),
+			{
+				onMessage: (event) => this._handleMessage(event),
+				onError: () => this.onError(new Error('WebSocket error')),
+				onStatus: (s) => this.onStatus(s),
+			},
+		);
 	}
 
 	connect() {
-		this.stopped = false;
-		this._doConnect();
-	}
-
-	_doConnect() {
-		if (this.stopped) return;
-
-		const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-		const url = `${proto}//${window.location.host}/ws/metrics`;
-		this.ws = new WebSocket(url);
-
-		this.ws.onopen = () => {
-			this.reconnectAttempts = 0; // back on track — reset backoff
-			this.onStatus('connected');
-		};
-
-		this.ws.onmessage = (event) => {
-			try {
-				const msg = JSON.parse(event.data);
-				if (msg.type === 'ping') return;
-
-				if (msg.type === 'history') {
-					// Backend sent historical data — merge with localStorage
-					const localData = this._loadFromStorage();
-					const merged = this._mergeHistory(localData, msg.history || []);
-					this._saveToStorage(merged);
-					this.onData({ type: 'history', history: merged });
-				} else if (msg.type === 'snapshot' && msg.snap) {
-					// Live snapshot — append to storage
-					this._appendSnapshot(msg.snap);
-					this.onData({ type: 'snapshot', snap: msg.snap });
-				} else if (msg.type === 'error') {
-					this.onError(msg.error);
-				}
-			} catch (e) {
-				logError('MetricsWS: failed to parse message', e);
-			}
-		};
-
-		this.ws.onclose = () => {
-			this.onStatus('disconnected');
-			if (!this.stopped) {
-				const delay = computeBackoffDelay(this.reconnectAttempts++);
-				this.reconnectTimer = setTimeout(() => this._doConnect(), delay);
-			}
-		};
-
-		this.ws.onerror = (err) => {
-			this.onError(err);
-		};
+		this.rws.connect();
 	}
 
 	disconnect() {
-		this.stopped = true;
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer);
-			this.reconnectTimer = null;
-		}
-		if (this.ws) {
-			// Remove listeners so our own close() doesn't re-arm a reconnect,
-			// and guard close() — it can throw on an already-CLOSED socket.
-			this.ws.onclose = null;
-			try { this.ws.close(); } catch (_) { /* already closed */ }
-			this.ws = null;
+		this.rws.disconnect();
+	}
+
+	isOpen() {
+		return this.rws.isOpen();
+	}
+
+	// ── Message handling ──
+
+	_handleMessage(event) {
+		try {
+			const msg = JSON.parse(event.data);
+			if (msg.type === 'ping') return;
+
+			if (msg.type === 'history') {
+				// Backend sent historical data — merge with localStorage
+				const localData = this._loadFromStorage();
+				const merged = this._mergeHistory(localData, msg.history || []);
+				this._saveToStorage(merged);
+				this.onData({ type: 'history', history: merged });
+			} else if (msg.type === 'snapshot' && msg.snap) {
+				// Live snapshot — append to storage
+				this._appendSnapshot(msg.snap);
+				this.onData({ type: 'snapshot', snap: msg.snap });
+			} else if (msg.type === 'error') {
+				this.onError(msg.error);
+			}
+		} catch (e) {
+			logError('MetricsWS: failed to parse message', e);
 		}
 	}
 
