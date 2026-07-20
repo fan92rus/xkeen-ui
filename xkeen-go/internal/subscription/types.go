@@ -53,6 +53,9 @@ type Subscription struct {
 type ProxyEntry struct {
 	Tag            string          `json:"tag"`             // generated tag like "proxy-de-1"
 	Protocol       string          `json:"protocol"`        // vless, vmess, trojan, ss
+	Fingerprint    string          `json:"fingerprint,omitempty"`  // TLS fingerprint (chrome, random, ios, …)
+	TLSSecurity    string          `json:"tls_security,omitempty"` // connection security: tls, reality, none
+	Network        string          `json:"network,omitempty"`      // transport: tcp, ws, grpc, hysteria
 	Outbound       json.RawMessage `json:"outbound"`        // complete xray outbound JSON
 	RawURI         string          `json:"raw_uri"`         // original share URI
 	Remarks        string          `json:"remarks"`         // decoded name from #fragment
@@ -62,11 +65,19 @@ type ProxyEntry struct {
 
 // Filter rules for proxy filtering.
 type Filter struct {
-	IncludeCountries []string `json:"include_countries"`
-	ExcludeCountries []string `json:"exclude_countries"`
-	IncludeRegexes   []string `json:"include_regexes"`
-	ExcludeRegexes   []string `json:"exclude_regexes"`
-	MaxProxies       int      `json:"max_proxies"`
+	IncludeCountries    []string `json:"include_countries"`
+	ExcludeCountries    []string `json:"exclude_countries"`
+	IncludeProtocols    []string `json:"include_protocols"`
+	ExcludeProtocols    []string `json:"exclude_protocols"`
+	IncludeFingerprints []string `json:"include_fingerprints"`
+	ExcludeFingerprints []string `json:"exclude_fingerprints"`
+	IncludeNetwork      []string `json:"include_network"`
+	ExcludeNetwork      []string `json:"exclude_network"`
+	IncludeTLS          []string `json:"include_tls"`
+	ExcludeTLS          []string `json:"exclude_tls"`
+	IncludeRegexes      []string `json:"include_regexes"`
+	ExcludeRegexes      []string `json:"exclude_regexes"`
+	MaxProxies          int      `json:"max_proxies"`
 
 	// Legacy fields — migrated to slices on load.
 	LegacyIncludeRegex string `json:"include_regex,omitempty"`

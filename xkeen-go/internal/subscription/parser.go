@@ -102,12 +102,26 @@ func parseVless(rawURI string) (*ProxyEntry, error) {
 
 	country := extractCountry(remarks)
 
+	// Extract filtering metadata from URI params
+	vlessFingerprint := params.Get("fp")
+	vlessSecurity := params.Get("security")
+	if vlessSecurity == "" {
+		vlessSecurity = "none"
+	}
+	vlessNetwork := params.Get("type")
+	if vlessNetwork == "" {
+		vlessNetwork = "tcp"
+	}
+
 	return &ProxyEntry{
-		Protocol: "vless",
-		Outbound: outbound,
-		RawURI:   rawURI,
-		Remarks:  remarks,
-		Country:  country,
+		Protocol:    "vless",
+		Fingerprint: vlessFingerprint,
+		TLSSecurity: vlessSecurity,
+		Network:     vlessNetwork,
+		Outbound:    outbound,
+		RawURI:      rawURI,
+		Remarks:     remarks,
+		Country:     country,
 	}, nil
 }
 
@@ -288,12 +302,26 @@ func parseTrojan(rawURI string) (*ProxyEntry, error) {
 
 	country := extractCountry(remarks)
 
+	// Extract filtering metadata from URI params
+	trojanFingerprint := params.Get("fp")
+	trojanSecurity := params.Get("security")
+	if trojanSecurity == "" {
+		trojanSecurity = "tls"
+	}
+	trojanNetwork := params.Get("type")
+	if trojanNetwork == "" {
+		trojanNetwork = "tcp"
+	}
+
 	return &ProxyEntry{
-		Protocol: "trojan",
-		Outbound: outbound,
-		RawURI:   rawURI,
-		Remarks:  remarks,
-		Country:  country,
+		Protocol:    "trojan",
+		Fingerprint: trojanFingerprint,
+		TLSSecurity: trojanSecurity,
+		Network:     trojanNetwork,
+		Outbound:    outbound,
+		RawURI:      rawURI,
+		Remarks:     remarks,
+		Country:     country,
 	}, nil
 }
 
@@ -428,12 +456,22 @@ func parseHysteria2(rawURI string) (*ProxyEntry, error) {
 
 	country := extractCountry(remarks)
 
+	// Extract filtering metadata from URI params
+	hy2Fingerprint := params.Get("fp")
+	hy2Network := params.Get("type")
+	if hy2Network == "" {
+		hy2Network = "hysteria"
+	}
+
 	return &ProxyEntry{
-		Protocol: "hysteria2",
-		Outbound: outbound,
-		RawURI:   rawURI,
-		Remarks:  remarks,
-		Country:  country,
+		Protocol:    "hysteria2",
+		Fingerprint: hy2Fingerprint,
+		TLSSecurity: "tls", // hysteria2 always uses TLS
+		Network:     hy2Network,
+		Outbound:    outbound,
+		RawURI:      rawURI,
+		Remarks:     remarks,
+		Country:     country,
 	}, nil
 }
 

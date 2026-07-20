@@ -445,6 +445,164 @@ func TestApplyFilter_IncludeMatchButExcludeAlsoMatches(t *testing.T) {
 	}
 }
 
+// --- New filter tests (protocol, fingerprint, network, TLS) ---
+
+func TestApplyFilter_IncludeProtocols(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Protocol: "vless"},
+		{Tag: "b", Protocol: "trojan"},
+		{Tag: "c", Protocol: "vless"},
+	}
+	filter := &Filter{IncludeProtocols: []string{"vless"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 || result[0].Tag != "a" || result[1].Tag != "c" {
+		t.Errorf("expected 2 vless proxies, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_ExcludeProtocols(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Protocol: "vless"},
+		{Tag: "b", Protocol: "trojan"},
+		{Tag: "c", Protocol: "ss"},
+	}
+	filter := &Filter{ExcludeProtocols: []string{"trojan", "ss"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 || result[0].Tag != "a" {
+		t.Errorf("expected 1 vless proxy, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_IncludeProtocols_EmptyIsNoOp(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Protocol: "vless"},
+		{Tag: "b", Protocol: "trojan"},
+	}
+	filter := &Filter{IncludeProtocols: []string{}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 {
+		t.Errorf("empty include_protocols should pass all, got %d", len(result))
+	}
+}
+
+func TestApplyFilter_IncludeFingerprints(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Protocol: "vless", Fingerprint: "chrome"},
+		{Tag: "b", Protocol: "vless", Fingerprint: "random"},
+		{Tag: "c", Protocol: "vless", Fingerprint: ""},
+	}
+	filter := &Filter{IncludeFingerprints: []string{"chrome"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 || result[0].Tag != "a" {
+		t.Errorf("expected 1 chrome proxy, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_ExcludeFingerprints(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Fingerprint: "chrome"},
+		{Tag: "b", Fingerprint: "random"},
+		{Tag: "c", Fingerprint: ""},
+	}
+	filter := &Filter{ExcludeFingerprints: []string{"random"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 || result[0].Tag != "a" || result[1].Tag != "c" {
+		t.Errorf("expected a and c, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_IncludeFingerprints_EmptyExcluded(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Fingerprint: ""},
+	}
+	filter := &Filter{IncludeFingerprints: []string{"chrome"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 0 {
+		t.Errorf("proxy without fingerprint should be excluded when include filter active, got %d", len(result))
+	}
+}
+
+func TestApplyFilter_IncludeNetwork(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Network: "tcp"},
+		{Tag: "b", Network: "ws"},
+		{Tag: "c", Network: "grpc"},
+	}
+	filter := &Filter{IncludeNetwork: []string{"ws", "grpc"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 2 || result[0].Tag != "b" || result[1].Tag != "c" {
+		t.Errorf("expected ws/grpc proxies, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_ExcludeNetwork(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Network: "tcp"},
+		{Tag: "b", Network: "hysteria"},
+	}
+	filter := &Filter{ExcludeNetwork: []string{"hysteria"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 || result[0].Tag != "a" {
+		t.Errorf("expected tcp proxy, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_IncludeTLS(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", TLSSecurity: "tls"},
+		{Tag: "b", TLSSecurity: "reality"},
+		{Tag: "c", TLSSecurity: "none"},
+	}
+	filter := &Filter{IncludeTLS: []string{"tls"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 || result[0].Tag != "a" {
+		t.Errorf("expected tls proxy, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_ExcludeTLS(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", TLSSecurity: "tls"},
+		{Tag: "b", TLSSecurity: "none"},
+	}
+	filter := &Filter{ExcludeTLS: []string{"none"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 || result[0].Tag != "a" {
+		t.Errorf("expected tls proxy, got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_MixedFilters(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Protocol: "vless", Fingerprint: "chrome", Network: "tcp", TLSSecurity: "tls", Country: "DE"},
+		{Tag: "b", Protocol: "vless", Fingerprint: "random", Network: "tcp", TLSSecurity: "tls", Country: "DE"},
+		{Tag: "c", Protocol: "trojan", Fingerprint: "chrome", Network: "tcp", TLSSecurity: "tls", Country: "DE"},
+	}
+	// vless + chrome + tls + germany
+	filter := &Filter{
+		IncludeProtocols:    []string{"vless"},
+		IncludeFingerprints: []string{"chrome"},
+		IncludeTLS:          []string{"tls"},
+		IncludeCountries:    []string{"DE"},
+	}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 1 || result[0].Tag != "a" {
+		t.Errorf("expected proxy a (vless+chrome+tls+DE), got %v", tags(result))
+	}
+}
+
+func TestApplyFilter_AllExclude(t *testing.T) {
+	proxies := []*ProxyEntry{
+		{Tag: "a", Protocol: "vless"},
+		{Tag: "b", Protocol: "trojan"},
+	}
+	filter := &Filter{ExcludeProtocols: []string{"vless", "trojan"}}
+	result := ApplyFilter(proxies, filter)
+	if len(result) != 0 {
+		t.Errorf("expected no proxies, got %v", tags(result))
+	}
+}
+
 func tags(proxies []*ProxyEntry) []string {
 	t := make([]string, len(proxies))
 	for i, p := range proxies {
