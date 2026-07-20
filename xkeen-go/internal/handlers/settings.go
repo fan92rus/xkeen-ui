@@ -58,8 +58,8 @@ type SettingsHandler struct {
 	// (wired in server.go to update subscriptionHandler + subScheduler).
 	onObservatoryChange func(enabled bool)
 
-	// cfgMu protects concurrent access to cfg.ProxyEntware between
-	// GetProxyEntware (reader) and UpdateProxyEntware (writer) HTTP handlers.
+	// cfgMu protects concurrent access to cfg fields between HTTP handlers.
+	// All cfg reads use RLock, all writes use Lock.
 	cfgMu sync.RWMutex
 }
 
@@ -339,10 +339,13 @@ func (h *SettingsHandler) SetObservatoryChange(fn func(enabled bool)) {
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
 func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, _ *http.Request) {
+	h.cfgMu.RLock()
+	port := h.cfg.MetricsPort
+	h.cfgMu.RUnlock()
 	respondJSON(w, http.StatusOK, MetricsPortResponse{
 		Ok:          true,
-		MetricsPort: h.cfg.MetricsPort,
-		Enabled:     h.cfg.MetricsPort > 0,
+		MetricsPort: port,
+		Enabled:     port > 0,
 	})
 }
 
@@ -361,7 +364,9 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	h.cfgMu.Lock()
 	h.cfg.MetricsPort = req.MetricsPort
+	h.cfgMu.Unlock()
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		respondJSON(w, http.StatusInternalServerError, MetricsPortResponse{Ok: false, Error: "save failed: " + err.Error()})
 		return
@@ -395,11 +400,16 @@ type AWGInterfaceResponse struct {
 // GetAWGInterfaces returns the configured AWG LAN/WAN interfaces and endpoint.
 // GET /api/settings/awg-interfaces
 func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Request) {
+	h.cfgMu.RLock()
+	lanIface := h.cfg.AWGLanIface
+	wanIface := h.cfg.AWGWanIface
+	endpoint := h.cfg.AWGEndpoint
+	h.cfgMu.RUnlock()
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
 		Ok:       "ok",
-		LanIface: h.cfg.AWGLanIface,
-		WanIface: h.cfg.AWGWanIface,
-		Endpoint: h.cfg.AWGEndpoint,
+		LanIface: lanIface,
+		WanIface: wanIface,
+		Endpoint: endpoint,
 	})
 }
 
@@ -448,9 +458,11 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	h.cfgMu.Lock()
 	h.cfg.AWGLanIface = req.LanIface
 	h.cfg.AWGWanIface = req.WanIface
 	h.cfg.AWGEndpoint = req.Endpoint
+	h.cfgMu.Unlock()
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + err.Error()})
 		return
@@ -479,7 +491,9 @@ func (h *SettingsHandler) GetProxyEntware(w http.ResponseWriter, _ *http.Request
 // GetObservatoryConcurrency returns the current observatory concurrency setting.
 // GET /api/settings/observatory
 func (h *SettingsHandler) GetObservatoryConcurrency(w http.ResponseWriter, _ *http.Request) {
+	h.cfgMu.RLock()
 	enabled := h.cfg.ObservatoryConcurrency
+	h.cfgMu.RUnlock()
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":      true,
 		"enabled": enabled,
@@ -497,7 +511,9 @@ func (h *SettingsHandler) UpdateObservatoryConcurrency(w http.ResponseWriter, r 
 		return
 	}
 
+	h.cfgMu.Lock()
 	h.cfg.ObservatoryConcurrency = req.Enabled
+	h.cfgMu.Unlock()
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to save config")
 		return

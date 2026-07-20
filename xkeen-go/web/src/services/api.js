@@ -1,5 +1,5 @@
 // services/api.js - Base HTTP client with CSRF and error handling
-import { warn } from '../utils/logger.js';
+
 
 const API_BASE = '';
 
@@ -34,48 +34,6 @@ export async function post(path, data) {
         body: JSON.stringify(data)
     });
     return res.json();
-}
-
-export async function postStream(path, data, onMessage) {
-    const res = await request(path, {
-        method: 'POST',
-        body: JSON.stringify(data)
-    });
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-                if (line.trim()) {
-                    try {
-                        onMessage(JSON.parse(line));
-                    } catch (e) {
-                        warn('Failed to parse stream line:', line);
-                    }
-                }
-            }
-        }
-
-        if (buffer.trim()) {
-            try {
-                onMessage(JSON.parse(buffer));
-            } catch (e) {
-                warn('Failed to parse final buffer:', buffer);
-            }
-        }
-    } finally {
-        reader.releaseLock();
-    }
 }
 
 export async function put(path, data) {
