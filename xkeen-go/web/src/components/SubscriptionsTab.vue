@@ -106,6 +106,73 @@ async function removeExcludeRegex(i) {
 /* ---- computed ---- */
 const allCountries = computed(() => uniqueCountries(proxies.value));
 
+// Known protocol values
+const knownProtocols = ['vless', 'vmess', 'trojan', 'ss', 'hysteria2'];
+
+// Unique filter values derived from proxy list
+const allProtocols = computed(() => {
+	const vals = new Set(proxies.value.map(p => p.protocol).filter(Boolean));
+	return knownProtocols.filter(p => vals.has(p));
+});
+const allFingerprints = computed(() => {
+	return [...new Set(proxies.value.map(p => p.fingerprint).filter(Boolean))].sort();
+});
+const allNetworks = computed(() => {
+	return [...new Set(proxies.value.map(p => p.network).filter(Boolean))].sort();
+});
+const allTLS = computed(() => {
+	return [...new Set(proxies.value.map(p => p.tls_security).filter(Boolean))].sort();
+});
+
+// Count helpers
+function countByProtocol(v) {
+	return proxies.value.filter(p => p.protocol === v).length;
+}
+function countByFingerprint(v) {
+	return proxies.value.filter(p => p.fingerprint === v).length;
+}
+function countByNetwork(v) {
+	return proxies.value.filter(p => p.network === v).length;
+}
+function countByTLS(v) {
+	return proxies.value.filter(p => p.tls_security === v).length;
+}
+
+// 3-state filter helpers (copied from country pattern)
+function filterState(field, v) {
+	const f = activeProfile.value?.filter || {};
+	const inc = (f['include_' + field] || []);
+	const exc = (f['exclude_' + field] || []);
+	if (inc.indexOf(v) >= 0) return 'include';
+	if (exc.indexOf(v) >= 0) return 'exclude';
+	return 'none';
+}
+function protocolState(v) { return filterState('protocols', v); }
+function fingerprintState(v) { return filterState('fingerprints', v); }
+function networkState(v) { return filterState('network', v); }
+function tlsState(v) { return filterState('tls', v); }
+
+// 3-state toggle (copied from toggleCountry)
+function toggleFilter(field, v) {
+	const p = activeProfile.value;
+	if (!p) return;
+	if (!p.filter['include_' + field]) p.filter['include_' + field] = [];
+	if (!p.filter['exclude_' + field]) p.filter['exclude_' + field] = [];
+	const incKey = 'include_' + field;
+	const excKey = 'exclude_' + field;
+	const ii = p.filter[incKey].indexOf(v);
+	const ei = p.filter[excKey].indexOf(v);
+	if (ii >= 0) { p.filter[incKey].splice(ii, 1); }
+	else if (ei >= 0) { p.filter[excKey].splice(ei, 1); p.filter[incKey].push(v); }
+	else { p.filter[excKey].push(v); }
+	_persistProfile();
+	loadProfiles();
+}
+async function toggleProtocol(v) { return toggleFilter('protocols', v); }
+async function toggleFingerprint(v) { return toggleFilter('fingerprints', v); }
+async function toggleNetwork(v) { return toggleFilter('network', v); }
+async function toggleTLS(v) { return toggleFilter('tls', v); }
+
 const filteredProxies = computed(() => {
     let list = filterProxies(proxies.value, filters.value);
     const q = proxyQ.value.toLowerCase();
@@ -503,6 +570,58 @@ onMounted(async () => {
                 :class="'cc-' + countryState(c)" @click="toggleCountry(c)"
               >
                 {{ c }} {{ countByCountry(c) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Protocols -->
+          <div>
+            <div class="sub-row-label">Protocol</div>
+            <div class="country-cloud">
+              <button
+                v-for="p in allProtocols" :key="p" class="cc"
+                :class="'cc-' + protocolState(p)" @click="toggleProtocol(p)"
+              >
+                {{ p }} {{ countByProtocol(p) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Fingerprints -->
+          <div v-if="allFingerprints.length">
+            <div class="sub-row-label">Fingerprint</div>
+            <div class="country-cloud">
+              <button
+                v-for="fp in allFingerprints" :key="fp" class="cc"
+                :class="'cc-' + fingerprintState(fp)" @click="toggleFingerprint(fp)"
+              >
+                {{ fp }} {{ countByFingerprint(fp) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Network -->
+          <div v-if="allNetworks.length">
+            <div class="sub-row-label">Network</div>
+            <div class="country-cloud">
+              <button
+                v-for="n in allNetworks" :key="n" class="cc"
+                :class="'cc-' + networkState(n)" @click="toggleNetwork(n)"
+              >
+                {{ n }} {{ countByNetwork(n) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- TLS -->
+          <div v-if="allTLS.length">
+            <div class="sub-row-label">TLS</div>
+            <div class="country-cloud">
+              <button
+                v-for="t in allTLS" :key="t" class="cc"
+                :class="'cc-' + tlsState(t)" @click="toggleTLS(t)"
+              >
+                {{ t }} {{ countByTLS(t) }}
               </button>
             </div>
           </div>

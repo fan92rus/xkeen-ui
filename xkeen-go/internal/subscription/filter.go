@@ -207,7 +207,7 @@ func matchExcludeTLS(p *ProxyEntry, f *Filter, _ *chainCtx) bool {
 
 // --- Regex (by Remarks) filters ---
 
-func matchIncludeRegexes(p *ProxyEntry, f *Filter, ctx *chainCtx) bool {
+func matchIncludeRegexes(p *ProxyEntry, _ *Filter, ctx *chainCtx) bool {
 	if len(ctx.includeRes) == 0 {
 		return true
 	}
@@ -219,7 +219,7 @@ func matchIncludeRegexes(p *ProxyEntry, f *Filter, ctx *chainCtx) bool {
 	return false
 }
 
-func matchExcludeRegexes(p *ProxyEntry, f *Filter, ctx *chainCtx) bool {
+func matchExcludeRegexes(p *ProxyEntry, _ *Filter, ctx *chainCtx) bool {
 	if len(ctx.excludeRes) == 0 {
 		return true
 	}
