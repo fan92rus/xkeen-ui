@@ -64,6 +64,10 @@ rm -f "$RC_DIR/S70xkeen-ui" "$RC_DIR/S99xkeen-ui" "$RC_DIR/K01xkeen-ui"
 # 5b. Remove autostart symlinks (S70 current, S99 legacy)
 rm -f "/opt/etc/init.d/S70xkeen-ui" "/opt/etc/init.d/S99xkeen-ui"
 
+# 5c. Remove NDM netfilter hook (primary autostart mechanism)
+log "Removing NDM netfilter hook..."
+rm -f "/opt/etc/ndm/netfilter.d/200-xkeen-ui.sh"
+
 # 5. Remove init script
 if [ -f "$INIT_SCRIPT" ]; then
     log "Removing init script..."

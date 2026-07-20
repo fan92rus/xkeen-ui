@@ -167,6 +167,11 @@ func install() error {
 	// break boot on some Keenetic setups (non-zero exit aborts rc.unslung).
 	// Create cron watchdog for auto-restart on crash.
 	//
+	// This is a BACKUP autostart mechanism.  The PRIMARY mechanism is the
+	// NDM netfilter hook (below), which fires at boot when NDM initializes
+	// the firewall.  The cron watchdog covers mid-run crashes and fires
+	// every minute if crond is alive.
+	//
 	// Keenetic's busybox crond does NOT scan /opt/etc/cron.d/ — it only reads
 	// user crontabs ("crontab -l/-e").  Many installations were bitten by this:
 	// the watchdog file was written but never executed, so xkeen-ui stayed dead
@@ -175,7 +180,24 @@ func install() error {
 	if err := installCronWatchdog(installAutoStart, installLogFile); err != nil {
 		fmt.Printf("Warning: failed to install cron watchdog: %v\n", err)
 	} else {
-		fmt.Println("Cron watchdog installed (checks every minute, restart if down)")
+		fmt.Println("Cron watchdog installed (backup: checks every minute, restart if down)")
+	}
+
+	// Create NDM netfilter hook — the PRIMARY autostart mechanism on Keenetic.
+	//
+	// On Keenetic routers, NDM (the core system process) does NOT call
+	// /opt/etc/init.d/rc.unslung at boot.  Instead, it triggers scripts in
+	// /opt/etc/ndm/netfilter.d/ when the firewall is initialized.  This is
+	// how xkeen itself starts xray (via proxy.sh in the same directory).
+	//
+	// Unlike crond (which may be killed by OOM or start late), NDM is the
+	// init's direct child and runs reliably at boot.  The hook calls
+	// 'xkeen-ui check || xkeen-ui start', so it revives the service on every
+	// firewall event if it's down, and is a near-instant no-op if it's up.
+	if err := installNDMHook(installAutoStart, installLogFile); err != nil {
+		fmt.Printf("Warning: failed to install NDM hook: %v\n", err)
+	} else {
+		fmt.Println("NDM netfilter hook installed (primary boot autostart)")
 	}
 
 	// Run one-time migrations (like DB migrations: each runs exactly once).
@@ -376,6 +398,38 @@ func installCronWatchdog(initScript, logFile string) error {
 	cmd.Stdin = strings.NewReader(newCrontab)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("crontab update failed: %w", err)
+	}
+	return nil
+}
+
+// installNDMHook creates a script in /opt/etc/ndm/netfilter.d/ that starts
+// xkeen-ui when NDM initializes the firewall.  This is the PRIMARY autostart
+// mechanism on Keenetic routers, where NDM does not call rc.unslung at boot.
+//
+// NDM fires netfilter.d scripts at boot (during firewall init) and on every
+// firewall change.  The hook runs 'check || start', so it is a near-instant
+// no-op when xkeen-ui is already running and revives it when down.
+func installNDMHook(initScript, logFile string) error {
+	hookDir := filepath.Dir(installNDMHookPath)
+	//nolint:gosec // NDM hook dir needs 0755 — other hooks (proxy.sh, nfqws2) use the same
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create NDM hook directory %s: %w", hookDir, err)
+	}
+
+	// Remove any old hook from a previous install, then write the new one.
+	_ = os.Remove(installNDMHookPath)
+
+	hookContent := fmt.Sprintf(`#!/bin/sh
+# xkeen-ui autostart via NDM netfilter hook (auto-generated).
+# NDM fires netfilter.d scripts at boot (firewall init) and on firewall
+# changes.  The check is near-instant (PID file + signal 0); start only
+# fires when xkeen-ui is down, making this safe to call on every event.
+%s check 2>/dev/null || %s start >>%s 2>&1 &
+`, initScript, initScript, logFile)
+
+	//nolint:gosec // NDM hook script needs execute permission
+	if err := os.WriteFile(installNDMHookPath, []byte(hookContent), 0o755); err != nil {
+		return fmt.Errorf("failed to write NDM hook %s: %w", installNDMHookPath, err)
 	}
 	return nil
 }

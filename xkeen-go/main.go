@@ -39,6 +39,7 @@ const (
 	// and abort the Entware rc.unslung boot sequence. S99 was too late.
 	installAutoStart    = "/opt/etc/init.d/S70xkeen-ui"
 	installOldAutoStart = "/opt/etc/init.d/S99xkeen-ui"
+	installNDMHookPath  = "/opt/etc/ndm/netfilter.d/200-xkeen-ui.sh"
 )
 
 // binaryName is the architecture-specific binary name
