@@ -103,8 +103,14 @@ const obsTimeline = computed(() => {
 			tagMap.get(tag).push({ ts: snap.ts, alive: data.alive ?? false });
 		}
 	}
+	// Only show tags present in the latest snapshot's observatory.
+	// Tags from removed outbounds (config changes, re-applied filters) must
+	// not linger in the timeline.
+	const latestTags = new Set(latestSnap.value?.observatory
+		? Object.keys(latestSnap.value.observatory) : []);
 	const tags = [];
 	for (const [tag, points] of tagMap) {
+		if (!latestTags.has(tag)) continue;
 		const segments = [];
 		let segStart = points[0]?.ts ?? first;
 		let segAlive = points[0]?.alive ?? false;
