@@ -143,9 +143,9 @@ function filterState(field, v) {
 	const f = activeProfile.value?.filter || {};
 	const inc = (f['include_' + field] || []);
 	const exc = (f['exclude_' + field] || []);
-	if (inc.indexOf(v) >= 0) return 'include';
-	if (exc.indexOf(v) >= 0) return 'exclude';
-	return 'none';
+	if (inc.indexOf(v) >= 0) return 'in';
+	if (exc.indexOf(v) >= 0) return 'ex';
+	return 'off';
 }
 function protocolState(v) { return filterState('protocols', v); }
 function fingerprintState(v) { return filterState('fingerprints', v); }
