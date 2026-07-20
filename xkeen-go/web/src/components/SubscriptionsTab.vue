@@ -61,6 +61,7 @@ const strategy = computed(() => {
     const p = activeProfile.value;
     return p?.strategy || { type: 'all', replace_balancer_tag: false };
 });
+const strategySettings = computed(() => strategy.value.settings || {});
 
 /* ---- new profile inline ---- */
 const showNewProfileInput = ref(false);
@@ -314,6 +315,43 @@ async function setFallback(v) {
     await loadProfiles();
 }
 
+async function setStrategySetting(field, event) {
+    const p = activeProfile.value;
+    if (!p) return;
+    if (!p.strategy) p.strategy = { type: 'leastping' };
+    if (!p.strategy.settings) p.strategy.settings = {};
+    const raw = event.target.value.trim();
+    switch (field) {
+        case 'expected': {
+            const v = parseInt(raw, 10);
+            p.strategy.settings.expected = isNaN(v) || v < 0 ? 0 : v;
+            break;
+        }
+        case 'tolerance': {
+            const v = parseFloat(raw);
+            p.strategy.settings.tolerance = isNaN(v) ? 0 : Math.min(1, Math.max(0, v));
+            break;
+        }
+        case 'max_rtt':
+            p.strategy.settings.max_rtt = raw;
+            break;
+        case 'baselines': {
+            const arr = raw.split(',').map(s => s.trim()).filter(Boolean);
+            p.strategy.settings.baselines = arr.length > 0 ? arr : undefined;
+            if (arr.length === 0) delete p.strategy.settings.baselines;
+            break;
+        }
+    }
+    // Remove settings object if all fields are empty
+    const s = p.strategy.settings;
+    if (!s.expected && !s.max_rtt && !s.tolerance && (!s.baselines || s.baselines.length === 0)) {
+        p.strategy.settings = undefined;
+        delete p.strategy.settings;
+    }
+    await _persistProfile();
+    await loadProfiles();
+}
+
 /* ---- preview & apply ---- */
 async function preview() {
     busy.value = true;
@@ -550,6 +588,45 @@ onMounted(async () => {
               >
                 {{ f.l }}
               </button>
+            </div>
+          </div>
+
+          <!-- Strategy settings (leastping / leastload only) -->
+          <div v-if="strategy.type === 'leastping' || strategy.type === 'leastload'" style="margin-bottom:6px">
+            <div class="sub-row-label">{{ i18n.t('subs.strategy_settings') }}</div>
+            <div class="strat-settings">
+              <label class="ss-field">
+                <span class="ss-label">expected</span>
+                <input type="number" min="0" class="ss-input ss-num"
+                       :value="strategySettings.expected || ''"
+                       :placeholder="i18n.t('subs.ss_expected_ph')"
+                       :title="i18n.t('subs.ss_expected_tip')"
+                       @change="setStrategySetting('expected', $event)" />
+              </label>
+              <label class="ss-field">
+                <span class="ss-label">maxRTT</span>
+                <input type="text" class="ss-input"
+                       :value="strategySettings.max_rtt || ''"
+                       placeholder="2s"
+                       :title="i18n.t('subs.ss_maxrtt_tip')"
+                       @change="setStrategySetting('max_rtt', $event)" />
+              </label>
+              <label class="ss-field">
+                <span class="ss-label">tolerance</span>
+                <input type="number" min="0" max="1" step="0.05" class="ss-input ss-num"
+                       :value="strategySettings.tolerance || ''"
+                       placeholder="0.1"
+                       :title="i18n.t('subs.ss_tolerance_tip')"
+                       @change="setStrategySetting('tolerance', $event)" />
+              </label>
+              <label class="ss-field ss-field-wide">
+                <span class="ss-label">baselines</span>
+                <input type="text" class="ss-input"
+                       :value="(strategySettings.baselines || []).join(', ')"
+                       placeholder="500ms, 1s"
+                       :title="i18n.t('subs.ss_baselines_tip')"
+                       @change="setStrategySetting('baselines', $event)" />
+              </label>
             </div>
           </div>
 

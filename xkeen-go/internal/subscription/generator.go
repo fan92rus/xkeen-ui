@@ -278,7 +278,7 @@ func GenerateRoutingJSON(proxies []*ProxyEntry, profiles []Profile, existingRout
 		balancer := map[string]interface{}{
 			"tag":      profile.ID + "-balancer",
 			"selector": selector,
-			"strategy": map[string]interface{}{"type": sType},
+			"strategy": buildStrategyConfig(profile.Strategy),
 		}
 
 		// fallbackTag: when all outbounds in the selector are unreachable (per
@@ -330,6 +330,46 @@ func replaceBalancerRules(rulesRaw json.RawMessage) json.RawMessage {
 
 	out, _ := json.Marshal(result)
 	return out
+}
+
+// xrayStrategyName maps internal lowercase strategy types to the camelCase
+// names expected by Xray-core in the balancer config.
+var xrayStrategyName = map[string]string{
+	"leastping": "leastPing",
+	"leastload": "leastLoad",
+}
+
+// buildStrategyConfig builds the "strategy" object for a balancer entry.
+// Maps internal type names to Xray's camelCase (leastping → leastPing) and
+// includes advanced settings for leastping/leastload when configured.
+func buildStrategyConfig(s RoutingStrategy) map[string]interface{} {
+	xrayType := s.Type
+	if mapped, ok := xrayStrategyName[xrayType]; ok {
+		xrayType = mapped
+	}
+	strategy := map[string]interface{}{"type": xrayType}
+
+	// Settings are only meaningful for leastping/leastload.
+	if (s.Type == "leastping" || s.Type == "leastload") && s.Settings != nil {
+		settings := map[string]interface{}{}
+		if s.Settings.Expected > 0 {
+			settings["expected"] = s.Settings.Expected
+		}
+		if s.Settings.MaxRTT != "" {
+			settings["maxRTT"] = s.Settings.MaxRTT
+		}
+		if s.Settings.Tolerance > 0 {
+			settings["tolerance"] = s.Settings.Tolerance
+		}
+		if len(s.Settings.Baselines) > 0 {
+			settings["baselines"] = s.Settings.Baselines
+		}
+		if len(settings) > 0 {
+			strategy["settings"] = settings
+		}
+	}
+
+	return strategy
 }
 
 // GenerateObservatoryJSON generates 07_observatory.json for leastping/leastload strategies.

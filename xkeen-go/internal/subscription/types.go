@@ -86,9 +86,21 @@ type Filter struct {
 
 // RoutingStrategy defines how traffic is distributed across proxies.
 type RoutingStrategy struct {
-	Type               string `json:"type"`                 // "all", "random", "roundrobin", "leastping", "leastload"
-	ReplaceBalancerTag bool   `json:"replace_balancer_tag"` // if true, replace existing balancerTag rules with new ones
-	Fallback           string `json:"fallback"`             // "": off, "direct": freedom, "block": blackhole
+	Type               string            `json:"type"`                 // "all", "random", "roundrobin", "leastping", "leastload"
+	ReplaceBalancerTag bool              `json:"replace_balancer_tag"` // if true, replace existing balancerTag rules with new ones
+	Fallback           string            `json:"fallback"`             // "": off, "direct": freedom, "block": blackhole
+	Settings           *StrategySettings `json:"settings,omitempty"`   // advanced settings for leastping/leastload
+}
+
+// StrategySettings holds tunable parameters for leastping/leastload strategies.
+// Stored in snake_case; the generator converts to Xray's camelCase JSON keys.
+// All fields are omitempty — unset fields are omitted from the generated config,
+// letting Xray use its built-in defaults.
+type StrategySettings struct {
+	Expected  int      `json:"expected,omitempty"`  // number of best nodes to select (1 = all traffic through best node)
+	MaxRTT    string   `json:"max_rtt,omitempty"`    // exclude nodes with RTT above this threshold (e.g. "2s", "500ms")
+	Tolerance float64  `json:"tolerance,omitempty"`  // exclude nodes with failure rate above this (0.0–1.0, e.g. 0.1 = 10%)
+	Baselines []string `json:"baselines,omitempty"` // RTT baselines to exclude jittery nodes (e.g. ["500ms"])
 }
 
 // Profile is a named group of proxies with its own balancer.

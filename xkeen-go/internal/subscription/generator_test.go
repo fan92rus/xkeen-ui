@@ -302,8 +302,8 @@ func TestGenerateRoutingJSON_StrategyLeastPing(t *testing.T) {
 	}
 	json.Unmarshal(result["routing"], &routing)
 
-	if routing.Balancers[0].Strategy["type"] != "leastping" {
-		t.Errorf("expected strategy 'leastping', got %v", routing.Balancers[0].Strategy["type"])
+	if routing.Balancers[0].Strategy["type"] != "leastPing" {
+		t.Errorf("expected strategy 'leastPing', got %v", routing.Balancers[0].Strategy["type"])
 	}
 }
 
@@ -326,8 +326,8 @@ func TestGenerateRoutingJSON_StrategyLeastLoad(t *testing.T) {
 	}
 	json.Unmarshal(result["routing"], &routing)
 
-	if routing.Balancers[0].Strategy["type"] != "leastload" {
-		t.Errorf("expected strategy 'leastload', got %v", routing.Balancers[0].Strategy["type"])
+	if routing.Balancers[0].Strategy["type"] != "leastLoad" {
+		t.Errorf("expected strategy 'leastLoad', got %v", routing.Balancers[0].Strategy["type"])
 	}
 }
 
@@ -1375,5 +1375,76 @@ func TestGenerateRoutingJSON_FallbackMultipleProfiles(t *testing.T) {
 	// noFallback profile must have no fallbackTag
 	if found["noFallback-balancer"] != "" {
 		t.Errorf("noFallback-balancer should have no fallbackTag, got %q", found["noFallback-balancer"])
+	}
+}
+
+func TestBuildStrategyConfig_CamelCaseMapping(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy RoutingStrategy
+		wantType string
+	}{
+		{"leastping maps to leastPing", RoutingStrategy{Type: "leastping"}, "leastPing"},
+		{"leastload maps to leastLoad", RoutingStrategy{Type: "leastload"}, "leastLoad"},
+		{"random stays random", RoutingStrategy{Type: "random"}, "random"},
+		{"roundrobin stays roundrobin", RoutingStrategy{Type: "roundrobin"}, "roundrobin"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := buildStrategyConfig(tc.strategy)
+			if result["type"] != tc.wantType {
+				t.Errorf("type = %v, want %v", result["type"], tc.wantType)
+			}
+			if _, hasSettings := result["settings"]; hasSettings {
+				t.Error("expected no settings for strategy without Settings field")
+			}
+		})
+	}
+}
+
+func TestBuildStrategyConfig_SettingsGenerated(t *testing.T) {
+	settings := &StrategySettings{
+		Expected:  3,
+		MaxRTT:    "2s",
+		Tolerance: 0.1,
+		Baselines: []string{"500ms"},
+	}
+	result := buildStrategyConfig(RoutingStrategy{Type: "leastping", Settings: settings})
+
+	if result["type"] != "leastPing" {
+		t.Errorf("type = %v, want leastPing", result["type"])
+	}
+	settingsMap, ok := result["settings"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected settings map in strategy")
+	}
+	if settingsMap["expected"] != 3 {
+		t.Errorf("expected = %v, want 3", settingsMap["expected"])
+	}
+	if settingsMap["maxRTT"] != "2s" {
+		t.Errorf("maxRTT = %v, want 2s", settingsMap["maxRTT"])
+	}
+	if settingsMap["tolerance"] != 0.1 {
+		t.Errorf("tolerance = %v, want 0.1", settingsMap["tolerance"])
+	}
+	baselines, ok := settingsMap["baselines"].([]string)
+	if !ok || len(baselines) != 1 || baselines[0] != "500ms" {
+		t.Errorf("baselines = %v, want [\"500ms\"]", settingsMap["baselines"])
+	}
+}
+
+func TestBuildStrategyConfig_SettingsOmitempty(t *testing.T) {
+	// Settings with all zero values should produce no "settings" key
+	result := buildStrategyConfig(RoutingStrategy{Type: "leastping", Settings: &StrategySettings{}})
+	if _, hasSettings := result["settings"]; hasSettings {
+		t.Error("expected no settings key when all fields are zero/empty")
+	}
+}
+
+func TestBuildStrategyConfig_SettingsIgnoredForNonLeastStrategy(t *testing.T) {
+	settings := &StrategySettings{Expected: 3}
+	result := buildStrategyConfig(RoutingStrategy{Type: "random", Settings: settings})
+	if _, hasSettings := result["settings"]; hasSettings {
+		t.Error("settings should be ignored for non-leastping/leastload strategies")
 	}
 }

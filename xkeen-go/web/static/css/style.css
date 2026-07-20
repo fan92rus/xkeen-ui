@@ -548,6 +548,19 @@ h4 { font-size: var(--text-h4); line-height: var(--lh-h4); font-weight: 700; }
 .spill:hover { border-color: var(--primary-color); color: var(--primary-color); }
 .spill.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); font-weight: 600; }
 
+/* Strategy settings (leastping/leastload) */
+.strat-settings { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
+.ss-field { display: flex; flex-direction: column; gap: 1px; }
+.ss-field-wide { flex: 1; min-width: 120px; }
+.ss-label { font-size: var(--text-tiny); color: var(--text-muted); text-transform: lowercase; }
+.ss-input {
+    padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--stroke);
+    background: var(--menu-background); color: var(--text); font-size: var(--text-small);
+    width: 70px;
+}
+.ss-num { width: 50px; }
+.ss-input:focus { border-color: var(--primary-color); outline: none; }
+
 /* Proxy List */
 .px-header {
     display: flex; gap: 6px; align-items: center; padding: 6px 12px;
