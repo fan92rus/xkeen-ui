@@ -278,7 +278,7 @@ func (f *Fetcher) FetchWithCascade(ctx context.Context, subURL string) (*FetchRe
 				Timeout:   perAttemptTimeout,
 				Transport: transport,
 			}
-		pCtx, pCancel := attemptCtx(ctx)
+			pCtx, pCancel := attemptCtx(ctx)
 			entries, err := f.doFetch(pCtx, client, subURL)
 			pCancel()
 			if err == nil {

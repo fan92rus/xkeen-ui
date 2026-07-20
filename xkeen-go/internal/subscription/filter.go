@@ -84,8 +84,6 @@ func compileRegexes(patterns []string) []*regexp.Regexp {
 	return res
 }
 
-
-
 // passesIncludeCountries returns true if the proxy's country is in IncludeCountries,
 // if IncludeCountries is empty (no filter), or if the proxy has no country (pass through).
 func passesIncludeCountries(p *ProxyEntry, f *Filter) bool {

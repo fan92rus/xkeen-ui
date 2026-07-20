@@ -25,10 +25,10 @@ import (
 type awgPeer struct {
 	PublicKey       string `json:"public_key"`
 	AllowedIPs      string `json:"allowed_ips"`
-	Label           string `json:"label,omitempty"`            // from comment "# peer: <label>"
-	IP              string `json:"ip"`                         // extracted from AllowedIPs (without /32)
-	HasClientConfig bool   `json:"has_client_config"`         // stored client .conf available for QR/download
-	Index           int    `json:"index"`                      // 0-based position among [Peer] sections
+	Label           string `json:"label,omitempty"`   // from comment "# peer: <label>"
+	IP              string `json:"ip"`                // extracted from AllowedIPs (without /32)
+	HasClientConfig bool   `json:"has_client_config"` // stored client .conf available for QR/download
+	Index           int    `json:"index"`             // 0-based position among [Peer] sections
 }
 
 // ---------- Handlers ----------

@@ -17,27 +17,27 @@ import (
 
 // mihomoProxy is a single proxy entry in Mihomo format.
 type mihomoProxy struct {
-	Name       string          `yaml:"name"`
-	Type       string          `yaml:"type"`
-	Server     string          `yaml:"server"`
-	Port       int             `yaml:"port"`
-	SkipCert   bool            `yaml:"skip-cert-verify,omitempty"`
-	Password   string          `yaml:"password,omitempty"`
-	UUID       string          `yaml:"uuid,omitempty"`
-	Flow       string          `yaml:"flow,omitempty"`
-	AlterID    int             `yaml:"alterId,omitempty"`
-	Cipher     string          `yaml:"cipher,omitempty"`
-	TLS        bool            `yaml:"tls,omitempty"`
-	Servername string          `yaml:"servername,omitempty"`
-	Fingerprint string         `yaml:"fingerprint,omitempty"`
-	Network    string          `yaml:"network,omitempty"`
-	Reality    bool            `yaml:"reality,omitempty"`
-	PublicKey  string          `yaml:"public-key,omitempty"`
-	ShortID    string          `yaml:"short-id,omitempty"`
-	ALPN       []string        `yaml:"alpn,omitempty"`
-	WSOpts     *mihomoWSOpts   `yaml:"ws-opts,omitempty"`
-	GRPCOpts   *mihomoGRPCOpts `yaml:"grpc-opts,omitempty"`
-	UDP        bool            `yaml:"udp,omitempty"`
+	Name        string          `yaml:"name"`
+	Type        string          `yaml:"type"`
+	Server      string          `yaml:"server"`
+	Port        int             `yaml:"port"`
+	SkipCert    bool            `yaml:"skip-cert-verify,omitempty"`
+	Password    string          `yaml:"password,omitempty"`
+	UUID        string          `yaml:"uuid,omitempty"`
+	Flow        string          `yaml:"flow,omitempty"`
+	AlterID     int             `yaml:"alterId,omitempty"`
+	Cipher      string          `yaml:"cipher,omitempty"`
+	TLS         bool            `yaml:"tls,omitempty"`
+	Servername  string          `yaml:"servername,omitempty"`
+	Fingerprint string          `yaml:"fingerprint,omitempty"`
+	Network     string          `yaml:"network,omitempty"`
+	Reality     bool            `yaml:"reality,omitempty"`
+	PublicKey   string          `yaml:"public-key,omitempty"`
+	ShortID     string          `yaml:"short-id,omitempty"`
+	ALPN        []string        `yaml:"alpn,omitempty"`
+	WSOpts      *mihomoWSOpts   `yaml:"ws-opts,omitempty"`
+	GRPCOpts    *mihomoGRPCOpts `yaml:"grpc-opts,omitempty"`
+	UDP         bool            `yaml:"udp,omitempty"`
 }
 
 type mihomoWSOpts struct {
@@ -51,13 +51,13 @@ type mihomoGRPCOpts struct {
 
 // mihomoProxyGroup is a proxy group in Mihomo format.
 type mihomoProxyGroup struct {
-	Name       string   `yaml:"name"`
-	Type       string   `yaml:"type"`
-	Proxies    []string `yaml:"proxies"`
-	URL        string   `yaml:"url,omitempty"`
-	Interval   int      `yaml:"interval,omitempty"`
-	Tolerance  int      `yaml:"tolerance,omitempty"`
-	Lazy       bool     `yaml:"lazy,omitempty"`
+	Name      string   `yaml:"name"`
+	Type      string   `yaml:"type"`
+	Proxies   []string `yaml:"proxies"`
+	URL       string   `yaml:"url,omitempty"`
+	Interval  int      `yaml:"interval,omitempty"`
+	Tolerance int      `yaml:"tolerance,omitempty"`
+	Lazy      bool     `yaml:"lazy,omitempty"`
 }
 
 // mihomoConfig is the top-level Clash/Mihomo YAML structure.
@@ -295,8 +295,6 @@ func applyStreamSettings(proxy *mihomoProxy, ss map[string]interface{}) {
 		}
 	}
 }
-
-
 
 // ── Proxy-groups ──
 

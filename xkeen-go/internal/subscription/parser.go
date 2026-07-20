@@ -717,6 +717,3 @@ func ParseProxiesFromURIs(uris []string) ([]*ProxyEntry, error) {
 	}
 	return entries, nil
 }
-
-
-

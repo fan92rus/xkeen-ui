@@ -17,13 +17,13 @@ const minGzipSize = 1400
 // preCompressedTypes are content types that are already compressed; re-compressing
 // them wastes CPU for negligible size reduction.
 var preCompressedTypes = map[string]bool{
-	"image/png":           true,
-	"image/jpeg":          true,
-	"image/gif":           true,
-	"image/webp":          true,
-	"application/zip":     true,
-	"application/gzip":    true,
-	"application/x-gzip":  true,
+	"image/png":          true,
+	"image/jpeg":         true,
+	"image/gif":          true,
+	"image/webp":         true,
+	"application/zip":    true,
+	"application/gzip":   true,
+	"application/x-gzip": true,
 }
 
 // gzipWriterPool reuses gzip writers to avoid allocations per request.

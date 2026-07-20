@@ -38,8 +38,8 @@ type commandResult struct {
 // NewMockExecutor creates a new mock command executor with default settings.
 func NewMockExecutor() *MockExecutor {
 	return &MockExecutor{
-		commands: make([]CommandRecord, 0),
-		results:  make(map[string]commandResult),
+		commands:      make([]CommandRecord, 0),
+		results:       make(map[string]commandResult),
 		defaultOutput: []byte("OK\n"),
 		defaultError:  nil,
 	}

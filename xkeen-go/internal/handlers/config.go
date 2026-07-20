@@ -953,9 +953,9 @@ func (h *ConfigHandler) GetBackupContent(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondJSON(w, http.StatusOK, RestoreBackupResponse{
-		Success:     true,
-		BackupPath:  cleanBackupPath,
-		Content:     string(data),
+		Success:    true,
+		BackupPath: cleanBackupPath,
+		Content:    string(data),
 	})
 }
 

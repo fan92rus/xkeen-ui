@@ -40,8 +40,8 @@ func TestToMihomoProxy_VLESS(t *testing.T) {
 						"port":    443.0,
 						"users": []interface{}{
 							map[string]interface{}{
-								"id":     "uuid-123",
-								"flow":   "xtls-rprx-vision",
+								"id":         "uuid-123",
+								"flow":       "xtls-rprx-vision",
 								"encryption": "none",
 							},
 						},
@@ -62,16 +62,36 @@ func TestToMihomoProxy_VLESS(t *testing.T) {
 		t.Fatalf("toMihomoProxy failed: %v", err)
 	}
 
-	if p.Name != "proxy-de-1" { t.Errorf("Name = %q, want proxy-de-1", p.Name) }
-	if p.Type != "vless" { t.Errorf("Type = %q, want vless", p.Type) }
-	if p.Server != "de1.example.com" { t.Errorf("Server = %q, want de1.example.com", p.Server) }
-	if p.Port != 443 { t.Errorf("Port = %d, want 443", p.Port) }
-	if p.UUID != "uuid-123" { t.Errorf("UUID = %q, want uuid-123", p.UUID) }
-	if p.Flow != "xtls-rprx-vision" { t.Errorf("Flow = %q, want xtls-rprx-vision", p.Flow) }
-	if !p.TLS { t.Error("TLS = false, want true") }
-	if p.Servername != "de1.example.com" { t.Errorf("Servername = %q, want de1.example.com", p.Servername) }
-	if p.Fingerprint != "chrome" { t.Errorf("Fingerprint = %q, want chrome", p.Fingerprint) }
-	if p.UDP != true { t.Error("UDP = false, want true") }
+	if p.Name != "proxy-de-1" {
+		t.Errorf("Name = %q, want proxy-de-1", p.Name)
+	}
+	if p.Type != "vless" {
+		t.Errorf("Type = %q, want vless", p.Type)
+	}
+	if p.Server != "de1.example.com" {
+		t.Errorf("Server = %q, want de1.example.com", p.Server)
+	}
+	if p.Port != 443 {
+		t.Errorf("Port = %d, want 443", p.Port)
+	}
+	if p.UUID != "uuid-123" {
+		t.Errorf("UUID = %q, want uuid-123", p.UUID)
+	}
+	if p.Flow != "xtls-rprx-vision" {
+		t.Errorf("Flow = %q, want xtls-rprx-vision", p.Flow)
+	}
+	if !p.TLS {
+		t.Error("TLS = false, want true")
+	}
+	if p.Servername != "de1.example.com" {
+		t.Errorf("Servername = %q, want de1.example.com", p.Servername)
+	}
+	if p.Fingerprint != "chrome" {
+		t.Errorf("Fingerprint = %q, want chrome", p.Fingerprint)
+	}
+	if p.UDP != true {
+		t.Error("UDP = false, want true")
+	}
 }
 
 func TestToMihomoProxy_VLESS_WS(t *testing.T) {
@@ -93,7 +113,7 @@ func TestToMihomoProxy_VLESS_WS(t *testing.T) {
 			"streamSettings": makeStreamSettings("ws", "tls", map[string]interface{}{
 				"tlsSettings": map[string]interface{}{"serverName": "us1.example.com"},
 				"wsSettings": map[string]interface{}{
-					"path": "/ws",
+					"path":    "/ws",
 					"headers": map[string]interface{}{"Host": "us1.example.com"},
 				},
 			}),
@@ -105,11 +125,21 @@ func TestToMihomoProxy_VLESS_WS(t *testing.T) {
 		t.Fatalf("toMihomoProxy failed: %v", err)
 	}
 
-	if p.Server != "us1.example.com" { t.Errorf("Server = %q, want us1.example.com", p.Server) }
-	if p.Port != 8443 { t.Errorf("Port = %d, want 8443", p.Port) }
-	if p.Network != "ws" { t.Errorf("Network = %q, want ws", p.Network) }
-	if p.WSOpts == nil { t.Fatal("WSOpts is nil") }
-	if p.WSOpts.Path != "/ws" { t.Errorf("WSOpts.Path = %q, want /ws", p.WSOpts.Path) }
+	if p.Server != "us1.example.com" {
+		t.Errorf("Server = %q, want us1.example.com", p.Server)
+	}
+	if p.Port != 8443 {
+		t.Errorf("Port = %d, want 8443", p.Port)
+	}
+	if p.Network != "ws" {
+		t.Errorf("Network = %q, want ws", p.Network)
+	}
+	if p.WSOpts == nil {
+		t.Fatal("WSOpts is nil")
+	}
+	if p.WSOpts.Path != "/ws" {
+		t.Errorf("WSOpts.Path = %q, want /ws", p.WSOpts.Path)
+	}
 	if p.WSOpts.Headers["Host"] != "us1.example.com" {
 		t.Errorf("WSOpts.Headers[Host] = %q, want us1.example.com", p.WSOpts.Headers["Host"])
 	}
@@ -142,8 +172,12 @@ func TestToMihomoProxy_VLESS_GRPC(t *testing.T) {
 		t.Fatalf("toMihomoProxy failed: %v", err)
 	}
 
-	if p.Network != "grpc" { t.Errorf("Network = %q, want grpc", p.Network) }
-	if p.GRPCOpts == nil { t.Fatal("GRPCOpts is nil") }
+	if p.Network != "grpc" {
+		t.Errorf("Network = %q, want grpc", p.Network)
+	}
+	if p.GRPCOpts == nil {
+		t.Fatal("GRPCOpts is nil")
+	}
 	if p.GRPCOpts.ServiceName != "grpc-test" {
 		t.Errorf("GRPCOpts.ServiceName = %q, want grpc-test", p.GRPCOpts.ServiceName)
 	}
@@ -181,10 +215,18 @@ func TestToMihomoProxy_VLESS_Reality(t *testing.T) {
 		t.Fatalf("toMihomoProxy failed: %v", err)
 	}
 
-	if !p.Reality { t.Error("Reality = false, want true") }
-	if !p.TLS { t.Error("TLS = false, want true") }
-	if p.PublicKey != "pk-abc" { t.Errorf("PublicKey = %q, want pk-abc", p.PublicKey) }
-	if p.ShortID != "sid-123" { t.Errorf("ShortID = %q, want sid-123", p.ShortID) }
+	if !p.Reality {
+		t.Error("Reality = false, want true")
+	}
+	if !p.TLS {
+		t.Error("TLS = false, want true")
+	}
+	if p.PublicKey != "pk-abc" {
+		t.Errorf("PublicKey = %q, want pk-abc", p.PublicKey)
+	}
+	if p.ShortID != "sid-123" {
+		t.Errorf("ShortID = %q, want sid-123", p.ShortID)
+	}
 }
 
 func TestToMihomoProxy_Trojan(t *testing.T) {
@@ -212,10 +254,18 @@ func TestToMihomoProxy_Trojan(t *testing.T) {
 		t.Fatalf("toMihomoProxy failed: %v", err)
 	}
 
-	if p.Type != "trojan" { t.Errorf("Type = %q, want trojan", p.Type) }
-	if p.Server != "fr1.example.com" { t.Errorf("Server = %q, want fr1.example.com", p.Server) }
-	if p.Password != "trojan-pass" { t.Errorf("Password = %q, want trojan-pass", p.Password) }
-	if !p.TLS { t.Error("TLS = false, want true") }
+	if p.Type != "trojan" {
+		t.Errorf("Type = %q, want trojan", p.Type)
+	}
+	if p.Server != "fr1.example.com" {
+		t.Errorf("Server = %q, want fr1.example.com", p.Server)
+	}
+	if p.Password != "trojan-pass" {
+		t.Errorf("Password = %q, want trojan-pass", p.Password)
+	}
+	if !p.TLS {
+		t.Error("TLS = false, want true")
+	}
 }
 
 func TestToMihomoProxy_Hysteria2(t *testing.T) {
@@ -246,12 +296,24 @@ func TestToMihomoProxy_Hysteria2(t *testing.T) {
 		t.Fatalf("toMihomoProxy failed: %v", err)
 	}
 
-	if p.Type != "hysteria2" { t.Errorf("Type = %q, want hysteria2", p.Type) }
-	if p.Server != "sg1.example.com" { t.Errorf("Server = %q, want sg1.example.com", p.Server) }
-	if p.Password != "hy2-pass" { t.Errorf("Password = %q, want hy2-pass", p.Password) }
-	if !p.TLS { t.Error("TLS = false, want true") }
-	if p.Servername != "sg1.example.com" { t.Errorf("Servername = %q, want sg1.example.com", p.Servername) }
-	if !p.SkipCert { t.Error("SkipCert = false, want true") }
+	if p.Type != "hysteria2" {
+		t.Errorf("Type = %q, want hysteria2", p.Type)
+	}
+	if p.Server != "sg1.example.com" {
+		t.Errorf("Server = %q, want sg1.example.com", p.Server)
+	}
+	if p.Password != "hy2-pass" {
+		t.Errorf("Password = %q, want hy2-pass", p.Password)
+	}
+	if !p.TLS {
+		t.Error("TLS = false, want true")
+	}
+	if p.Servername != "sg1.example.com" {
+		t.Errorf("Servername = %q, want sg1.example.com", p.Servername)
+	}
+	if !p.SkipCert {
+		t.Error("SkipCert = false, want true")
+	}
 }
 
 func TestToMihomoProxy_UnsupportedProtocol(t *testing.T) {
@@ -353,7 +415,7 @@ func TestGenerateMihomoConfig_StrategyMapping(t *testing.T) {
 	}
 
 	tests := []struct {
-		strategyType string
+		strategyType  string
 		wantGroupType string
 	}{
 		{"all", "select"},
@@ -412,7 +474,7 @@ func TestGenerateMihomoConfig_CustomProfile(t *testing.T) {
 			Strategy: RoutingStrategy{Type: "all"},
 		},
 		{ID: "germany", Name: "Germany", Enabled: true,
-			Filter: Filter{IncludeCountries: []string{"DE"}},
+			Filter:   Filter{IncludeCountries: []string{"DE"}},
 			Strategy: RoutingStrategy{Type: "leastping"},
 		},
 	}
@@ -473,18 +535,34 @@ func TestConvertXrayRouting_Basic(t *testing.T) {
 
 	find := func(s string) bool {
 		for _, r := range ruleStrs {
-			if r == s { return true }
+			if r == s {
+				return true
+			}
 		}
 		return false
 	}
 
-	if !find("DOMAIN-SUFFIX,google.com,DIRECT") { t.Errorf("missing domain rule") }
-	if !find("DOMAIN-SUFFIX,youtube.com,DIRECT") { t.Errorf("missing domain rule") }
-	if !find("GEOSITE,netflix,proxy") { t.Errorf("missing geosite rule") }
-	if !find("DOMAIN-KEYWORD,facebook,proxy") { t.Errorf("missing keyword rule") }
-	if !find("GEOIP,cn,DIRECT") { t.Errorf("missing geoip rule") }
-	if !find("IP-CIDR,10.0.0.0/8,DIRECT") { t.Errorf("missing IP-CIDR rule") }
-	if !find("DOMAIN-REGEX,^.*\\.cn$,REJECT") { t.Errorf("missing domain regex rule (target should be REJECT for block)") }
+	if !find("DOMAIN-SUFFIX,google.com,DIRECT") {
+		t.Errorf("missing domain rule")
+	}
+	if !find("DOMAIN-SUFFIX,youtube.com,DIRECT") {
+		t.Errorf("missing domain rule")
+	}
+	if !find("GEOSITE,netflix,proxy") {
+		t.Errorf("missing geosite rule")
+	}
+	if !find("DOMAIN-KEYWORD,facebook,proxy") {
+		t.Errorf("missing keyword rule")
+	}
+	if !find("GEOIP,cn,DIRECT") {
+		t.Errorf("missing geoip rule")
+	}
+	if !find("IP-CIDR,10.0.0.0/8,DIRECT") {
+		t.Errorf("missing IP-CIDR rule")
+	}
+	if !find("DOMAIN-REGEX,^.*\\.cn$,REJECT") {
+		t.Errorf("missing domain regex rule (target should be REJECT for block)")
+	}
 }
 
 func TestConvertXrayRouting_PortRules(t *testing.T) {
@@ -497,7 +575,9 @@ func TestConvertXrayRouting_PortRules(t *testing.T) {
 	}`)
 
 	rules, err := convertXrayRouting(routingJSON)
-	if err != nil { t.Fatalf("convertXrayRouting failed: %v", err) }
+	if err != nil {
+		t.Fatalf("convertXrayRouting failed: %v", err)
+	}
 
 	found := false
 	for _, r := range rules {
@@ -506,7 +586,9 @@ func TestConvertXrayRouting_PortRules(t *testing.T) {
 			break
 		}
 	}
-	if !found { t.Errorf("missing DST-PORT rule") }
+	if !found {
+		t.Errorf("missing DST-PORT rule")
+	}
 }
 
 func TestConvertXrayRouting_BalancerToGroup(t *testing.T) {
@@ -519,7 +601,9 @@ func TestConvertXrayRouting_BalancerToGroup(t *testing.T) {
 	}`)
 
 	rules, err := convertXrayRouting(routingJSON)
-	if err != nil { t.Fatalf("convertXrayRouting failed: %v", err) }
+	if err != nil {
+		t.Fatalf("convertXrayRouting failed: %v", err)
+	}
 
 	found := false
 	for _, r := range rules {
@@ -528,7 +612,9 @@ func TestConvertXrayRouting_BalancerToGroup(t *testing.T) {
 			break
 		}
 	}
-	if !found { t.Errorf("missing rule with balancer target") }
+	if !found {
+		t.Errorf("missing rule with balancer target")
+	}
 }
 
 func TestBuildMihomoRules_WithConversion(t *testing.T) {
@@ -542,7 +628,9 @@ func TestBuildMihomoRules_WithConversion(t *testing.T) {
 
 	// Insert converted rules before fallback MATCH
 	rules, err := BuildMihomoRules(routingJSON)
-	if err != nil { t.Fatalf("BuildMihomoRules failed: %v", err) }
+	if err != nil {
+		t.Fatalf("BuildMihomoRules failed: %v", err)
+	}
 
 	// Last rule should still be MATCH,Proxy
 	lastRule := rules[len(rules)-1]
@@ -558,7 +646,9 @@ func TestBuildMihomoRules_WithConversion(t *testing.T) {
 			break
 		}
 	}
-	if !found { t.Errorf("missing converted custom.com rule") }
+	if !found {
+		t.Errorf("missing converted custom.com rule")
+	}
 }
 
 // ── MergeMihomoConfig tests ──
@@ -619,7 +709,9 @@ rules: []
 func TestMergeMihomoConfig_EmptyExisting(t *testing.T) {
 	gen := "proxies:\n- name: test\n  type: vless\n  server: x.com\n  port: 443\nproxy-groups: []\nrules: []\n"
 	merged, err := MergeMihomoConfig(gen, "")
-	if err != nil { t.Fatalf("MergeMihomoConfig failed: %v", err) }
+	if err != nil {
+		t.Fatalf("MergeMihomoConfig failed: %v", err)
+	}
 	if !strings.Contains(merged, "name: test") {
 		t.Errorf("merged YAML missing proxy entry")
 	}

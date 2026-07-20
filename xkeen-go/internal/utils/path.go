@@ -10,7 +10,7 @@ import (
 
 // Error definitions for path validation
 var (
-	ErrPathTraversal  = errors.New("path traversal attempt detected")
+	ErrPathTraversal   = errors.New("path traversal attempt detected")
 	ErrPathOutsideRoot = errors.New("path outside allowed root")
 	ErrSymlinkDetected = errors.New("symlink detected in path")
 	ErrEmptyPath       = errors.New("empty path provided")

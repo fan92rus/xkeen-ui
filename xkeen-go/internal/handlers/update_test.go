@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"

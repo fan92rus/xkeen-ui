@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/fan92rus/xkeen-ui/internal/subscription"
+	"github.com/gorilla/mux"
 )
 
 // ---------- Preset definitions ----------
@@ -118,11 +118,11 @@ func generateRandomObfuscationParams() map[string]string {
 	jmin := 30 + rand.IntN(20)        // 30-49
 	jmax := jmin + 20 + rand.IntN(20) // 50-88 (always > jmin)
 	return map[string]string{
-		"Jc":   strconv.Itoa(4 + rand.IntN(8)),   // 4-11
+		"Jc":   strconv.Itoa(4 + rand.IntN(8)), // 4-11
 		"Jmin": strconv.Itoa(jmin),
 		"Jmax": strconv.Itoa(jmax),
-		"S1":   strconv.Itoa(rand.IntN(24)),      // 0-23
-		"S2":   strconv.Itoa(rand.IntN(24)),      // 0-23
+		"S1":   strconv.Itoa(rand.IntN(24)), // 0-23
+		"S2":   strconv.Itoa(rand.IntN(24)), // 0-23
 		"S3":   "0",
 		"S4":   "0",
 		"H1":   strconv.Itoa(1 + rand.IntN(100)), // 1-100 (0 = handshake rejected)

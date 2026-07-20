@@ -33,11 +33,11 @@ func parseAWGConfLocal(path string) (*subscription.AWGConf, error) {
 
 // AWGFirewallParams holds the variables for the full-tunnel preset.
 type AWGFirewallParams struct {
-	Iface     string // AWG interface name (e.g. "server")
-	Port      int    // ListenPort from config
-	Subnet    string // tunnel subnet, e.g. "10.8.0.0/24"
-	LANIface  string // LAN bridge interface (e.g. "br0")
-	WANIface  string // WAN interface (e.g. "eth3")
+	Iface    string // AWG interface name (e.g. "server")
+	Port     int    // ListenPort from config
+	Subnet   string // tunnel subnet, e.g. "10.8.0.0/24"
+	LANIface string // LAN bridge interface (e.g. "br0")
+	WANIface string // WAN interface (e.g. "eth3")
 }
 
 // detectWANInterface finds the default-route interface.

@@ -256,7 +256,6 @@ func TestGenerateTags_UpdatesOutboundJSON(t *testing.T) {
 	}
 }
 
-
 func TestParseSubscriptionContent_Base64(t *testing.T) {
 	lines := []string{
 		"vless://uuid1@1.1.1.1:443?security=reality&sni=test.com&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20Node1",
@@ -380,7 +379,6 @@ func TestParseVless_SpecialCharsInName(t *testing.T) {
 		t.Errorf("Country = %q, want DE", entry.Country)
 	}
 }
-
 
 func TestParseVless_MultipleSameCountry(t *testing.T) {
 	uris := []string{
@@ -768,7 +766,10 @@ naive://ignored
 // --- Port Validation (#P4) ---
 
 func TestParseVless_InvalidPort_OutOfRange(t *testing.T) {
-	tests := []struct { name string; uri string }{
+	tests := []struct {
+		name string
+		uri  string
+	}{
 		{"port 0", "vless://uuid@1.2.3.4:0?security=tls&type=tcp#Test"},
 		{"port 99999", "vless://uuid@1.2.3.4:99999?security=tls&type=tcp#Test"},
 		{"port 65536", "vless://uuid@1.2.3.4:65536?security=tls&type=tcp#Test"},
@@ -1156,4 +1157,3 @@ func TestParseSubscriptionContent_Base64MixedProtocols(t *testing.T) {
 		t.Errorf("expected all 3 protocols, got %v", protocols)
 	}
 }
-

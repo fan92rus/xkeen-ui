@@ -361,7 +361,7 @@ func TestValidateRegexes_EmptyOk(t *testing.T) {
 	}
 
 	f2 := &Filter{
-		IncludeRegexes: []string{""},   // empty string should be skipped
+		IncludeRegexes: []string{""}, // empty string should be skipped
 		ExcludeRegexes: nil,
 	}
 	if err := ValidateRegexes(f2); err != nil {

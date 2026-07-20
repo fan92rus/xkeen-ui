@@ -17,7 +17,7 @@ const AWGBaseMark = 100
 // It allows overriding the auto-detected role and declaring the preset.
 type AWGMeta struct {
 	RoleOverride AWGRole `json:"role_override"` // "auto" (default), "server", "client"
-	Preset       string   `json:"preset"`        // "full-tunnel" (only preset for now)
+	Preset       string  `json:"preset"`        // "full-tunnel" (only preset for now)
 }
 
 // defaultAWGMeta returns the default metadata (auto-detect role).

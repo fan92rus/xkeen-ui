@@ -5,8 +5,8 @@
 package handlers
 
 import (
-	"encoding/json"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,11 +25,12 @@ var installAWGScript string
 //go:embed install-awg-uninstall.sh
 var installAWGUninstallScript string
 
-//go:embed install-awg-init.sh
 // InstallAWGInitScript is the universal AWG init script template embedded
 // at build time. Exported so the main package's migration system can write
 // the same full-featured script (role detection, firewall rules, check
 // command) without duplicating the content.
+//
+//go:embed install-awg-init.sh
 var InstallAWGInitScript string
 
 // AWG init script paths.  The script must have an S-prefix (S90awg) so that
@@ -329,8 +330,8 @@ func (h *InstallHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 
 	// SSE events: CLEANING→20 REMOVING→50 OK→75 DONE→100
 	progressMap := map[string]int{
-		"CLEANING":   20,
-		"REMOVING":   50,
+		"CLEANING": 20,
+		"REMOVING": 50,
 	}
 
 	buf := make([]byte, 4096)
