@@ -58,6 +58,10 @@ type SettingsHandler struct {
 	// (wired in server.go to update subscriptionHandler + subScheduler).
 	onObservatoryChange func(enabled bool)
 
+	// onAutoUpdateChange is called when the auto_update setting is toggled
+	// (wired in server.go to start/stop the UpdateChecker goroutine).
+	onAutoUpdateChange func(enabled bool)
+
 	// cfgMu protects concurrent access to cfg fields between HTTP handlers.
 	// All cfg reads use RLock, all writes use Lock.
 	cfgMu sync.RWMutex
@@ -336,6 +340,12 @@ func (h *SettingsHandler) SetObservatoryChange(fn func(enabled bool)) {
 	h.onObservatoryChange = fn
 }
 
+// SetAutoUpdateChange sets the callback invoked when auto_update is toggled.
+// The callback starts/stops the UpdateChecker goroutine.
+func (h *SettingsHandler) SetAutoUpdateChange(fn func(enabled bool)) {
+	h.onAutoUpdateChange = fn
+}
+
 // GetMetricsPort returns the current metrics port configuration.
 // GET /api/settings/metrics
 func (h *SettingsHandler) GetMetricsPort(w http.ResponseWriter, _ *http.Request) {
@@ -568,6 +578,47 @@ func (h *SettingsHandler) UpdateProxyEntware(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// GetAutoUpdate returns the current auto_update setting.
+// GET /api/settings/auto-update
+func (h *SettingsHandler) GetAutoUpdate(w http.ResponseWriter, _ *http.Request) {
+	h.cfgMu.RLock()
+	enabled := h.cfg.AutoUpdate
+	h.cfgMu.RUnlock()
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":      true,
+		"enabled": enabled,
+	})
+}
+
+// UpdateAutoUpdate toggles automatic self-update to the latest stable release.
+// PUT /api/settings/auto-update {"enabled": true/false}
+func (h *SettingsHandler) UpdateAutoUpdate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	h.cfgMu.Lock()
+	h.cfg.AutoUpdate = req.Enabled
+	h.cfgMu.Unlock()
+	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to save config")
+		return
+	}
+
+	if h.onAutoUpdateChange != nil {
+		h.onAutoUpdateChange(req.Enabled)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":      true,
+		"enabled": req.Enabled,
+	})
+}
+
 // RegisterSettingsRoutes registers settings-related routes.
 func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/xray/settings", handler.GetXraySettings).Methods("GET")
@@ -581,4 +632,6 @@ func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/settings/proxy-entware", handler.UpdateProxyEntware).Methods("POST")
 	r.HandleFunc("/settings/observatory", handler.GetObservatoryConcurrency).Methods("GET")
 	r.HandleFunc("/settings/observatory", handler.UpdateObservatoryConcurrency).Methods("PUT")
+	r.HandleFunc("/settings/auto-update", handler.GetAutoUpdate).Methods("GET")
+	r.HandleFunc("/settings/auto-update", handler.UpdateAutoUpdate).Methods("PUT")
 }

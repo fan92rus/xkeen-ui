@@ -19,3 +19,13 @@ export function startUpdate(options = {}) {
         .request(url, { method: 'POST' })
         .then((res) => readSSEStream(res, { onProgress, onComplete, onError }));
 }
+
+// --- Auto-update settings ---
+
+export function getAutoUpdate() {
+    return api.get('/api/settings/auto-update');
+}
+
+export function updateAutoUpdate(enabled) {
+    return api.put('/api/settings/auto-update', { enabled });
+}

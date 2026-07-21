@@ -52,8 +52,17 @@ type UpdateHandler struct {
 	// Defaults to "https://api.github.com"; overridable in tests.
 	apiBaseURL string
 
+	// maxDownloadRetries is the number of retry attempts for downloads.
+	// Defaults to 5; overridable in tests to avoid slow quadratic backoff.
+	maxDownloadRetries int
+
+	// retryBackoff returns the wait duration before retry attempt n (1-based).
+	// Defaults to quadratic backoff (n² seconds); overridable in tests.
+	retryBackoff func(attempt int) time.Duration
+
 	mu            sync.Mutex
 	devReleaseTag string // Latest dev release tag for download
+	updateMu      sync.Mutex  // serializes manual + auto updates so they can't overlap
 }
 
 // NewUpdateHandler creates a new UpdateHandler.
@@ -61,15 +70,24 @@ func NewUpdateHandler() *UpdateHandler {
 	repo := "fan92rus/xkeen-ui"
 	binaryName := utils.GetBinaryNameForArch()
 	return &UpdateHandler{
-		githubRepo:   repo,
-		binaryName:   binaryName,
-		installPath:  "/opt/bin/" + binaryName,
-		initScript:   "/opt/etc/init.d/xkeen-ui",
-		updateScript: "/opt/etc/xkeen-ui/update.sh",
-		downloadURL:  fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
-		httpClient:   http.DefaultClient,
-		apiBaseURL:   "https://api.github.com",
+		githubRepo:        repo,
+		binaryName:        binaryName,
+		installPath:       "/opt/bin/" + binaryName,
+		initScript:        "/opt/etc/init.d/xkeen-ui",
+		updateScript:      "/opt/etc/xkeen-ui/update.sh",
+		downloadURL:       fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
+		httpClient:        http.DefaultClient,
+		apiBaseURL:        "https://api.github.com",
+		maxDownloadRetries: 5,
+		retryBackoff:       quadraticBackoff,
 	}
+}
+
+// quadraticBackoff returns n² seconds — the retry wait after attempt n.
+// e.g. attempts 1–5 → 1s, 4s, 9s, 16s, 25s.
+func quadraticBackoff(attempt int) time.Duration {
+	n := int64(attempt)
+	return time.Duration(n*n) * time.Second
 }
 
 // GitHubRelease represents a GitHub release.
@@ -345,6 +363,13 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 			h.githubRepo, devTag, h.binaryName)
 	}
 
+	// Acquire update lock so manual + auto updates can't overlap.
+	if !h.updateMu.TryLock() {
+		sendEvent("error", ErrorData{Error: "another update is already in progress"})
+		return
+	}
+	defer h.updateMu.Unlock()
+
 	// Step 1: Download and verify checksum
 	sendEvent("progress", ProgressData{Percent: 5, Status: "downloading"})
 
@@ -450,8 +475,8 @@ func (h *UpdateHandler) downloadFile(ctx context.Context, path, url string) erro
 // downloadWithChecksum downloads binary and verifies SHA256 checksum.
 // Returns error if checksum verification fails or checksum file is not available.
 func (h *UpdateHandler) downloadWithChecksum(ctx context.Context, binaryPath, binaryURL string) error {
-	// 1. Download binary
-	if err := h.downloadFile(ctx, binaryPath, binaryURL); err != nil {
+	// 1. Download binary (with retries on transient failures)
+	if err := h.downloadWithRetry(ctx, binaryPath, binaryURL); err != nil {
 		return fmt.Errorf("failed to download binary: %w", err)
 	}
 
@@ -503,6 +528,35 @@ func (h *UpdateHandler) downloadWithChecksum(ctx context.Context, binaryPath, bi
 	_ = os.Remove(checksumPath)
 
 	return nil
+}
+
+// downloadWithRetry downloads a file to path, retrying on failure up to
+// maxDownloadRetries times with quadratic backoff (n² seconds). Checksum
+// verification errors are NOT retried (a corrupt/mismatched file won't fix
+// itself); only network/HTTP errors trigger a retry.
+func (h *UpdateHandler) downloadWithRetry(ctx context.Context, path, url string) error {
+	var lastErr error
+	for attempt := 0; attempt <= h.maxDownloadRetries; attempt++ {
+		if attempt > 0 {
+			wait := h.retryBackoff(attempt)
+			log.Printf("[update] download retry %d/%d after %v: %v", attempt, h.maxDownloadRetries, wait, lastErr)
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		// Reset state for a clean attempt: remove any partial file from a failed attempt.
+		_ = os.Remove(path)
+
+		if err := h.downloadFile(ctx, path, url); err != nil {
+			lastErr = err
+			continue // network error → retry
+		}
+		return nil // success
+	}
+	return fmt.Errorf("download failed after %d retries: %w", h.maxDownloadRetries, lastErr)
 }
 
 func (h *UpdateHandler) setDevReleaseTag(tag string) {

@@ -14,7 +14,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -26,7 +28,11 @@ import (
 // newUpdateHandler creates an UpdateHandler for testing.
 func newUpdateHandler(t *testing.T) *UpdateHandler {
 	t.Helper()
-	return NewUpdateHandler()
+	h := NewUpdateHandler()
+	// Disable retries by default so existing tests don't spend 55s waiting
+	// on quadratic backoff. Retry-specific tests override these fields.
+	h.maxDownloadRetries = 0
+	return h
 }
 
 // newUpdateRouter creates a mux.Router with update routes.
@@ -1188,5 +1194,114 @@ func TestNewUpdateHandler_OverridableFields(t *testing.T) {
 	}
 	if h1.httpClient != http.DefaultClient {
 		t.Error("h1 should still have default httpClient")
+	}
+}
+
+// ---------- downloadWithRetry tests ----------
+
+// TestDownloadWithRetry_SucceedsOnRetry verifies that a download succeeds when
+// the server fails the first few attempts but then serves the file. Uses tiny
+// backoff to keep the test fast.
+func TestDownloadWithRetry_SucceedsOnRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	var attempts int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := atomic.AddInt32(&attempts, 1)
+		if n < 3 { // fail first 2 attempts
+			http.Error(w, "transient error", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(make([]byte, 100))
+	}))
+	defer server.Close()
+
+	h := newUpdateHandler(t)
+	h.maxDownloadRetries = 5
+	h.retryBackoff = func(int) time.Duration { return 1 * time.Millisecond }
+
+	dest := filepath.Join(tmpDir, "out")
+	if err := h.downloadWithRetry(context.Background(), dest, server.URL+"/file"); err != nil {
+		t.Fatalf("expected success on retry, got: %v", err)
+	}
+	if got := atomic.LoadInt32(&attempts); got != 3 {
+		t.Errorf("expected 3 attempts, got %d", got)
+	}
+}
+
+// TestDownloadWithRetry_FailsAfterExhausted verifies the retry loop gives up
+// after maxDownloadRetries attempts and returns the last error.
+func TestDownloadWithRetry_FailsAfterExhausted(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "always fails", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	h := newUpdateHandler(t)
+	h.maxDownloadRetries = 2
+	h.retryBackoff = func(int) time.Duration { return 1 * time.Millisecond }
+
+	dest := filepath.Join(tmpDir, "out")
+	err := h.downloadWithRetry(context.Background(), dest, server.URL+"/file")
+	if err == nil {
+		t.Fatal("expected error after retries exhausted")
+	}
+	if !strings.Contains(err.Error(), "download failed after 2 retries") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestDownloadWithRetry_ContextCancelled verifies that canceling the context
+// during the backoff wait aborts the retry loop.
+func TestDownloadWithRetry_ContextCancelled(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "fail", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	h := newUpdateHandler(t)
+	h.maxDownloadRetries = 10
+	// Use a long backoff so the context cancellation lands during the wait.
+	h.retryBackoff = func(int) time.Duration { return 5 * time.Second }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel shortly after the first failure triggers the long backoff.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	dest := filepath.Join(tmpDir, "out")
+	err := h.downloadWithRetry(ctx, dest, server.URL+"/file")
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+	// Should be context.Canceled, not "after N retries"
+	if strings.Contains(err.Error(), "retries") {
+		t.Errorf("should have been canceled, not exhausted: %v", err)
+	}
+}
+
+// TestQuadraticBackoff verifies the n²-second backoff schedule.
+func TestQuadraticBackoff(t *testing.T) {
+	tests := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{1, 1 * time.Second},
+		{2, 4 * time.Second},
+		{3, 9 * time.Second},
+		{4, 16 * time.Second},
+		{5, 25 * time.Second},
+	}
+	for _, tt := range tests {
+		if got := quadraticBackoff(tt.attempt); got != tt.want {
+			t.Errorf("quadraticBackoff(%d) = %v, want %v", tt.attempt, got, tt.want)
+		}
 	}
 }

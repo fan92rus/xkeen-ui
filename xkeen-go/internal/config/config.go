@@ -56,6 +56,11 @@ type Config struct {
 	// When false (default), probes are sequential with probeInterval between each.
 	ObservatoryConcurrency bool `json:"observatory_concurrency"`
 
+	// AutoUpdate enables automatic self-update to the latest STABLE GitHub release.
+	// A background goroutine checks every 10 minutes; only stable (non-prerelease)
+	// versions trigger an update. Enabled by default.
+	AutoUpdate bool `json:"auto_update"`
+
 	// AllowedRoots defines the allowed directories for file operations.
 	AllowedRoots []string `json:"allowed_roots"`
 
@@ -130,6 +135,7 @@ func DefaultConfig() *Config {
 			AllowedOrigins: []string{},
 		},
 		ObservatoryConcurrency: true,
+		AutoUpdate:           true,
 		Auth: AuthConfig{
 			PasswordHash:     "", // Will be generated on first run
 			SessionTimeout:   24,

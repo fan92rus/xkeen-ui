@@ -7,6 +7,7 @@ import * as metrics from '../services/metrics.js';
 import * as installApi from '../services/install.js';
 import { checkNetwork } from '../services/diagnostics.js';
 import { getProxyEntware, setProxyEntware } from '../services/routing.js';
+import { getAutoUpdate, updateAutoUpdate } from '../services/update.js';
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -21,6 +22,9 @@ const metricsLoading = ref(false);
 const metricsSaving = ref(false);
 
 const observatoryConcurrency = ref(false);
+
+// Auto-update (stable releases, 10-min check)
+const autoUpdate = ref(true);
 
 async function loadMetricsPort() {
 	metricsLoading.value = true;
@@ -47,6 +51,22 @@ async function saveObservatoryConcurrency() {
 			observatoryConcurrency.value ? i18n.t('settings.obs_concurrency') + ': ON' : i18n.t('settings.obs_concurrency') + ': OFF',
 			'success',
 		);
+	} catch (e) {
+		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
+	}
+}
+
+async function loadAutoUpdate() {
+	try {
+		const d = await getAutoUpdate();
+		autoUpdate.value = d.enabled ?? true;
+	} catch { /* ignore — default ON */ }
+}
+
+async function saveAutoUpdate() {
+	try {
+		await updateAutoUpdate(autoUpdate.value);
+		app.showToast(autoUpdate.value ? i18n.t('settings.auto_update_enabled') : i18n.t('settings.auto_update_disabled'), 'success');
 	} catch (e) {
 		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
 	}
@@ -231,6 +251,7 @@ onMounted(() => {
 	loadAutoApply();
 	loadMetricsPort();
 	loadObservatoryConcurrency();
+	loadAutoUpdate();
 	app.loadXraySettings();
   checkAWG();
   loadProxyEntware();
@@ -350,6 +371,16 @@ onMounted(() => {
             <div v-show="app.updating" class="s-progress">
               <div class="s-progress-bar"><div :style="'width:' + app.updateProgress + '%'" /></div>
               <span class="s-progress-text">{{ app.updateStatus }}</span>
+            </div>
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.auto_update_title') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.auto_update_title_desc') }}</div>
+              </div>
+              <label class="toggle">
+                <input v-model="autoUpdate" type="checkbox" @change="saveAutoUpdate()">
+                <span class="toggle-slider" />
+              </label>
             </div>
           </div>
         </section>
@@ -475,8 +506,8 @@ onMounted(() => {
                 {{ proxyEntware.saving
                   ? i18n.t('settings.proxy_entware_saving')
                   : (proxyEntware.enabled
-                      ? i18n.t('settings.proxy_entware_off')
-                      : i18n.t('settings.proxy_entware_on')) }}
+                    ? i18n.t('settings.proxy_entware_off')
+                    : i18n.t('settings.proxy_entware_on')) }}
               </button>
             </div>
             <div v-if="proxyEntware.error" class="s-row">

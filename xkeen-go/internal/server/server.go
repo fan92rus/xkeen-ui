@@ -41,6 +41,7 @@ type Server struct {
 	settingsHandler     *handlers.SettingsHandler
 	commandsHandler     *handlers.CommandsHandler
 	updateHandler       *handlers.UpdateHandler
+	updateChecker       *handlers.UpdateChecker
 	interactiveHandler  *handlers.InteractiveHandler
 	subscriptionHandler *handlers.SubscriptionHandler
 	metricsHandler      *handlers.MetricsHandler
@@ -135,6 +136,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	}
 	s.commandsHandler = handlers.NewCommandsHandler(s.commandRegistry)
 	s.updateHandler = handlers.NewUpdateHandler()
+	s.updateChecker = handlers.NewUpdateChecker(s.updateHandler)
 	s.interactiveHandler = handlers.NewInteractiveHandler(&handlers.InteractiveConfig{
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	}, s.commandRegistry)
@@ -252,6 +254,21 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		s.subscriptionHandler.SetObservatoryConcurrency(enabled)
 		subScheduler.SetObservatoryConcurrency(enabled)
 	})
+
+	// Wire auto-update toggle: start/stop the background UpdateChecker.
+	if s.updateChecker != nil {
+		s.settingsHandler.SetAutoUpdateChange(func(enabled bool) {
+			if enabled {
+				s.updateChecker.Start()
+			} else {
+				s.updateChecker.Stop()
+			}
+		})
+		// Start the checker immediately if auto-update is enabled in config.
+		if cfg.AutoUpdate {
+			s.updateChecker.Start()
+		}
+	}
 
 	// Wire scheduler OnUpdate: push proxy names after each fetch
 	subScheduler.OnUpdate = func() {
@@ -434,6 +451,12 @@ func (s *Server) Stop() error {
 
 	if err := s.http.Shutdown(ctx); err != nil {
 		return fmt.Errorf("server shutdown error: %w", err)
+	}
+
+	// Stop auto-update checker AFTER HTTP shutdown so no in-flight toggle
+	// request can Start() a new goroutine while we're tearing down.
+	if s.updateChecker != nil {
+		s.updateChecker.Stop()
 	}
 
 	log.Println("Server stopped")
