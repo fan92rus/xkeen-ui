@@ -49,6 +49,7 @@ func setupConfigTest(t *testing.T) (h *ConfigHandler, dir, backupDir string) {
 		[]string{tmpDir},
 		backupDir,
 		configDir,
+		"", // xkeen
 		mihomoDir,
 		filepath.Join(tmpDir, "awg"),
 		configPath,
@@ -1818,6 +1819,7 @@ func TestListFilesGrouped_EmptyDirs(t *testing.T) {
 		[]string{tmpDir},
 		backupDir,
 		xrayDir,
+		"", // xkeen
 		mihomoDir,
 		awgDir,
 		configPath,
@@ -1863,6 +1865,7 @@ func TestListFilesGrouped_NoDirsExist(t *testing.T) {
 		[]string{tmpDir},
 		backupDir,
 		nonexistentDir, // xray
+		"",             // xkeen
 		nonexistentDir, // mihomo
 		nonexistentDir, // awg
 		configPath,
@@ -1888,6 +1891,56 @@ func TestListFilesGrouped_NoDirsExist(t *testing.T) {
 	}
 	if len(resp.Groups) != 0 {
 		t.Errorf("expected 0 groups for missing dirs, got %d", len(resp.Groups))
+	}
+}
+
+func TestListFilesGrouped_XkeenFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	xkeenDir := filepath.Join(tmpDir, "xkeen")
+	os.MkdirAll(xkeenDir, 0o755)
+
+	// Create xkeen.json and .lst files — only .json should be listed
+	os.WriteFile(filepath.Join(xkeenDir, "xkeen.json"), []byte(`{}`), 0o644)
+	os.WriteFile(filepath.Join(xkeenDir, "ip_exclude.lst"), []byte("# ips"), 0o644)
+	os.WriteFile(filepath.Join(xkeenDir, "port_proxying.lst"), []byte("# ports"), 0o644)
+
+	backupDir := filepath.Join(tmpDir, "backups")
+	os.MkdirAll(backupDir, 0o755)
+	configPath := filepath.Join(tmpDir, "xkeen-ui", "config.json")
+	os.MkdirAll(filepath.Dir(configPath), 0o755)
+	os.WriteFile(configPath, []byte(`{"mode":"xray"}`), 0o644)
+
+	handler := NewConfigHandler(
+		[]string{tmpDir},
+		backupDir,
+		filepath.Join(tmpDir, "nope"), // xray (missing)
+		xkeenDir,
+		filepath.Join(tmpDir, "nope"), // mihomo (missing)
+		filepath.Join(tmpDir, "nope"),   // awg (missing)
+		configPath,
+		"xray",
+	)
+
+	req := httptest.NewRequest("GET", "/api/config/files/grouped", http.NoBody)
+	rec := httptest.NewRecorder()
+	handler.ListFilesGrouped(rec, req)
+
+	var resp ListFilesGroupedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if len(resp.Groups) != 1 {
+		t.Fatalf("expected 1 group (xkeen), got %d", len(resp.Groups))
+	}
+	if resp.Groups[0].Section != "xkeen" || resp.Groups[0].Label != "XKeen" {
+		t.Errorf("unexpected group: %+v", resp.Groups[0])
+	}
+	if len(resp.Groups[0].Files) != 1 {
+		t.Errorf("expected 1 file (xkeen.json only), got %d", len(resp.Groups[0].Files))
+	}
+	if resp.Groups[0].Files[0].Name != "xkeen.json" {
+		t.Errorf("expected xkeen.json, got %s", resp.Groups[0].Files[0].Name)
 	}
 }
 

@@ -23,6 +23,7 @@ type ConfigHandler struct {
 	backupDir       string
 	defaultPath     string
 	xrayConfigDir   string
+	xkeenConfigDir  string
 	mihomoConfigDir string
 	awgConfigDir    string
 	configPath      string
@@ -30,7 +31,7 @@ type ConfigHandler struct {
 }
 
 // NewConfigHandler creates a new ConfigHandler.
-func NewConfigHandler(allowedRoots []string, backupDir, xrayConfigDir, mihomoConfigDir, awgConfigDir, configPath, initialMode string) *ConfigHandler {
+func NewConfigHandler(allowedRoots []string, backupDir, xrayConfigDir, xkeenConfigDir, mihomoConfigDir, awgConfigDir, configPath, initialMode string) *ConfigHandler {
 	validator, err := utils.NewPathValidator(allowedRoots)
 	if err != nil {
 		log.Printf("Warning: failed to create path validator: %v", err)
@@ -40,6 +41,7 @@ func NewConfigHandler(allowedRoots []string, backupDir, xrayConfigDir, mihomoCon
 		backupDir:       backupDir,
 		defaultPath:     xrayConfigDir,
 		xrayConfigDir:   xrayConfigDir,
+		xkeenConfigDir:  xkeenConfigDir,
 		mihomoConfigDir: mihomoConfigDir,
 		awgConfigDir:    awgConfigDir,
 		configPath:      configPath,
@@ -277,6 +279,17 @@ func (h *ConfigHandler) ListFilesGrouped(w http.ResponseWriter, _ *http.Request)
 			Label:   "Xray",
 			Path:    h.xrayConfigDir,
 			Files:   h.filterFiles(entries, h.xrayConfigDir, "xray"),
+		})
+	}
+
+	// XKeen files
+	if h.dirExists(h.xkeenConfigDir) {
+		entries, _ := os.ReadDir(h.xkeenConfigDir)
+		groups = append(groups, GroupedFile{
+			Section: "xkeen",
+			Label:   "XKeen",
+			Path:    h.xkeenConfigDir,
+			Files:   h.filterFiles(entries, h.xkeenConfigDir, "xkeen"),
 		})
 	}
 

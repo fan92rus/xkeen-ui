@@ -20,6 +20,10 @@ type Config struct {
 	// XrayConfigDir is the directory containing Xray configuration files.
 	XrayConfigDir string `json:"xray_config_dir"`
 
+	// XkeenConfigDir is the directory containing XKeen configuration files
+	// (xkeen.json, ip/port exclude lists).
+	XkeenConfigDir string `json:"xkeen_config_dir"`
+
 	// XkeenBinary is the path or name of the xkeen binary.
 	XkeenBinary string `json:"xkeen_binary"`
 
@@ -115,6 +119,7 @@ func DefaultConfig() *Config {
 		Port:            8089,
 		Mode:            "xray",
 		XrayConfigDir:   "/opt/etc/xray/configs",
+		XkeenConfigDir:  "/opt/etc/xkeen",
 		XkeenBinary:     "xkeen",
 		MihomoConfigDir: "/opt/etc/mihomo",
 		MihomoBinary:    "mihomo",

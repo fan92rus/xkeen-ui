@@ -1,5 +1,11 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "feat",
+      "text": "Редактор xkeen.json в файловом дереве",
+      "important": false
+    }
+  ],
   "releases": [
     {
       "version": "0.11.2",
@@ -48,6 +54,11 @@
         {
           "type": "tweak",
           "text": "Список изменений в разделе Обновление (changelog.json в бинарнике)",
+          "important": false
+        },
+        {
+          "type": "feat",
+          "text": "Редактор xkeen.json в файловом дереве",
           "important": false
         }
       ]
