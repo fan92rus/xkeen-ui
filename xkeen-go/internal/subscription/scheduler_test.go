@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -393,6 +394,76 @@ func TestScheduler_RunAutoApply_Success(t *testing.T) {
 	}
 }
 
+// TestScheduler_RunAutoApply_AppliesFilters verifies that the cron/auto-apply
+// path (runAutoApply → writeConfigFiles) honors profile filters when writing
+// 04_outbounds.json. Regression test: writeConfigFiles used to pass ALL proxies
+// to GenerateOutboundsJSON, ignoring CollectFilteredProxies — so filtered-out
+// proxies leaked into the outbounds file.
+func TestScheduler_RunAutoApply_AppliesFilters(t *testing.T) {
+	// Three proxies with different countries (DE, NL, EE) and distinct IPs.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		lines := strings.Join([]string{
+			"vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=k1&fp=chrome&sni=de.example.com#%F0%9F%87%A9%F0%9F%87%AA%20DE",
+			"vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567891@10.0.0.2:443?type=tcp&security=reality&pbk=k2&fp=chrome&sni=nl.example.com#%F0%9F%87%B3%F0%9F%87%B1%20NL",
+			"vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567892@10.0.0.3:443?type=tcp&security=reality&pbk=k3&fp=chrome&sni=ee.example.com#%F0%9F%87%AA%F0%9F%87%AA%20EE",
+		}, "\n")
+		w.Write([]byte(base64.StdEncoding.EncodeToString([]byte(lines))))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "subscriptions.json"))
+	store.AddSubscription(&Subscription{Name: "Test", URL: server.URL, Enabled: true})
+
+	// Configure the default profile to include only DE proxies.
+	for _, p := range store.GetProfiles() {
+		if p.IsDefault {
+			p.Filter = Filter{IncludeCountries: []string{"DE"}}
+			if err := store.UpdateProfile(&p); err != nil {
+				t.Fatalf("UpdateProfile: %v", err)
+			}
+			break
+		}
+	}
+
+	fetcher := NewFetcher()
+	sched := NewScheduler(store, fetcher)
+	sched.SetXrayDir(dir)
+
+	if err := sched.RefreshAll(); err != nil {
+		t.Fatalf("RefreshAll: %v", err)
+	}
+	if total := len(store.GetProxies()); total != 3 {
+		t.Fatalf("expected 3 proxies after fetch, got %d", total)
+	}
+
+	sched.runAutoApply()
+
+	// Parse the generated outbounds and count proxy entries (excluding the
+	// appended direct/block service outbounds).
+	data, err := os.ReadFile(filepath.Join(dir, "04_outbounds.json"))
+	if err != nil {
+		t.Fatalf("expected 04_outbounds.json: %v", err)
+	}
+	var wrapper struct {
+		Outbounds []map[string]interface{} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		t.Fatalf("parse outbounds: %v", err)
+	}
+
+	var proxyCount int
+	for _, ob := range wrapper.Outbounds {
+		if proto, _ := ob["protocol"].(string); proto != "freedom" && proto != "blackhole" {
+			proxyCount++
+		}
+	}
+	// Filter includes only DE → exactly 1 proxy outbound should remain.
+	if proxyCount != 1 {
+		t.Errorf("expected 1 proxy outbound after filtering (DE only), got %d", proxyCount)
+	}
+}
+
 func TestScheduler_RunAutoApply_WithObservatory(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		lines := "vless://a1b2c3d4-e5f6-4a56-ef12-ef1234567890@10.0.0.1:443?type=tcp&security=reality&pbk=fakePublicKeyBase64EncodedHere_a1b2c3&fp=chrome&sni=example.com&sid=aabb112233445566&flow=xtls-rprx-vision#%F0%9F%87%A9%F0%9F%87%AA%20Standard"
@@ -578,9 +649,12 @@ func TestScheduler_RunAutoApply_AllFilteredOut(t *testing.T) {
 	sched.RefreshAll()
 	sched.runAutoApply()
 
-	// With profiles model, outbounds are always written (filtering is via balancer selectors)
-	if _, err := os.Stat(filepath.Join(dir, "04_outbounds.json")); os.IsNotExist(err) {
-		t.Error("expected outbounds file to be written (profiles handle filtering)")
+	// When filters remove ALL proxies, writeConfigFiles returns an error and
+	// runAutoApply skips writing — outbounds must NOT be created (mirrors the
+	// HTTP Apply handler, which rejects "no proxies pass current filters").
+	// This prevents overwriting a working config with an empty/invalid one.
+	if _, err := os.Stat(filepath.Join(dir, "04_outbounds.json")); !os.IsNotExist(err) {
+		t.Error("expected outbounds file to NOT be written when all proxies are filtered out")
 	}
 }
 
@@ -613,7 +687,7 @@ func TestScheduler_WriteConfigFiles_PreservesExistingRouting(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	sched.SetXrayDir(dir)
 
-	err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "all"}}})
+	_, err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "all"}}})
 	if err != nil {
 		t.Fatalf("writeConfigFiles: %v", err)
 	}
@@ -658,7 +732,7 @@ func TestScheduler_WriteConfigFiles_BalancerMode(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	sched.SetXrayDir(dir)
 
-	err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "random"}}})
+	_, err := sched.writeConfigFiles(proxies, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "random"}}})
 	if err != nil {
 		t.Fatalf("writeConfigFiles: %v", err)
 	}
@@ -690,7 +764,7 @@ func TestScheduler_WriteConfigFiles_NoXrayDir(t *testing.T) {
 	sched := NewScheduler(store, fetcher)
 	// xrayDir is empty
 
-	err := sched.writeConfigFiles([]*ProxyEntry{{Tag: "test"}}, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "all"}}})
+	_, err := sched.writeConfigFiles([]*ProxyEntry{{Tag: "test"}}, []Profile{{ID: "default", IsDefault: true, Enabled: true, Strategy: RoutingStrategy{Type: "all"}}})
 	if err == nil {
 		t.Error("expected error when xrayDir is empty")
 	}
@@ -1169,7 +1243,7 @@ func TestWriteConfigFiles_NoTmpFilesLeft(t *testing.T) {
 		Strategy: RoutingStrategy{Type: "all"},
 	}}
 
-	if err := sched.writeConfigFiles(proxies, profiles); err != nil {
+	if _, err := sched.writeConfigFiles(proxies, profiles); err != nil {
 		t.Fatalf("writeConfigFiles: %v", err)
 	}
 

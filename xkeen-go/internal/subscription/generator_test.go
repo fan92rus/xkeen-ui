@@ -983,6 +983,45 @@ func TestCollectFilteredProxies_EmptyProxies(t *testing.T) {
 	}
 }
 
+// TestCollectFilteredProxies_NewFilterTypes verifies that the hasFilters
+// short-circuit in CollectFilteredProxies recognizes ALL filter fields,
+// including the newer protocol/fingerprint/network/TLS filters. Each row uses
+// a single filter category so that a missing branch in hasFilters causes the
+// filter to be silently ignored (returning all proxies instead of the filtered
+// subset).
+func TestCollectFilteredProxies_NewFilterTypes(t *testing.T) {
+	base := []*ProxyEntry{
+		{Tag: "p1", Protocol: "vless", Fingerprint: "chrome", Network: "tcp", TLSSecurity: "reality"},
+		{Tag: "p2", Protocol: "vmess", Fingerprint: "edge", Network: "ws", TLSSecurity: "tls"},
+	}
+	tests := []struct {
+		name   string
+		filter Filter
+		want   int
+	}{
+		{"include_protocols", Filter{IncludeProtocols: []string{"vmess"}}, 1},
+		{"exclude_protocols", Filter{ExcludeProtocols: []string{"vless"}}, 1},
+		{"include_fingerprints", Filter{IncludeFingerprints: []string{"edge"}}, 1},
+		{"exclude_fingerprints", Filter{ExcludeFingerprints: []string{"chrome"}}, 1},
+		{"include_network", Filter{IncludeNetwork: []string{"ws"}}, 1},
+		{"exclude_network", Filter{ExcludeNetwork: []string{"tcp"}}, 1},
+		{"include_tls", Filter{IncludeTLS: []string{"reality"}}, 1},
+		{"exclude_tls", Filter{ExcludeTLS: []string{"tls"}}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profiles := []Profile{
+				{ID: "default", Name: "Default", Enabled: true, IsDefault: true,
+					Filter: tt.filter, Strategy: RoutingStrategy{Type: "all"}},
+			}
+			result := CollectFilteredProxies(base, profiles)
+			if len(result) != tt.want {
+				t.Errorf("expected %d proxies, got %d (filter ignored?)", tt.want, len(result))
+			}
+		})
+	}
+}
+
 // --- Multi-profile tests ---
 
 func TestGenerateRoutingJSON_MultipleProfiles(t *testing.T) {

@@ -242,10 +242,13 @@ func (s *Scheduler) runAutoApply() {
 		return
 	}
 
-	// 3. Generate and write config files (profiles handle filtering internally)
+	// 3. Generate and write config files (filters applied per profile)
 	profiles := s.store.GetProfiles()
+	var applied int
 	if err := s.WithApplyLock(func() error {
-		return s.writeConfigFiles(allProxies, profiles)
+		var err error
+		applied, err = s.writeConfigFiles(allProxies, profiles)
+		return err
 	}); err != nil {
 		log.Printf("[subscription] auto-apply: write failed: %v", err)
 		return
@@ -264,7 +267,7 @@ func (s *Scheduler) runAutoApply() {
 	}
 
 	_ = s.store.SetGeneratedAt(time.Now())
-	log.Printf("[subscription] auto-apply complete: %d proxies applied", len(allProxies))
+	log.Printf("[subscription] auto-apply complete: %d/%d proxies applied", applied, len(allProxies))
 
 	if s.OnUpdate != nil {
 		s.OnUpdate()
@@ -272,18 +275,27 @@ func (s *Scheduler) runAutoApply() {
 }
 
 // writeConfigFiles generates outbounds, routing, and observatory and writes them to xrayDir.
-func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profile) error {
+// Filtering is applied via CollectFilteredProxies so that only proxies needed by
+// enabled profiles land in 04_outbounds.json — mirroring the HTTP Apply handler.
+func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profile) (int, error) {
 	dir := s.xrayDir
 	if dir == "" {
-		return fmt.Errorf("xray config dir not set")
+		return 0, fmt.Errorf("xray config dir not set")
 	}
 
-	// Generate outbounds for ALL proxies (filtering is handled per-profile via
-	// balancer selectors). Both outbounds and routing receive the SAME allProxies
-	// list so the first-proxy "proxy" tag and selectors stay consistent.
-	outboundsJSON, err := GenerateOutboundsJSON(allProxies, int(s.mark.Load()))
+	// Apply profile filters so outbounds contains only the proxies that at
+	// least one enabled profile needs. Both outbounds and routing receive the
+	// SAME filtered list so the first-proxy "proxy" tag and selectors stay
+	// consistent. Without this, filtered-out proxies leak into 04_outbounds.json
+	// (and get needlessly health-probed by the observatory).
+	filteredProxies := CollectFilteredProxies(allProxies, profiles)
+	if len(filteredProxies) == 0 {
+		return 0, fmt.Errorf("no proxies pass current filters")
+	}
+
+	outboundsJSON, err := GenerateOutboundsJSON(filteredProxies, int(s.mark.Load()))
 	if err != nil {
-		return fmt.Errorf("generate outbounds: %w", err)
+		return 0, fmt.Errorf("generate outbounds: %w", err)
 	}
 
 	// Read existing routing for merge
@@ -293,25 +305,26 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 		existingRouting = data
 	}
 
-	// Generate routing with the same allProxies list
-	routingJSON, err := GenerateRoutingJSON(allProxies, profiles, existingRouting)
+	// Generate routing with the same filtered list so balancer selectors stay
+	// consistent with the outbounds file (same tags, same first-proxy = "proxy").
+	routingJSON, err := GenerateRoutingJSON(filteredProxies, profiles, existingRouting)
 	if err != nil {
-		return fmt.Errorf("generate routing: %w", err)
+		return 0, fmt.Errorf("generate routing: %w", err)
 	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
+		return 0, fmt.Errorf("create config dir: %w", err)
 	}
 
 	// Write outbounds
 	if err := atomicWrite(dir+"/04_outbounds.json", outboundsJSON); err != nil {
-		return fmt.Errorf("write outbounds: %w", err)
+		return 0, fmt.Errorf("write outbounds: %w", err)
 	}
 
 	// Write routing
 	if err := atomicWrite(routingPath, routingJSON); err != nil {
-		return fmt.Errorf("write routing: %w", err)
+		return 0, fmt.Errorf("write routing: %w", err)
 	}
 
 	// Observatory
@@ -319,10 +332,10 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 	if NeedsObservatory(profiles) {
 		obsJSON, err := GenerateObservatoryJSON(s.observatoryConcurrency)
 		if err != nil {
-			return fmt.Errorf("generate observatory: %w", err)
+			return 0, fmt.Errorf("generate observatory: %w", err)
 		}
 		if err := atomicWrite(obsPath, obsJSON); err != nil {
-			return fmt.Errorf("write observatory: %w", err)
+			return 0, fmt.Errorf("write observatory: %w", err)
 		}
 	} else {
 		_ = os.Remove(obsPath)
@@ -334,14 +347,14 @@ func (s *Scheduler) writeConfigFiles(allProxies []*ProxyEntry, profiles []Profil
 		metricsJSON := GenerateMetricsJSON(s.metricsPort)
 		if metricsJSON != nil {
 			if err := atomicWrite(metricsPath, metricsJSON); err != nil {
-				return fmt.Errorf("write metrics: %w", err)
+				return 0, fmt.Errorf("write metrics: %w", err)
 			}
 		}
 	} else {
 		_ = os.Remove(metricsPath)
 	}
 
-	return nil
+	return len(filteredProxies), nil
 }
 
 // ---------- Per-subscription interval checker ----------
