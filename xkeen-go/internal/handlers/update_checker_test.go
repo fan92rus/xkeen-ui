@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -214,4 +215,96 @@ func TestUpdateChecker_StopCancelsInFlight(t *testing.T) {
 
 	c.Stop() // should cancel the in-flight context and let the goroutine exit
 	// If Stop returned, the goroutine exited — test passes.
+}
+
+// ---------- performAutoUpdate tests ----------
+
+// TestPerformAutoUpdate_BusyLockFails verifies that performAutoUpdate bails out
+// immediately — without downloading anything or launching the update script —
+// when another update is already holding the updateMu lock. This is the only
+// guard preventing a concurrent manual + auto update from replacing the binary
+// twice.
+func TestPerformAutoUpdate_BusyLockFails(t *testing.T) {
+	h := newUpdateHandler(t)
+
+	// Simulate an in-progress manual update by holding the lock.
+	h.updateMu.Lock()
+	defer h.updateMu.Unlock()
+
+	err := h.performAutoUpdate(context.Background(), "1.0.0")
+	if err == nil {
+		t.Fatal("expected error when lock is busy, got nil")
+	}
+	if !strings.Contains(err.Error(), "already in progress") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// ---------- settings toggle → checker lifecycle integration ----------
+
+// TestUpdateAutoChange_TogglesChecker verifies that toggling the auto_update
+// setting via the HTTP handler starts/stops the UpdateChecker through the
+// onAutoUpdateChange callback — the real user path for the settings toggle.
+func TestUpdateAutoChange_TogglesChecker(t *testing.T) {
+	version.SetVersion("9.9.9", "", "")
+	defer version.SetVersion("dev", "", "")
+
+	// Mock GitHub API: always "up to date" so checkOnce returns fast.
+	server := mockStableReleaseAPI(t, "1.0.0", false)
+	defer server.Close()
+
+	h := newUpdateHandler(t)
+	h.apiBaseURL = server.URL
+	h.httpClient = server.Client()
+
+	checker := NewUpdateChecker(h)
+
+	// Wire the settings handler with the same callback as server.go.
+	sh, _, _ := setupSettingsTest(t)
+	sh.SetAutoUpdateChange(func(enabled bool) {
+		if enabled {
+			checker.Start()
+		} else {
+			checker.Stop()
+		}
+	})
+	router := newSettingsRouter(sh)
+
+	// Initially the checker is stopped.
+	if checker.IsActive() {
+		t.Fatal("checker should be stopped before enabling")
+	}
+
+	// Toggle ON → checker should start.
+	resp := settingsRequest(t, router, "PUT", "/settings/auto-update",
+		map[string]bool{"enabled": true})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT enable: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if !checker.IsActive() {
+		t.Fatal("checker should be active after enabling auto-update")
+	}
+
+	// Toggle OFF → checker should stop.
+	resp = settingsRequest(t, router, "PUT", "/settings/auto-update",
+		map[string]bool{"enabled": false})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT disable: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if checker.IsActive() {
+		t.Fatal("checker should be stopped after disabling auto-update")
+	}
+
+	// Toggle ON again → checker restarts (Start is safe after Stop).
+	resp = settingsRequest(t, router, "PUT", "/settings/auto-update",
+		map[string]bool{"enabled": true})
+	resp.Body.Close()
+	if !checker.IsActive() {
+		t.Fatal("checker should be active after re-enabling")
+	}
+
+	// Clean up: stop the checker so the goroutine doesn't leak.
+	checker.Stop()
 }
