@@ -264,7 +264,10 @@
     "password_same": "Новый пароль должен отличаться от текущего",
     "password_change_error": "Не удалось изменить пароль",
     "password_changed_ok": "Пароль успешно изменён",
-    "password_change_fail": "Не удалось изменить пароль"
+    "password_change_fail": "Не удалось изменить пароль",
+    "changelog": "Список изменений",
+    "loading": "Загрузка...",
+    "changelog_unreleased": "В разработке"
   },
   "subs": {
     "error_generic": "Ошибка",
@@ -394,10 +397,5 @@
     "proxy_client": "Управление прокси-клиентом",
     "info": "Информация",
     "other": "Прочее"
-  },
-  "whatsnew": {
-    "title": "Обновлено до",
-    "subtitle": "Что нового с версии {from}:",
-    "dismiss": "Понятно"
   }
 }

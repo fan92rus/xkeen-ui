@@ -638,67 +638,6 @@ func (h *SettingsHandler) GetChangelog(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// WhatsNew checks whether the running version is newer than the last known
-// version, and if so returns grouped changes to display in a modal.
-// GET /api/changelog/whatsnew
-func (h *SettingsHandler) WhatsNew(w http.ResponseWriter, _ *http.Request) {
-	current := version.GetVersion()
-	if current == "dev" || current == "" {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"show": false})
-		return
-	}
-
-	h.cfgMu.RLock()
-	known := h.cfg.LastKnownVersion
-	h.cfgMu.RUnlock()
-
-	// First launch or same version — no modal
-	if known == "" || known == current {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"show": false})
-		return
-	}
-
-	// If known is newer than current (downgrade) — no modal
-	if version.CompareVersions(known, current) >= 0 {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"show": false})
-		return
-	}
-
-	groups := version.GetWhatsNewGrouped(known, current)
-	if len(groups) == 0 {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"show": false})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"show":         true,
-		"from_version": known,
-		"to_version":   current,
-		"categories":   groups,
-	})
-}
-
-// AckChangelog marks the current version as acknowledged by the user.
-// POST /api/changelog/ack
-func (h *SettingsHandler) AckChangelog(w http.ResponseWriter, _ *http.Request) {
-	current := version.GetVersion()
-	if current == "dev" || current == "" {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
-		return
-	}
-
-	h.cfgMu.Lock()
-	h.cfg.LastKnownVersion = current
-	h.cfgMu.Unlock()
-
-	if err := h.cfg.SaveConfig(h.configPath); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to save config")
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
-}
-
 // RegisterSettingsRoutes registers settings-related routes.
 func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/xray/settings", handler.GetXraySettings).Methods("GET")
@@ -715,6 +654,4 @@ func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/settings/auto-update", handler.GetAutoUpdate).Methods("GET")
 	r.HandleFunc("/settings/auto-update", handler.UpdateAutoUpdate).Methods("PUT")
 	r.HandleFunc("/changelog", handler.GetChangelog).Methods("GET")
-	r.HandleFunc("/changelog/whatsnew", handler.WhatsNew).Methods("GET")
-	r.HandleFunc("/changelog/ack", handler.AckChangelog).Methods("POST")
 }

@@ -8,6 +8,7 @@ import * as installApi from '../services/install.js';
 import { checkNetwork } from '../services/diagnostics.js';
 import { getProxyEntware, setProxyEntware } from '../services/routing.js';
 import { getAutoUpdate, updateAutoUpdate } from '../services/update.js';
+import { getChangelog } from '../services/changelog.js';
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -25,6 +26,7 @@ const observatoryConcurrency = ref(false);
 
 // Auto-update (stable releases, 10-min check)
 const autoUpdate = ref(true);
+const changelogData = ref(null);
 
 async function loadMetricsPort() {
 	metricsLoading.value = true;
@@ -70,6 +72,19 @@ async function saveAutoUpdate() {
 	} catch (e) {
 		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
 	}
+}
+
+async function loadChangelog() {
+	try {
+		const data = await getChangelog();
+		if (data.ok) changelogData.value = data.changelog;
+	} catch {
+		/* changelog is non-critical */
+	}
+}
+
+function changelogIcon(type) {
+	return { feat: '✨', fix: '🐛', tweak: '🔧' }[type] || '•';
 }
 
 async function saveMetricsPort() {
@@ -252,6 +267,7 @@ onMounted(() => {
 	loadMetricsPort();
 	loadObservatoryConcurrency();
 	loadAutoUpdate();
+	loadChangelog();
 	app.loadXraySettings();
   checkAWG();
   loadProxyEntware();
@@ -382,6 +398,28 @@ onMounted(() => {
                 <span class="toggle-slider" />
               </label>
             </div>
+            <details class="s-changelog">
+              <summary>{{ i18n.t('settings.changelog') }}</summary>
+              <div v-if="changelogData" class="s-changelog-body">
+                <div v-if="changelogData.unreleased && changelogData.unreleased.length" class="s-changelog-rel">
+                  <div class="s-changelog-ver">{{ i18n.t('settings.changelog_unreleased') }}</div>
+                  <ul>
+                    <li v-for="(c, i) in changelogData.unreleased" :key="i" :class="{ 's-changelog-important': c.important }">
+                      <span class="s-changelog-type">{{ changelogIcon(c.type) }}</span> {{ c.text }}
+                    </li>
+                  </ul>
+                </div>
+                <div v-for="rel in changelogData.releases" :key="rel.version" class="s-changelog-rel">
+                  <div class="s-changelog-ver">v{{ rel.version }} <span class="s-changelog-date">{{ rel.date }}</span></div>
+                  <ul>
+                    <li v-for="(c, i) in rel.changes" :key="i" :class="{ 's-changelog-important': c.important }">
+                      <span class="s-changelog-type">{{ changelogIcon(c.type) }}</span> {{ c.text }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <p v-else class="s-row-desc">{{ i18n.t('settings.loading') }}</p>
+            </details>
           </div>
         </section>
 
@@ -933,5 +971,46 @@ onMounted(() => {
   .s-content { padding: 10px 14px 40px; overflow-y: visible; }
   .s-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .pw-grid { flex-direction: column; }
+}
+
+.s-changelog {
+  margin-top: 16px;
+}
+.s-changelog > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.s-changelog-body {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.s-changelog-rel {
+  margin-bottom: 16px;
+}
+.s-changelog-ver {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.s-changelog-date {
+  font-weight: 400;
+  color: var(--text-muted, #888);
+  font-size: 0.85rem;
+  margin-left: 8px;
+}
+.s-changelog-body ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.s-changelog-body li {
+  padding: 2px 0;
+  line-height: 1.4;
+}
+.s-changelog-important {
+  font-weight: 600;
+}
+.s-changelog-type {
+  margin-right: 4px;
 }
 </style>

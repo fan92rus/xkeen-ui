@@ -7,7 +7,8 @@
     {"type": "feat", "text": "Индивидуальные стратегии (round-robin / ping / fallback) для каждого профиля", "important": false},
     {"type": "fix", "text": "Автозапуск через NDM netfilter hook и @reboot crontab", "important": false},
     {"type": "fix", "text": "Шкала времени observatory показывает только активные теги", "important": false},
-    {"type": "tweak", "text": "Подсказки к настройкам стратегий, улучшенные переводы, фокус-ловушка в модалках", "important": false}
+    {"type": "tweak", "text": "Подсказки к настройкам стратегий, улучшенные переводы, фокус-ловушка в модалках", "important": false},
+    {"type": "tweak", "text": "Список изменений в разделе Обновление (changelog.json в бинарнике)", "important": false}
   ],
   "releases": [
     {

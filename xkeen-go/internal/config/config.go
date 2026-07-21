@@ -61,11 +61,6 @@ type Config struct {
 	// versions trigger an update. Disabled by default for security.
 	AutoUpdate bool `json:"auto_update"`
 
-	// LastKnownVersion records the version the user last acknowledged. Used by
-	// the changelog system to detect when the app was updated and show a
-	// "What's new" modal. Empty = first launch (no modal).
-	LastKnownVersion string `json:"last_known_version"`
-
 	// AllowedRoots defines the allowed directories for file operations.
 	AllowedRoots []string `json:"allowed_roots"`
 

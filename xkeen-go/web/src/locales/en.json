@@ -264,7 +264,10 @@
     "password_same": "New password must differ from the current one",
     "password_change_error": "Failed to change password",
     "password_changed_ok": "Password changed successfully",
-    "password_change_fail": "Failed to change password"
+    "password_change_fail": "Failed to change password",
+    "changelog": "Changelog",
+    "loading": "Loading...",
+    "changelog_unreleased": "Unreleased"
   },
   "subs": {
     "error_generic": "Error",
@@ -394,10 +397,5 @@
     "proxy_client": "Proxy client management",
     "info": "Information",
     "other": "Other"
-  },
-  "whatsnew": {
-    "title": "Updated to",
-    "subtitle": "What's new since {from}:",
-    "dismiss": "Got it"
   }
 }
