@@ -44,6 +44,10 @@ func CollectFilteredProxies(allProxies []*ProxyEntry, profiles []Profile) []*Pro
 		}
 		f := p.Filter
 		if len(f.ExcludeCountries) > 0 || len(f.IncludeCountries) > 0 ||
+			len(f.IncludeProtocols) > 0 || len(f.ExcludeProtocols) > 0 ||
+			len(f.IncludeFingerprints) > 0 || len(f.ExcludeFingerprints) > 0 ||
+			len(f.IncludeNetwork) > 0 || len(f.ExcludeNetwork) > 0 ||
+			len(f.IncludeTLS) > 0 || len(f.ExcludeTLS) > 0 ||
 			len(f.IncludeRegexes) > 0 || len(f.ExcludeRegexes) > 0 ||
 			f.MaxProxies > 0 {
 			hasFilters = true
