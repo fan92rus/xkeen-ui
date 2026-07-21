@@ -598,35 +598,31 @@ onMounted(async () => {
             <div class="sub-row-label">{{ i18n.t('subs.strategy_settings') }}</div>
             <div class="strat-settings">
               <label class="ss-field">
-                <span class="ss-label">expected</span>
+                <span class="ss-label" :title="i18n.t('subs.ss_expected_tip')">expected</span>
                 <input type="number" min="0" class="ss-input ss-num"
                        :value="strategySettings.expected || ''"
                        :placeholder="i18n.t('subs.ss_expected_ph')"
-                       :title="i18n.t('subs.ss_expected_tip')"
                        @change="setStrategySetting('expected', $event)" />
               </label>
               <label class="ss-field">
-                <span class="ss-label">maxRTT</span>
+                <span class="ss-label" :title="i18n.t('subs.ss_maxrtt_tip')">maxRTT</span>
                 <input type="text" class="ss-input"
                        :value="strategySettings.max_rtt || ''"
                        placeholder="2s"
-                       :title="i18n.t('subs.ss_maxrtt_tip')"
                        @change="setStrategySetting('max_rtt', $event)" />
               </label>
               <label class="ss-field">
-                <span class="ss-label">tolerance</span>
+                <span class="ss-label" :title="i18n.t('subs.ss_tolerance_tip')">tolerance</span>
                 <input type="number" min="0" max="1" step="0.05" class="ss-input ss-num"
                        :value="strategySettings.tolerance || ''"
                        placeholder="0.1"
-                       :title="i18n.t('subs.ss_tolerance_tip')"
                        @change="setStrategySetting('tolerance', $event)" />
               </label>
               <label class="ss-field ss-field-wide">
-                <span class="ss-label">baselines</span>
+                <span class="ss-label" :title="i18n.t('subs.ss_baselines_tip')">baselines</span>
                 <input type="text" class="ss-input"
                        :value="(strategySettings.baselines || []).join(', ')"
                        placeholder="500ms, 1s"
-                       :title="i18n.t('subs.ss_baselines_tip')"
                        @change="setStrategySetting('baselines', $event)" />
               </label>
             </div>
