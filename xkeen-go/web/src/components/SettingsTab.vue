@@ -513,7 +513,7 @@ onMounted(() => {
             </div>
             <div class="s-row s-row-actions">
               <button :disabled="metricsSaving" class="btn btn-primary" @click="saveMetricsPort()">
-                {{ metricsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }} }}
+                {{ metricsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
               </button>
             </div>
             <div class="s-row">
