@@ -224,3 +224,58 @@ See also `docs/INSIGHTS.md` for the reasoning.
   `git push origin master`).
 - After parallel worktree workers: verify `git status`, commit any leftover
   working-tree changes, confirm each worker's intended files actually landed.
+
+### Changelog System
+
+The project uses a **curated, human-readable changelog** (`changelog.json`)
+embedded into the binary via `go:embed`. No git-log dumps.
+
+**Data flow:**
+
+1. **Developer commits** → adds entries to `unreleased` array in
+   `xkeen-go/internal/version/changelog.json`. Pre-commit hook
+   (`xkeen-go/scripts/pre-commit`) **blocks** the commit if user-facing code
+   changed but `changelog.json` was not updated. Bypass: `SKIP_CHANGELOG=1 git
+   commit ...` (for pure style/docs/test changes).
+2. **CI builds release** → `finalize-changelog.sh` moves `unreleased` entries
+   into a new versioned `release` entry with version + date, clears
+   `unreleased` to `[]`, commits + pushes the finalized file back to `master`,
+   finalizes the changelog → builds the binary (embedding it) → commits +
+   pushes the finalized file back to `master`.
+3. **User sees changes** → Settings → Updates section → expand «Список
+   изменений» (`<details>` collapsible). Shows `unreleased` (dev builds only)
+   + all `releases` with version, date, categorized entries.
+
+**Entry structure** (`changelog.json`):
+
+```json
+{"type": "feat", "text": "Человеко-понятное описание", "important": true}
+```
+
+- **type**: `feat` (✨ Новое), `fix` (🐛 Исправлено), `tweak` (🔧 Мелкие правки)
+- **text**: human-readable description (Russian for this project)
+- **important**: `true` = bold in UI; ⭐ marker in GitHub release notes
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `internal/version/changelog.json` | Curated data (embedded via `go:embed`) |
+| `internal/version/changelog.go` | Embed + parse + `GetFullChangelog()` |
+| `handlers/settings.go` `GetChangelog` | `GET /api/changelog` — returns full changelog |
+| `scripts/pre-commit` | Validates: blocks user-facing code without changelog update |
+| `scripts/finalize-changelog.sh` | CI: moves `unreleased` → versioned `release` |
+| `.github/workflows/build.yml` _(repo root)_ | CI: finalize step + release notes |
+| `internal/version/changelog_test.go` | Tests: validates structure at startup |
+| `web/src/components/SettingsTab.vue` | Collapsible changelog display in UI |
+
+**Pre-commit validation** (jq-based):
+- Checks `type` is one of `feat|fix|tweak`
+- Checks `text` is non-empty
+- Checks `important` is boolean
+- Applies to both `unreleased[]` and `releases[].changes[]`
+
+**CI finalize** (`finalize-changelog.sh`):
+- Double-finalization guard: skips if version already in `releases`
+- Generates GitHub release notes (markdown) from the changelog
+- `GENERATE_NOTES=1` env var triggers release-notes output to stdout
