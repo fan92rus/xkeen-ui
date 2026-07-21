@@ -14,6 +14,7 @@ import SettingsTab from './components/SettingsTab.vue';
 const CommandsTab = defineAsyncComponent(() => import('./components/CommandsTab.vue'));
 const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vue'));
 const AwgTab = defineAsyncComponent(() => import('./components/AwgTab.vue'));
+const RoutingTab = defineAsyncComponent(() => import('./components/RoutingTab.vue'));
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -70,6 +71,7 @@ const tabs = computed(() => {
 		const list = [
 			{ id: 'editor', label: i18n.t('nav.editor') },
 			{ id: 'subscriptions', label: i18n.t('nav.subscriptions') },
+			{ id: 'routing', label: '🔀 Routing' },
 			{ id: 'logs', label: i18n.t('nav.logs') },
 			{ id: 'settings', label: i18n.t('nav.settings') },
 			{ id: 'commands', label: i18n.t('nav.commands') },
@@ -100,6 +102,7 @@ const icons = {
     commands: 'M4 17l6-6-6-6M12 19h8',
     metrics: 'M18 20V10M12 20V4M6 20v-6',
     awg: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
+    routing: 'M3 6h18M3 12h18M3 18h12',
     play: 'M6 3l14 9-14 9V3z',
     stop: 'M3.6 3.6h16.8v16.8H3.6z',
     restart: 'M21 12a9 9 0 1 1-6.219-8.56M21 3v6h-6',
@@ -222,6 +225,7 @@ onUnmounted(() => {
       <!-- Tabs -->
       <EditorTab v-if="app.activeTab === 'editor'" ref="editorRef" class="tab-content" />
       <SubscriptionsTab v-if="app.activeTab === 'subscriptions'" class="tab-content" />
+      <RoutingTab v-if="app.activeTab === 'routing'" class="tab-content" />
       <LogsTab v-if="app.activeTab === 'logs'" class="tab-content" />
       <AwgTab v-if="app.activeTab === 'awg'" class="tab-content" />
       <SettingsTab v-if="app.activeTab === 'settings'" class="tab-content" />

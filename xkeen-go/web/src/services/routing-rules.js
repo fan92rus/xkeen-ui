@@ -1,0 +1,191 @@
+// routing-rules.js — read/write 05_routing.json via existing config API
+import { getFile, saveFile, listFiles } from './config.js';
+
+const ROUTING_FILE = '05_routing.json';
+
+// Resolve the full path of the routing config file via the files API.
+async function resolveRoutingPath() {
+	const files = await listFiles('xray');
+	const found = files.find(f => f.name === ROUTING_FILE);
+	if (!found) throw new Error(`${ROUTING_FILE} not found in config directory`);
+	return found.path;
+}
+
+export async function getRouting() {
+	const fullPath = await resolveRoutingPath();
+	const resp = await getFile(fullPath);
+	return JSON.parse(resp.content);
+}
+
+export async function saveRouting(routing) {
+	const fullPath = await resolveRoutingPath();
+	const content = JSON.stringify({ routing }, null, 2);
+	return saveFile(fullPath, content);
+}
+
+// ── Domain/IP entry parsing ──
+
+export function parseEntry(raw) {
+	// ext:database.dat:category
+	const extMatch = raw.match(/^ext:([^:]+\.dat):(.+)$/);
+	if (extMatch) {
+		return { type: 'ext', db: extMatch[1], value: extMatch[2], raw };
+	}
+	// geosite:category
+	if (raw.startsWith('geosite:')) {
+		return { type: 'geosite', value: raw.slice(8), raw };
+	}
+	// geoip:code
+	if (raw.startsWith('geoip:')) {
+		return { type: 'geoip', value: raw.slice(6), raw };
+	}
+	// regexp:pattern
+	if (raw.startsWith('regexp:')) {
+		return { type: 'regexp', value: raw.slice(7), raw };
+	}
+	// domain:foo.com
+	if (raw.startsWith('domain:')) {
+		return { type: 'domain', value: raw.slice(7), raw };
+	}
+	// full:foo.com
+	if (raw.startsWith('full:')) {
+		return { type: 'full', value: raw.slice(5), raw };
+	}
+	// CIDR (ip only)
+	if (/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(raw)) {
+		return { type: 'cidr', value: raw, raw };
+	}
+	// Plain domain/IP
+	return { type: 'plain', value: raw, raw };
+}
+
+export function entryLabel(e) {
+	switch (e.type) {
+		case 'ext': return `ext:${e.db}:${e.value}`;
+		case 'geosite': return `geosite:${e.value}`;
+		case 'geoip': return `geoip:${e.value}`;
+		case 'regexp': return `/${e.value}/`;
+		case 'domain': return `*.${e.value}`;
+		case 'full': return e.value;
+		case 'cidr': return e.value;
+		default: return e.value;
+	}
+}
+
+export function entryIcon(e) {
+	switch (e.type) {
+		case 'ext':
+		case 'geosite': return '📁';
+		case 'geoip': return '🌍';
+		case 'regexp': return '⚙️';
+		case 'cidr': return '🔢';
+		default: return '🌐';
+	}
+}
+
+// ── Rule normalization ──
+
+export function normalizeRule(rule, index) {
+	const action = rule.outboundTag
+		? { kind: 'outbound', tag: rule.outboundTag }
+		: rule.balancerTag
+			? { kind: 'balancer', tag: rule.balancerTag }
+			: { kind: 'outbound', tag: 'direct' };
+
+	const domains = (rule.domain || []).map(parseEntry);
+	const ips = (rule.ip || []).map(parseEntry);
+	const networks = rule.network ? rule.network.split(',').map(s => s.trim()) : [];
+
+	return {
+		id: `rule-${index}`,
+		name: guessRuleName(domains, ips, action),
+		domains,
+		ips,
+		networks,
+		port: rule.port || '',
+		inbound: rule.inboundTag || [],
+		action,
+		raw: rule,
+	};
+}
+
+function guessRuleName(domains, ips, action) {
+	if (domains.length > 0) {
+		const first = domains[0];
+		if (first.type === 'ext' || first.type === 'geosite') {
+			if (first.value.includes('ru')) return '🇷🇺 RU Direct';
+			if (first.value.includes('ads')) return '🚫 Block Ads';
+		}
+		return `🌐 ${entryLabel(first)}`;
+	}
+	if (ips.length > 0) return `🌍 ${entryLabel(ips[0])}`;
+	if (action.tag === 'direct') return '📭 Catch-all';
+	return `→ ${action.tag}`;
+}
+
+// ── Common geosite/geoip categories for autocomplete ──
+
+export const COMMON_GEOSITE = [
+	// v2fly categories
+	{ value: 'category-ads', label: 'Реклама (block list)', db: 'geosite_v2fly.dat' },
+	{ value: 'category-ads-ru', label: 'Российская реклама', db: 'geosite_v2fly.dat' },
+	{ value: 'category-ru', label: 'Российские сайты', db: 'geosite_v2fly.dat' },
+	{ value: 'category-gov-ru', label: 'Российские гос. сайты', db: 'geosite_v2fly.dat' },
+	{ value: 'category-gov', label: 'Государственные сайты', db: 'geosite_v2fly.dat' },
+	{ value: 'category-social', label: 'Соц. сети', db: 'geosite_v2fly.dat' },
+	{ value: 'category-streaming', label: 'Стриминг', db: 'geosite_v2fly.dat' },
+	{ value: 'category-media', label: 'Медиа', db: 'geosite_v2fly.dat' },
+	{ value: 'category-gaming', label: 'Игры', db: 'geosite_v2fly.dat' },
+	{ value: 'category-dev', label: 'Разработка', db: 'geosite_v2fly.dat' },
+	// Individual sites
+	{ value: 'google', label: 'Google', db: 'geosite_v2fly.dat' },
+	{ value: 'youtube', label: 'YouTube', db: 'geosite_v2fly.dat' },
+	{ value: 'netflix', label: 'Netflix', db: 'geosite_v2fly.dat' },
+	{ value: 'telegram', label: 'Telegram', db: 'geosite_v2fly.dat' },
+	{ value: 'facebook', label: 'Facebook', db: 'geosite_v2fly.dat' },
+	{ value: 'twitter', label: 'Twitter/X', db: 'geosite_v2fly.dat' },
+	{ value: 'instagram', label: 'Instagram', db: 'geosite_v2fly.dat' },
+	{ value: 'vk', label: 'ВКонтакте', db: 'geosite_v2fly.dat' },
+	{ value: 'yandex', label: 'Яндекс', db: 'geosite_v2fly.dat' },
+	{ value: 'openai', label: 'OpenAI', db: 'geosite_v2fly.dat' },
+	{ value: 'github', label: 'GitHub', db: 'geosite_v2fly.dat' },
+	{ value: 'steam', label: 'Steam', db: 'geosite_v2fly.dat' },
+	{ value: 'discord', label: 'Discord', db: 'geosite_v2fly.dat' },
+	{ value: 'reddit', label: 'Reddit', db: 'geosite_v2fly.dat' },
+	{ value: 'twitch', label: 'Twitch', db: 'geosite_v2fly.dat' },
+	{ value: 'spotify', label: 'Spotify', db: 'geosite_v2fly.dat' },
+	// zkeen custom
+	{ value: 'domains', label: 'xkeen: основные домены', db: 'zkeen.dat' },
+	{ value: 'other', label: 'xkeen: прочие', db: 'zkeen.dat' },
+	{ value: 'politic', label: 'xkeen: политика', db: 'zkeen.dat' },
+];
+
+export const COMMON_GEOIP = [
+	{ value: 'private', label: 'RFC1918 (LAN)', flag: '🏠' },
+	{ value: 'ru', label: 'Russia', flag: '🇷🇺' },
+	{ value: 'cn', label: 'China', flag: '🇨🇳' },
+	{ value: 'us', label: 'USA', flag: '🇺🇸' },
+	{ value: 'de', label: 'Germany', flag: '🇩🇪' },
+	{ value: 'fr', label: 'France', flag: '🇫🇷' },
+	{ value: 'gb', label: 'UK', flag: '🇬🇧' },
+	{ value: 'nl', label: 'Netherlands', flag: '🇳🇱' },
+	{ value: 'ua', label: 'Ukraine', flag: '🇺🇦' },
+	{ value: 'by', label: 'Belarus', flag: '🇧🇾' },
+	{ value: 'kz', label: 'Kazakhstan', flag: '🇰🇿' },
+	// zkeen custom IPs
+	{ value: 'discord', label: 'Discord IPs', db: 'zkeenip.dat', flag: '🎮' },
+	{ value: 'google', label: 'Google IPs', db: 'zkeenip.dat', flag: '🔍' },
+	{ value: 'youtube', label: 'YouTube IPs', db: 'zkeenip.dat', flag: '📺' },
+	{ value: 'cloudflare', label: 'Cloudflare', db: 'zkeenip.dat', flag: '☁️' },
+	{ value: 'amazon', label: 'Amazon/AWS', db: 'zkeenip.dat', flag: '📦' },
+	{ value: 'telegram', label: 'Telegram IPs', db: 'zkeenip.dat', flag: '✈️' },
+	{ value: 'meta', label: 'Meta/Facebook', db: 'zkeenip.dat', flag: '👥' },
+	{ value: 'hetzner', label: 'Hetzner', db: 'zkeenip.dat', flag: '🖥️' },
+	{ value: 'ovh', label: 'OVH', db: 'zkeenip.dat', flag: '🖥️' },
+	{ value: 'digitalocean', label: 'DigitalOcean', db: 'zkeenip.dat', flag: '🌊' },
+	{ value: 'vultr', label: 'Vultr', db: 'zkeenip.dat', flag: '🌋' },
+	{ value: 'linode', label: 'Linode', db: 'zkeenip.dat', flag: '🐘' },
+	{ value: 'azure', label: 'Azure', db: 'zkeenip.dat', flag: '☁️' },
+	{ value: 'fastly', label: 'Fastly CDN', db: 'zkeenip.dat', flag: '⚡' },
+	{ value: 'gcore', label: 'Gcore CDN', db: 'zkeenip.dat', flag: '🌐' },
+];
