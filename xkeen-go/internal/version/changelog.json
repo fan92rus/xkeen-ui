@@ -1,0 +1,59 @@
+{
+  "unreleased": [
+    {"type": "feat", "text": "Автоматическое обновление до стабильных релизов (каждые 10 минут)", "important": true},
+    {"type": "fix", "text": "Фильтры прокси не применялись к outbound'ам при обновлении по cron", "important": true},
+    {"type": "feat", "text": "Фильтры по протоколу, отпечатку TLS, сети и типу TLS", "important": false},
+    {"type": "feat", "text": "Параллельная проверка прокси (observatory concurrency) включена по умолчанию", "important": false},
+    {"type": "feat", "text": "Индивидуальные стратегии (round-robin / ping / fallback) для каждого профиля", "important": false},
+    {"type": "fix", "text": "Автозапуск через NDM netfilter hook и @reboot crontab", "important": false},
+    {"type": "fix", "text": "Шкала времени observatory показывает только активные теги", "important": false},
+    {"type": "tweak", "text": "Подсказки к настройкам стратегий, улучшенные переводы, фокус-ловушка в модалках", "important": false}
+  ],
+  "releases": [
+    {
+      "version": "0.7.2",
+      "date": "2026-07-20",
+      "changes": [
+        {"type": "fix", "text": "Скрипт обновления заменён на BusyBox-совместимый subshell (nohup недоступен на Keenetic)", "important": true}
+      ]
+    },
+    {
+      "version": "0.7.0",
+      "date": "2026-07-18",
+      "changes": [
+        {"type": "feat", "text": "Строгая Content-Security-Policy — блокировка инъекций в интерфейс", "important": false},
+        {"type": "feat", "text": "Динамический список команд xkeen (автоматически из 'xkeen -help')", "important": false},
+        {"type": "feat", "text": "Gzip-сжатие статики — загрузка интерфейса в ~3 раза быстрее", "important": false},
+        {"type": "fix", "text": "Устранены data races, утечки горутин и гонки в WebSocket/SSE", "important": true},
+        {"type": "fix", "text": "WebSocket с экспоненциальным backoff при потере соединения", "important": false},
+        {"type": "fix", "text": "Защита от XSS в рендеринге ANSI и JSON", "important": false},
+        {"type": "fix", "text": "Корректное завершение SSE-стримов при отключении клиента", "important": false}
+      ]
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-07-10",
+      "changes": [
+        {"type": "tweak", "text": "Удалён неподдерживаемый fallbackTag из генерации маршрутизации Xray", "important": false}
+      ]
+    },
+    {
+      "version": "0.5.1",
+      "date": "2026-07-05",
+      "changes": [
+        {"type": "feat", "text": "Модульная фильтрация прокси с 50+ тестами", "important": false},
+        {"type": "fix", "text": "Удаление устаревших прокси при удалении подписки", "important": false},
+        {"type": "fix", "text": "Регенерация тегов прокси для предотвращения коллизий", "important": false}
+      ]
+    },
+    {
+      "version": "0.5.0",
+      "date": "2026-07-01",
+      "changes": [
+        {"type": "feat", "text": "Управление подписками с парсингом base64 и plain-text URI", "important": true},
+        {"type": "feat", "text": "Редактор конфигурации Xray с подсветкой синтаксиса", "important": false},
+        {"type": "feat", "text": "Просмотр логов в реальном времени через WebSocket", "important": false}
+      ]
+    }
+  ]
+}

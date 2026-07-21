@@ -394,5 +394,10 @@
     "proxy_client": "Proxy client management",
     "info": "Information",
     "other": "Other"
+  },
+  "whatsnew": {
+    "title": "Updated to",
+    "subtitle": "What's new since {from}:",
+    "dismiss": "Got it"
   }
 }

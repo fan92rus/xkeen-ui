@@ -123,6 +123,17 @@ jobs:
           echo "prev_tag=${LATEST_STABLE_TAG}" >> $GITHUB_OUTPUT
           echo "bump_type=${BUMP_TYPE}" >> $GITHUB_OUTPUT
 
+      - name: Finalize changelog
+        working-directory: xkeen-go
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          echo "Finalizing changelog for version $VERSION"
+          # Move unreleased entries to a versioned release entry
+          sh scripts/finalize-changelog.sh "$VERSION" internal/version/changelog.json
+          # Show result
+          echo "=== Finalized changelog.json ==="
+          cat internal/version/changelog.json
+
       - name: Build binaries
         working-directory: xkeen-go
         run: |
@@ -166,30 +177,22 @@ jobs:
 
       - name: Generate release notes
         id: notes
+        working-directory: xkeen-go
         run: |
+          VERSION="${{ steps.bump.outputs.version }}"
           PREV_TAG="${{ steps.bump.outputs.prev_tag }}"
           CURRENT_TAG="${{ steps.bump.outputs.tag }}"
-          VERSION="${{ steps.bump.outputs.version }}"
           BUMP_TYPE="${{ steps.bump.outputs.bump_type }}"
 
-          # Generate changelog section - always from stable tag
-          if [ "$PREV_TAG" = "v0.0.0" ]; then
-            CHANGES="## Initial Release\n"
-            CHANGES+="\n"
-            CHANGES+=$(git log --pretty=format:"- %s (%h)" --no-merges 2>/dev/null || echo "")
-          else
-            CHANGES="## Changes since ${PREV_TAG}\n"
-            CHANGES+="\n"
-            CHANGES+=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges 2>/dev/null || echo "- No changes")
-          fi
+          # Generate human-readable release notes from curated changelog
+          CHANGELOG_NOTES=$(GENERATE_NOTES=1 sh scripts/finalize-changelog.sh "$VERSION" internal/version/changelog.json 2>/dev/null || echo "")
 
-          # Create full release notes
           cat > /tmp/release-notes.md << ENDNOTES
           ## XKEEN-GO ${VERSION}
 
           **Bump type:** ${BUMP_TYPE} (${PREV_TAG} → ${CURRENT_TAG})
 
-          ${CHANGES}
+          ${CHANGELOG_NOTES}
 
           ---
 
@@ -260,6 +263,14 @@ jobs:
               git push --delete origin "$tag" 2>/dev/null || true
               git tag -d "$tag" 2>/dev/null || true
             done
+
+      - name: Commit finalized changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add xkeen-go/internal/version/changelog.json
+          git commit -m "chore: finalize changelog for ${{ steps.bump.outputs.version }}" || true
+          git push origin HEAD:master
 
       - name: Create tag
         run: |

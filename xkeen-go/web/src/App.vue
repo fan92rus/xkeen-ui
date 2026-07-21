@@ -14,6 +14,7 @@ import SettingsTab from './components/SettingsTab.vue';
 const CommandsTab = defineAsyncComponent(() => import('./components/CommandsTab.vue'));
 const MetricsTab = defineAsyncComponent(() => import('./components/MetricsTab.vue'));
 const AwgTab = defineAsyncComponent(() => import('./components/AwgTab.vue'));
+const WhatsNewModal = defineAsyncComponent(() => import('./components/WhatsNewModal.vue'));
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -324,5 +325,8 @@ onUnmounted(() => {
     <div v-show="app.toast.show" :class="'toast ' + (app.toast.type || '')">
       {{ app.toast.message }}
     </div>
+
+    <!-- What's New modal (auto-checks on mount) -->
+    <WhatsNewModal />
   </div>
 </template>

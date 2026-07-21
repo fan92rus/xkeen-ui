@@ -72,5 +72,40 @@ if [ -n "$STAGED_GO" ] || [ -n "$STAGED_GO_TEST" ]; then
     cd ..
 fi
 
+# --- Changelog check (mandatory for user-facing code) ---
+# If user-facing source files changed, changelog.json must also be updated.
+# Bypass: SKIP_CHANGELOG=1 git commit ...
+if [ "$SKIP_CHANGELOG" != "1" ]; then
+    # User-facing code = handlers, config, server, components, services, stores
+    # Exclude test files and scripts
+    USER_FACING=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'xkeen-go/(internal/(handlers|config|server|subscription)/.*\.go|web/src/(components|services|stores)/.*\.(js|vue))$' | grep -vE '_test\.go$|\.test\.js$' || true)
+    CHANGELOG_CHANGED=$(git diff --cached --name-only | grep 'internal/version/changelog.json' || true)
+
+    if [ -n "$USER_FACING" ] && [ -z "$CHANGELOG_CHANGED" ]; then
+        echo ""
+        echo "  ❌ Изменён пользовательский код, но changelog.json не обновлён."
+        echo "     Добавьте запись в xkeen-go/internal/version/changelog.json (секция unreleased)"
+        echo "     или обойдите: SKIP_CHANGELOG=1 git commit ..."
+        echo ""
+        exit 1
+    fi
+
+    # Validate changelog.json structure if changed
+    if [ -n "$CHANGELOG_CHANGED" ] && command -v jq >/dev/null 2>&1; then
+        if ! jq -e '
+            (.unreleased | type == "array") and
+            (.releases | type == "array") and
+            (.unreleased[]? | (.type | IN("feat","fix","tweak")) and (.text | length > 0) and (.important | type == "boolean")) and
+            (.releases[]? | has("version") and has("date") and has("changes")) and
+            (.releases[]?.changes[]? | (.type | IN("feat","fix","tweak")) and (.text | length > 0) and (.important | type == "boolean"))
+        ' xkeen-go/internal/version/changelog.json > /dev/null 2>&1; then
+            echo "  ✗ changelog.json: invalid structure"
+            echo "    Each entry needs: type (feat|fix|tweak), text (non-empty), important (bool)"
+            exit 1
+        fi
+        echo "  ✓ changelog.json valid"
+    fi
+fi
+
 echo "✅ All pre-commit checks passed!"
 exit 0
