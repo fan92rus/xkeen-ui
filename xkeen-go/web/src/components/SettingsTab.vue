@@ -979,7 +979,11 @@ onMounted(() => {
 .s-changelog > summary {
   cursor: pointer;
   font-weight: 600;
-  padding: 8px 0;
+  padding: 8px 0 8px 20px;
+  list-style: none;
+}
+.s-changelog > summary::-webkit-details-marker {
+  display: none;
 }
 .s-changelog-body {
   max-height: 400px;
@@ -988,6 +992,7 @@ onMounted(() => {
 }
 .s-changelog-rel {
   margin-bottom: 16px;
+  margin-left: 10px;
 }
 .s-changelog-ver {
   font-weight: 700;
