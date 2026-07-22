@@ -27,7 +27,7 @@
     },
     {
       "type": "tweak",
-      "text": "E2E-тест теперь отслеживает CSP-нарушения (securitypolicyviolation + console.error) и падает при их наличии",
+      "text": "E2E-тест теперь отслеживает CSP-нарушения, упавшие API-запросы (4xx/5xx), потерянные ресурсы (CSS/JS 404), console.error и unhandled rejection — и падает при любой из этих ошибок",
       "important": false
     }
   ],  "releases": [

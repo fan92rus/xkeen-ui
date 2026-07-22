@@ -23,6 +23,9 @@ let browser, page, serverProcess;
 let passed = 0, failed = 0, errors = [];
 const jsErrors = [];
 const cspViolations = [];
+const consoleErrors = [];   // all console.error (not just CSP)
+const failedRequests = [];  // 4xx/5xx on any fetch/XHR
+const failedResources = []; // 404 on page assets (CSS/JS/fonts)
 
 function ensureConfig() {
     const configDir = path.join(TMP, 'xkeen-test', 'config');
@@ -108,14 +111,41 @@ async function main() {
     await page.setViewport({ width: 1280, height: 900 });
     page.setDefaultTimeout(10000);
     page.on('pageerror', err => jsErrors.push(err.message));
-    // Collect CSP violations (console errors + SecurityPolicyViolationEvent).
-    // CSP violations are NOT pageerror — they fire as console.error and
-    // a securitypolicyviolation event on document. Both are collected here
-    // so we can assert zero violations at the end of the test suite.
+
+    // Collect ALL console errors — not just CSP. Vue warnings, JSON parse
+    // failures, and network errors all land here and should fail the suite.
     page.on('console', msg => {
-        if (msg.type() === 'error' && /Content.Security.Policy|style-src|script-src/i.test(msg.text())) {
-            cspViolations.push(msg.text());
+        if (msg.type() === 'error') {
+            consoleErrors.push(msg.text());
+            // Also keep CSP-specific bucket for the dedicated CSP test
+            if (/Content.Security.Policy|style-src|script-src/i.test(msg.text())) {
+                cspViolations.push(msg.text());
+            }
         }
+    });
+
+    // Track failed page resources (404 on bundle.css, bundle.js, fonts, etc.).
+    // A missing bundle.css silently renders the page without styles.
+    page.on('requestfailed', request => {
+        failedResources.push(`${request.failure().errorText}: ${request.url()}`);
+    });
+
+    // Track failed API requests (4xx/5xx). If a backend endpoint breaks,
+    // the UI silently degrades — no crash, no error in console, just empty
+    // panels. This catches every silent backend regression.
+    page.on('response', response => {
+        if (response.status() >= 400) {
+            failedRequests.push(`${response.status()} ${response.url()}`);
+        }
+    });
+
+    // Unhandled promise rejections are NOT always caught by pageerror.
+    // Collect them via the unhandledrejection event on document.
+    await page.evaluateOnNewDocument(() => {
+        window.addEventListener('unhandledrejection', event => {
+            window.__unhandledRejections = window.__unhandledRejections || [];
+            window.__unhandledRejections.push(String(event.reason));
+        });
     });
 
     // ── Tests ──
@@ -188,6 +218,39 @@ async function main() {
         const styleViolations = violations.filter(v => /style-src|inline.style/i.test(v));
         assert(styleViolations.length === 0,
             `CSP style-src violations: ${styleViolations.join('; ')}`);
+    });
+
+    // ── Infrastructure health checks (failures here = backend regression) ──
+
+    await test('No failed page resources (CSS/JS/fonts 404)', async () => {
+        const relevant = failedResources.filter(r =>
+            /\.(css|js|woff2?|ttf)$/.test(r) || /\/static\//.test(r)
+        );
+        assert(relevant.length === 0,
+            `Missing assets: ${relevant.join('; ')}`);
+    });
+
+    await test('No failed API requests (4xx/5xx)', async () => {
+        // Ignore expected failures (e.g. fetch of non-existent subscription)
+        const real = failedRequests.filter(r => {
+            const url = r.replace(/^\d+ /, '');
+            // Skip 404 on subscriptions that legitimately don't exist
+            if (/\/api\/subscriptions\//.test(url) && r.startsWith('404')) return false;
+            return true;
+        });
+        assert(real.length === 0,
+            `Failed API calls: ${real.join('; ')}`);
+    });
+
+    await test('No console errors', async () => {
+        assert(consoleErrors.length === 0,
+            `Console errors: ${[...new Set(consoleErrors)].join('; ')}`);
+    });
+
+    await test('No unhandled promise rejections', async () => {
+        const rejections = await page.evaluate(() => window.__unhandledRejections || []);
+        assert(rejections.length === 0,
+            `Unhandled rejections: ${rejections.join('; ')}`);
     });
 
     await test('Add subscription via Enter key', async () => {
@@ -351,9 +414,21 @@ async function main() {
         console.log(`\nJS Errors (${jsErrors.length}):`);
         for (const e of [...new Set(jsErrors)]) console.log(`  • ${e.split('\n')[0]}`);
     }
+    if (consoleErrors.length) {
+        console.log(`\nConsole Errors (${consoleErrors.length}):`);
+        for (const e of [...new Set(consoleErrors)]) console.log(`  • ${e.split('\n')[0]}`);
+    }
     if (cspViolations.length) {
         console.log(`\nCSP Violations (${cspViolations.length}):`);
         for (const v of [...new Set(cspViolations)]) console.log(`  • ${v.split('\n')[0]}`);
+    }
+    if (failedRequests.length) {
+        console.log(`\nFailed API Requests (${failedRequests.length}):`);
+        for (const r of [...new Set(failedRequests)]) console.log(`  • ${r}`);
+    }
+    if (failedResources.length) {
+        console.log(`\nFailed Page Resources (${failedResources.length}):`);
+        for (const r of [...new Set(failedResources)]) console.log(`  • ${r}`);
     }
     if (errors.length) {
         console.log('\nFailures:');
@@ -363,7 +438,11 @@ async function main() {
     await browser?.close();
     serverProcess?.kill();
     if (IS_WIN) try { execSync(`taskkill /F /PID ${serverProcess.pid} 2>nul`, { shell: true }); } catch {}
-    process.exit(failed > 0 ? 1 : 0);
+    // Fail if any test failed OR any infrastructure error was collected.
+    const hasInfraErrors = jsErrors.length > 0 || consoleErrors.length > 0
+        || cspViolations.length > 0 || failedRequests.length > 0
+        || failedResources.length > 0;
+    process.exit((failed > 0 || hasInfraErrors) ? 1 : 0);
 }
 
 main().catch(e => {
