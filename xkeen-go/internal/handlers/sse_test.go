@@ -58,7 +58,7 @@ func TestSSEWriter_SendMultipleEvents(t *testing.T) {
 	_ = sse.Send("complete", map[string]bool{"success": true})
 
 	body := rec.Body.String()
-	if len(body) == 0 {
+	if body == "" {
 		t.Fatal("expected non-empty body after two events")
 	}
 

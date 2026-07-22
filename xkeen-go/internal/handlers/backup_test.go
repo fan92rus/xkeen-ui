@@ -117,7 +117,7 @@ func TestCleanupOldBackupsCore_OnlyMatchingBaseName(t *testing.T) {
 	}
 }
 
-func TestCleanupOldBackupsCore_NonexistentDir(t *testing.T) {
+func TestCleanupOldBackupsCore_NonexistentDir(_ *testing.T) {
 	// Should not panic / error on missing directory.
 	cleanupOldBackupsCore("/some/file.json", "/nonexistent/backup/dir", 5)
 }

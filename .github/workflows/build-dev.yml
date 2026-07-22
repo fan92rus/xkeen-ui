@@ -1,4 +1,4 @@
-name: Build Dev Pre-Release
+name: Dev Pre-Release
 
 on:
   workflow_dispatch:
@@ -11,31 +11,118 @@ on:
 
 env:
   GO_VERSION: '1.26'
+  NODE_VERSION: '24'
 
 jobs:
-  build:
-    name: Build Dev Pre-Release
+  # ─── Quality Gate — all checks run in parallel ───
+  go-checks:
+    name: Go (vet, test -race, govulncheck)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    defaults:
+      run:
+        working-directory: xkeen-go
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+      - run: go mod download
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: go build ./...
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest && $(go env GOPATH)/bin/govulncheck ./...
 
-      - name: Setup Go
+  frontend-checks:
+    name: Frontend (build, test, lint, audit, e2e)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: xkeen-go/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run lint
+      - run: npm audit --omit=dev --audit-level=high
+
+      # ── E2E tests (Puppeteer + Chromium) ──
+      - name: Install Chromium system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 \
+            libxkbcommon-x11-0 libxcomposite1 libxdamage1 libxrandr2 \
+            libgbm1 libpango-1.0-0 libcairo2 libasound2
+
+      - name: Setup Go (for e2e server binary)
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: xkeen-go/go.mod
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+      - name: E2E tests
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          node-version: '24'
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+      - run: go mod download
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
+          working-directory: xkeen-go
+          install-mode: goinstall
+
+  security:
+    name: Security Scan (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/auto
+            .semgrep.yml
+
+  # ─── Build (only when all checks pass) ───
+  build:
+    name: Build Dev Pre-Release
+    runs-on: ubuntu-latest
+    needs: [go-checks, frontend-checks, lint, security]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Build frontend
         working-directory: xkeen-go
@@ -48,31 +135,15 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          # Get latest stable tag (exclude dev tags)
           LATEST_TAG=$(git tag -l 'v[0-9]*' | grep -v -- '-dev' | sort -V | tail -1 2>/dev/null || echo "v0.0.0")
-          echo "Latest stable tag: $LATEST_TAG"
-
-          # Strip 'v' prefix
           BASE_VERSION=${LATEST_TAG#v}
-
-          # Parse version and bump patch
           MAJOR=$(echo $BASE_VERSION | cut -d. -f1)
           MINOR=$(echo $BASE_VERSION | cut -d. -f2)
           PATCH=$(echo $BASE_VERSION | cut -d. -f3)
-
-          # Increment patch for dev version (changes since last release)
           PATCH=$((PATCH + 1))
-
-          # Unix timestamp for unique dev version
           UNIX_TIME=$(date +%s)
-
-          # Dev version: next patch + dev + timestamp
           DEV_VERSION="${MAJOR}.${MINOR}.${PATCH}-dev.${UNIX_TIME}"
           DEV_TAG="v${DEV_VERSION}"
-
-          echo "Dev version: ${DEV_VERSION}"
-          echo "Dev tag: ${DEV_TAG}"
-
           echo "version=${DEV_VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${DEV_TAG}" >> $GITHUB_OUTPUT
           echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
@@ -82,17 +153,11 @@ jobs:
         run: |
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           GIT_COMMIT=${{ steps.version.outputs.short_sha }}
-
-          # Build ARM64
-          echo "Building ARM64..."
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w \
             -X main.appVersion=${{ steps.version.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
             -X main.gitCommit=${GIT_COMMIT}" \
             -o xkeen-ui-keenetic-arm64
-
-          # Build MIPSLE (for KN-1010 and similar)
-          echo "Building MIPSLE..."
           CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "-s -w \
             -X main.appVersion=${{ steps.version.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
@@ -110,21 +175,10 @@ jobs:
       - name: Generate SHA256 checksums
         working-directory: xkeen-go
         run: |
-          # Generate checksums for both binaries
-          # IMPORTANT: This must run AFTER UPX compression
           sha256sum xkeen-ui-keenetic-arm64 > xkeen-ui-keenetic-arm64.sha256
           sha256sum xkeen-ui-keenetic-mipsle > xkeen-ui-keenetic-mipsle.sha256
-
-          echo "Checksums generated:"
-          cat xkeen-ui-keenetic-arm64.sha256
-          cat xkeen-ui-keenetic-mipsle.sha256
-
-          # Verify checksum format (should be: "hash  filename")
           for file in xkeen-ui-keenetic-arm64.sha256 xkeen-ui-keenetic-mipsle.sha256; do
-            if [ $(wc -w < "$file") -ne 2 ]; then
-              echo "ERROR: Invalid checksum format in $file"
-              exit 1
-            fi
+            if [ $(wc -w < "$file") -ne 2 ]; then echo "ERROR: Invalid checksum format in $file"; exit 1; fi
           done
 
       - name: Delete old dev releases
@@ -133,8 +187,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          echo "Deleting all old dev releases..."
           gh release list --limit 100 --json tagName,isPrerelease | \
             jq -r '.[] | select(.tagName | test("-dev\\.")) | .tagName' | \
             while read tag; do
@@ -147,12 +199,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Skip if tag already exists (concurrent workflow)
           if git tag -l | grep -q "^${{ steps.version.outputs.tag }}$"; then
             echo "Tag ${{ steps.version.outputs.tag }} already exists, skipping"
             exit 0
           fi
-
           cat > /tmp/release-notes.md << ENDNOTES
           ## Dev Build ${{ steps.version.outputs.version }}
 
@@ -164,35 +214,16 @@ jobs:
           | Build date | $(date -u +%Y-%m-%dT%H:%M:%SZ) |
 
           ### Supported Devices
-
-          **ARM64** (xkeen-ui-keenetic-arm64):
-          - KN-1810, KN-1910
-          - Other Keenetic routers with ARM64 processor and Entware
-
-          **MIPS** (xkeen-ui-keenetic-mipsle):
-          - KN-1010, KN-1011
-          - Other Keenetic routers with MIPS processor and Entware
+          **ARM64** (xkeen-ui-keenetic-arm64): KN-1810, KN-1910, Other Keenetic routers with ARM64
+          **MIPS** (xkeen-ui-keenetic-mipsle): KN-1010, KN-1011, Other Keenetic routers with MIPS
 
           ### Installation
           \`\`\`sh
           chmod +x xkeen-ui-keenetic-arm64  # or xkeen-ui-keenetic-mipsle
-          ./xkeen-ui-keenetic-arm64 install  # or xkeen-ui-keenetic-mipsle
+          ./xkeen-ui-keenetic-arm64 install
           /opt/etc/init.d/xkeen-ui restart
           \`\`\`
-
-          ### Verify Download (Optional)
-          \`\`\`sh
-          # Download checksum file for your architecture
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/xkeen-ui-keenetic-arm64.sha256
-          # or
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/xkeen-ui-keenetic-mipsle.sha256
-
-          # Verify integrity
-          sha256sum -c xkeen-ui-keenetic-arm64.sha256
-          # Should output: xkeen-ui-keenetic-arm64: OK
-          \`\`\`
           ENDNOTES
-
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "Dev ${{ steps.version.outputs.version }}" \
             --notes-file /tmp/release-notes.md \

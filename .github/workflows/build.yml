@@ -16,31 +16,118 @@ on:
 
 env:
   GO_VERSION: '1.26'
+  NODE_VERSION: '24'
 
 jobs:
-  build:
-    name: Build and Release
+  # ─── Quality Gate — all checks run in parallel ───
+  go-checks:
+    name: Go (vet, test -race, govulncheck)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    defaults:
+      run:
+        working-directory: xkeen-go
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+      - run: go mod download
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: go build ./...
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest && $(go env GOPATH)/bin/govulncheck ./...
 
-      - name: Setup Go
+  frontend-checks:
+    name: Frontend (build, test, lint, audit, e2e)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: xkeen-go/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run lint
+      - run: npm audit --omit=dev --audit-level=high
+
+      # ── E2E tests (Puppeteer + Chromium) ──
+      - name: Install Chromium system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 \
+            libxkbcommon-x11-0 libxcomposite1 libxdamage1 libxrandr2 \
+            libgbm1 libpango-1.0-0 libcairo2 libasound2
+
+      - name: Setup Go (for e2e server binary)
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: xkeen-go/go.mod
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+      - name: E2E tests
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xkeen-go
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          node-version: '24'
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+      - run: go mod download
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
+          working-directory: xkeen-go
+          install-mode: goinstall
+
+  security:
+    name: Security Scan (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/auto
+            .semgrep.yml
+
+  # ─── Build & Release (only when all checks pass) ───
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    needs: [go-checks, frontend-checks, lint, security]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: xkeen-go/go.mod
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Build frontend
         working-directory: xkeen-go
@@ -53,84 +140,46 @@ jobs:
       - name: Determine version bump
         id: bump
         run: |
-          # Get latest stable tag (exclude dev tags)
           LATEST_STABLE_TAG=$(git tag -l 'v[0-9]*' | grep -v -- '-dev' | sort -V | tail -1 2>/dev/null || echo "v0.0.0")
           echo "Latest stable tag: $LATEST_STABLE_TAG"
-
-          # Get latest dev tag if exists
           LATEST_DEV_TAG=$(git tag -l 'v*-dev.*' | sort -V | tail -1 2>/dev/null || echo "")
-          echo "Latest dev tag: $LATEST_DEV_TAG"
-
           FORCE_BUMP="${{ github.event.inputs.force_bump }}"
-
           if [ "$FORCE_BUMP" = "auto" ] || [ -z "$FORCE_BUMP" ]; then
-            # Auto mode: use dev version if exists, otherwise bump from stable
             if [ -n "$LATEST_DEV_TAG" ]; then
-              # Extract base version from dev tag (e.g., v1.13.2-dev.123 -> 1.13.2)
               DEV_VERSION=${LATEST_DEV_TAG#v}
               BASE_VERSION=$(echo "$DEV_VERSION" | sed 's/-dev\..*//')
               NEW_VERSION="$BASE_VERSION"
-              BUMP_TYPE="none (from dev)"
               echo "Using version from dev tag: $NEW_VERSION"
             else
-              # No dev tag - bump from stable
               CURRENT_VERSION=${LATEST_STABLE_TAG#v}
               MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
               MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
               PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
-
-              # Default bump
               PATCH=$((PATCH + 1))
-              BUMP_TYPE="patch (auto)"
-
               NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-              echo "Bumping from stable: $NEW_VERSION"
             fi
           else
-            # Force bump - always bump from stable tag
             CURRENT_VERSION=${LATEST_STABLE_TAG#v}
             MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
             MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
             PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
-
             case "$FORCE_BUMP" in
-              major)
-                MAJOR=$((MAJOR + 1))
-                MINOR=0
-                PATCH=0
-                ;;
-              minor)
-                MINOR=$((MINOR + 1))
-                PATCH=0
-                ;;
-              patch)
-                PATCH=$((PATCH + 1))
-                ;;
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
             esac
-
             NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            BUMP_TYPE="$FORCE_BUMP (forced)"
-            echo "Forced bump from stable: $NEW_VERSION"
           fi
-
           NEW_TAG="v${NEW_VERSION}"
-
-          echo "New version: $NEW_VERSION"
-          echo "New tag: $NEW_TAG"
-
           echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${NEW_TAG}" >> $GITHUB_OUTPUT
           echo "prev_tag=${LATEST_STABLE_TAG}" >> $GITHUB_OUTPUT
-          echo "bump_type=${BUMP_TYPE}" >> $GITHUB_OUTPUT
 
       - name: Finalize changelog
         working-directory: xkeen-go
         run: |
           VERSION="${{ steps.bump.outputs.version }}"
-          echo "Finalizing changelog for version $VERSION"
-          # Move unreleased entries to a versioned release entry
           sh scripts/finalize-changelog.sh "$VERSION" internal/version/changelog.json
-          # Show result
           echo "=== Finalized changelog.json ==="
           cat internal/version/changelog.json
 
@@ -139,17 +188,11 @@ jobs:
         run: |
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           GIT_COMMIT=$(git rev-parse --short HEAD)
-
-          # Build ARM64
-          echo "Building ARM64..."
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w \
             -X main.appVersion=${{ steps.bump.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
             -X main.gitCommit=${GIT_COMMIT}" \
             -o xkeen-ui-keenetic-arm64
-
-          # Build MIPSLE (for KN-1010 and similar)
-          echo "Building MIPSLE..."
           CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "-s -w \
             -X main.appVersion=${{ steps.bump.outputs.version }} \
             -X main.buildDate=${BUILD_DATE} \
@@ -159,20 +202,10 @@ jobs:
       - name: Generate SHA256 checksums
         working-directory: xkeen-go
         run: |
-          # Generate checksums for both binaries
           sha256sum xkeen-ui-keenetic-arm64 > xkeen-ui-keenetic-arm64.sha256
           sha256sum xkeen-ui-keenetic-mipsle > xkeen-ui-keenetic-mipsle.sha256
-
-          echo "Checksums generated:"
-          cat xkeen-ui-keenetic-arm64.sha256
-          cat xkeen-ui-keenetic-mipsle.sha256
-
-          # Verify checksum format (should be: "hash  filename")
           for file in xkeen-ui-keenetic-arm64.sha256 xkeen-ui-keenetic-mipsle.sha256; do
-            if [ $(wc -w < "$file") -ne 2 ]; then
-              echo "ERROR: Invalid checksum format in $file"
-              exit 1
-            fi
+            if [ $(wc -w < "$file") -ne 2 ]; then echo "ERROR: Invalid checksum format in $file"; exit 1; fi
           done
 
       - name: Generate release notes
@@ -180,56 +213,25 @@ jobs:
         working-directory: xkeen-go
         run: |
           VERSION="${{ steps.bump.outputs.version }}"
-          PREV_TAG="${{ steps.bump.outputs.prev_tag }}"
-          CURRENT_TAG="${{ steps.bump.outputs.tag }}"
-          BUMP_TYPE="${{ steps.bump.outputs.bump_type }}"
-
-          # Generate human-readable release notes from curated changelog
           CHANGELOG_NOTES=$(GENERATE_NOTES=1 sh scripts/finalize-changelog.sh "$VERSION" internal/version/changelog.json 2>/dev/null || echo "")
-
           cat > /tmp/release-notes.md << ENDNOTES
           ## XKEEN-GO ${VERSION}
 
-          **Bump type:** ${BUMP_TYPE} (${PREV_TAG} → ${CURRENT_TAG})
+          **${LATEST_STABLE_TAG} → ${{ steps.bump.outputs.tag }}**
 
           ${CHANGELOG_NOTES}
 
           ---
 
           ### Supported Devices
-
-          **ARM64** (xkeen-ui-keenetic-arm64):
-          - KN-1810, KN-1910
-          - Other Keenetic routers with ARM64 processor and Entware
-
-          **MIPS** (xkeen-ui-keenetic-mipsle):
-          - KN-1010, KN-1011
-          - Other Keenetic routers with MIPS processor and Entware
+          **ARM64** (xkeen-ui-keenetic-arm64): KN-1810, KN-1910, Other Keenetic routers with ARM64
+          **MIPS** (xkeen-ui-keenetic-mipsle): KN-1010, KN-1011, Other Keenetic routers with MIPS
 
           ### Installation
           \`\`\`sh
-          # Download and make executable (choose your architecture)
-          chmod +x xkeen-ui-keenetic-arm64  # for ARM64
-          # or
-          chmod +x xkeen-ui-keenetic-mipsle    # for MIPS
-
-          # Install (run as root)
-          ./xkeen-ui-keenetic-arm64 install  # or xkeen-ui-keenetic-mipsle
-
-          # Start service
+          chmod +x xkeen-ui-keenetic-arm64  # or xkeen-ui-keenetic-mipsle
+          ./xkeen-ui-keenetic-arm64 install
           /opt/etc/init.d/xkeen-ui start
-          \`\`\`
-
-          ### Verify Download (Optional)
-          \`\`\`sh
-          # Download checksum file for your architecture
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-ui-keenetic-arm64.sha256
-          # or
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.bump.outputs.tag }}/xkeen-ui-keenetic-mipsle.sha256
-
-          # Verify integrity
-          sha256sum -c xkeen-ui-keenetic-arm64.sha256
-          # Should output: xkeen-ui-keenetic-arm64: OK
           \`\`\`
 
           ### Default Credentials
@@ -237,7 +239,6 @@ jobs:
           - Password: \`admin\`
           - **Change password immediately after first login!**
           ENDNOTES
-
           echo "Release notes:"
           cat /tmp/release-notes.md
 
@@ -247,7 +248,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           echo "Deleting all pre-releases..."
           gh release list --limit 100 --json tagName,isPrerelease | \
             jq -r '.[] | select(.isPrerelease == true) | .tagName' | \
@@ -255,7 +255,6 @@ jobs:
               echo "Deleting pre-release: $tag"
               gh release delete "$tag" --yes 2>/dev/null || true
             done
-
           echo "Deleting all dev tags..."
           git tag -l 'v*-dev.*' | \
             while read tag; do
