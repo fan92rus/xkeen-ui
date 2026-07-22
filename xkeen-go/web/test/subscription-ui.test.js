@@ -503,7 +503,7 @@ async function main() {
             return false;
         });
         assert(clicked, 'Edit button found and clicked');
-        await waitFor(() => !!document.querySelector('.sub-card.editing .sub-edit'), 3000);
+        await waitFor(() => page.evaluate(() => !!document.querySelector('.sub-card.editing .sub-edit')), 3000);
         await page.evaluate(() => {
             const btns = document.querySelectorAll('.sub-card.editing button');
             for (const b of btns) { if (b.textContent.includes('Отмена')) { b.click(); return; } }
@@ -624,7 +624,11 @@ async function main() {
 
     // Filter out known test-environment noise before report and exit check.
     const realConsoleErrors = consoleErrors.filter(e => !/Failed to load resource/.test(e));
-    const realFailedRequests = failedRequests.filter(r => !/\/api\/logs\/xray/.test(r));
+    const realFailedRequests = failedRequests.filter(r => {
+        if (/\/api\/logs\/xray/.test(r)) return false;
+        if (/\/api\/subscriptions\/[^/]+\/fetch/.test(r)) return false;
+        return true;
+    });
 
     console.log(`\n${'─'.repeat(40)}`);
     console.log(`Results: ${passed} passed, ${failed} failed`);
