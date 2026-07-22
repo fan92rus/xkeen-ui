@@ -19,6 +19,11 @@
       "type": "tweak",
       "text": "Отмена операций установки/обновления при отключении клиента",
       "important": false
+    },
+    {
+      "type": "fix",
+      "text": "Восстановлен 'unsafe-inline' в style-src CSP для работы редактора CodeMirror (подсветка синтаксиса, тема)",
+      "important": true
     }
   ],  "releases": [
     {

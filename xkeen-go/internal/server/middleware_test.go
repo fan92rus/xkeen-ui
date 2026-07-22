@@ -205,15 +205,11 @@ func TestSecurityHeadersMiddleware_SetsHeaders(t *testing.T) {
 	if !strings.Contains(csp, "default-src 'self'") {
 		t.Errorf("CSP missing default-src: %s", csp)
 	}
-	// style-src should NOT include 'unsafe-inline' — styles are served from
-	// external bundle.css. CodeMirror 6 inline styles are handled via CSSOM
-	// (document.documentElement.style) which does not require 'unsafe-inline'
-	// in CSP style-src (only <style> tags and style="" attributes do).
-	if !strings.Contains(csp, "style-src 'self'") {
-		t.Errorf("CSP missing style-src 'self': %s", csp)
-	}
-	if strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
-		t.Errorf("CSP must NOT contain 'unsafe-inline' in style-src: %s", csp)
+	// style-src needs 'unsafe-inline' because CodeMirror 6 injects <style>
+	// elements at runtime via StyleModule (syntax highlighting, theme colors).
+	// This is inherent to CM6 architecture — not CSSOM-based.
+	if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+		t.Errorf("CSP must contain 'unsafe-inline' in style-src for CodeMirror 6: %s", csp)
 	}
 	if strings.Contains(csp, "unsafe-eval") {
 		t.Errorf("CSP must NOT contain 'unsafe-eval': %s", csp)

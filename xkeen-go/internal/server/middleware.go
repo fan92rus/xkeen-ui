@@ -427,10 +427,13 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Content Security Policy
-		// Styles are served from external files only (no inline <style>, no
-		// 'unsafe-inline'), which prevents style-based data exfiltration. Scripts
-		// are likewise 'self' only. The favicon uses a data: URI (img-src data:).
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+		// style-src needs 'unsafe-inline' because CodeMirror 6 (the JSON/YAML
+		// editor) injects <style> elements at runtime via StyleModule for syntax
+		// highlighting, theme colors (oneDark), and editor chrome. This is inherent
+		// to CM6 architecture and cannot be pre-compiled into bundle.css.
+		// Trade-off: script-src 'self' remains the primary XSS defense; CSS
+		// exfiltration risk is negligible for a local router admin interface.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
 
 		next.ServeHTTP(w, r)
 	})
