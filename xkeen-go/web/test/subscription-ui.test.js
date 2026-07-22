@@ -105,6 +105,20 @@ async function getTotalCardCount() {
     );
 }
 
+// Wait until a non-builtin subscription card is present with action buttons.
+// Throws on timeout so the calling test fails with a clear message.
+async function waitForNonBuiltinCard(timeoutMs = 8000) {
+    await waitFor(async () => {
+        const card = await page.evaluate(() => {
+            const c = document.querySelector('.sub-card:not(.builtin)');
+            if (!c) return false;
+            const btns = c.querySelectorAll('.acts button');
+            return btns.length >= 2;
+        });
+        return card;
+    }, timeoutMs);
+}
+
 async function test(name, fn) {
     try { await fn(); passed++; console.log(`  ✓ ${name}`); }
     catch (e) { failed++; errors.push({ name, error: e.message }); console.log(`  ✗ ${name}: ${e.message.split('\n')[0]}`); }
@@ -466,6 +480,7 @@ async function main() {
     });
 
     await test('Edit toggles inline form', async () => {
+        await waitForNonBuiltinCard();
         const clicked = await page.evaluate(() => {
             const card = document.querySelector('.sub-card:not(.builtin)');
             if (!card) return false;
@@ -475,9 +490,7 @@ async function main() {
             return false;
         });
         assert(clicked, 'Edit button found and clicked');
-        await wait(500);
-        const hasForm = await page.evaluate(() => !!document.querySelector('.sub-card.editing .sub-edit'));
-        assert(hasForm, 'Edit form visible after click');
+        await waitFor(() => !!document.querySelector('.sub-card.editing .sub-edit'), 3000);
         await page.evaluate(() => {
             const btns = document.querySelectorAll('.sub-card.editing button');
             for (const b of btns) { if (b.textContent.includes('Отмена')) { b.click(); return; } }
@@ -486,6 +499,7 @@ async function main() {
     });
 
     await test('Preview/Apply buttons in toolbar', async () => {
+        await waitForNonBuiltinCard();
         const found = await page.evaluate(() => {
             const btns = document.querySelectorAll('.sub-toolbar button');
             let preview = false, apply = false;
@@ -525,6 +539,7 @@ async function main() {
     });
 
     await test('Delete subscription', async () => {
+        await waitForNonBuiltinCard();
         const before = await getSubCount();
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         await page.evaluate(() => {
@@ -568,6 +583,7 @@ async function main() {
     });
 
     await test('Clean up: delete all subscriptions', async () => {
+        await waitForNonBuiltinCard(2000).catch(() => {}); // OK if already empty
         const count = await getSubCount();
         if (count === 0) return;
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
