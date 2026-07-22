@@ -53,12 +53,8 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
 
       # ── E2E tests (Puppeteer + Chromium) ──
-      - name: Install Chromium system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 \
-            libxkbcommon-x11-0 libxcomposite1 libxdamage1 libxrandr2 \
-            libgbm1 libpango-1.0-0 libcairo2 libasound2
+      - name: Install Chromium + system deps
+        run: npx puppeteer browsers install chrome --install-deps
 
       - name: Setup Go (for e2e server binary)
         uses: actions/setup-go@v6
