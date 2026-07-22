@@ -1,12 +1,17 @@
 {
-  "unreleased": [
-    {
-      "type": "feat",
-      "text": "Настройки routing_file, outbounds_file и log для speed balancer",
-      "important": false
-    }
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "0.11.4",
+      "date": "2026-07-22",
+      "changes": [
+        {
+          "type": "feat",
+          "text": "Настройки routing_file, outbounds_file и log для speed balancer",
+          "important": false
+        }
+      ]
+    },
     {
       "version": "0.11.3",
       "date": "2026-07-22",
