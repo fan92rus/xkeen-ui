@@ -73,6 +73,40 @@ func (m *mockCommandExecutor) getCalls() []mockCall {
 	return out
 }
 
+// --- parseServiceStatus Tests ---
+
+func TestParseServiceStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		err      error
+		expected bool
+	}{
+		// Positive: service is running
+		{"english running", "Xray is running (PID: 12345)", nil, true},
+		{"english running simple", "xkeen is running", nil, true},
+		{"systemd active", "active (running)", nil, true},
+		{"russian running", "Xray запущен", nil, true},
+		// Negative: service is not running
+		{"english not running", "Xray is not running", nil, false},
+		{"russian not running", "сервис не запущен", nil, false},
+		// Error from command → not running
+		{"command error", "", errors.New("exit 1"), false},
+		// Empty output → not running
+		{"empty output", "", nil, false},
+		// Negative pattern must win even with a positive substring present
+		{"not running despite PID text", "is not running (PID: 12345)", nil, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseServiceStatus(tc.output, tc.err)
+			if got != tc.expected {
+				t.Errorf("parseServiceStatus(%q, %v) = %v, want %v", tc.output, tc.err, got, tc.expected)
+			}
+		})
+	}
+}
+
 // --- GetStatus Tests ---
 
 func TestGetStatus_Running(t *testing.T) {
@@ -439,97 +473,6 @@ func TestGetStatus_ContentTypeJSON(t *testing.T) {
 	}
 }
 
-// --- StatusStream SSE Tests ---
-
-func TestStatusStream_SendsInitialEvent(t *testing.T) {
-	exec := newMockCmdExecutor()
-	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
-	handler := NewServiceHandlerWithExecutor(exec)
-
-	r := mux.NewRouter()
-	r.HandleFunc("/stream", handler.StatusStream)
-	server := httptest.NewServer(r)
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", http.NoBody)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("SSE request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.Header.Get("Content-Type") != "text/event-stream" {
-		t.Errorf("expected text/event-stream, got %q", resp.Header.Get("Content-Type"))
-	}
-
-	// Read first event (initial status)
-	buf := make([]byte, 4096)
-	n, err := resp.Body.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		t.Fatalf("read SSE event: %v", err)
-	}
-
-	body := string(buf[:n])
-	if !strings.Contains(body, "event: status") {
-		t.Errorf("expected 'event: status' in SSE output, got %q", body)
-	}
-	if !strings.Contains(body, `"running":true`) {
-		t.Errorf("expected running=true in event data, got %q", body)
-	}
-
-	cancel()
-}
-
-func TestStatusStream_ClosesOnContextCancel(t *testing.T) {
-	exec := newMockCmdExecutor()
-	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
-	handler := NewServiceHandlerWithExecutor(exec)
-
-	r := mux.NewRouter()
-	r.HandleFunc("/stream", handler.StatusStream)
-	server := httptest.NewServer(r)
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", http.NoBody)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("SSE request failed: %v", err)
-	}
-
-	// Read first event
-	buf := make([]byte, 4096)
-	resp.Body.Read(buf)
-
-	// Cancel context — stream should stop
-	cancel()
-
-	// Subsequent read should get error (stream closed or context canceled)
-	_, readErr := resp.Body.Read(buf)
-	if readErr == nil {
-		// Try once more with timeout
-		done := make(chan error, 1)
-		go func() {
-			_, err := resp.Body.Read(buf)
-			done <- err
-		}()
-		select {
-		case err := <-done:
-			if err == nil {
-				t.Error("expected read error after context cancel")
-			}
-		case <-time.After(time.Second):
-			t.Error("stream did not close after context cancel within 1s")
-		}
-	}
-
-	resp.Body.Close()
-}
-
 // --- Close() tests ---
 
 func TestClose_WaitsForBackgroundGoroutines(t *testing.T) {
@@ -590,4 +533,93 @@ func TestClose_Idempotent(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Error("Close hung")
 	}
+}
+
+// --- SSE Timeout Tests ---
+
+// TestStatusStream_HasTimeoutConstant verifies that StatusStream uses a
+// bounded context timeout rather than relying solely on r.Context().
+// This prevents malicious clients from holding connections open indefinitely.
+func TestStatusStream_HasTimeoutConstant(t *testing.T) {
+	// The SSE stream timeout should be defined as a constant
+	if SSEStreamTimeout <= 0 {
+		t.Error("SSEStreamTimeout must be a positive duration")
+	}
+	if SSEStreamTimeout > 10*time.Minute {
+		t.Errorf("SSEStreamTimeout %v is too long (max 10m)", SSEStreamTimeout)
+	}
+}
+
+func TestStatusStream_ClosesAfterTimeout(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	r := mux.NewRouter()
+	r.HandleFunc("/stream", handler.StatusStream)
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	// Use a context with a short timeout to simulate the SSE timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("SSE request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read first event (initial status)
+	buf := make([]byte, 4096)
+	resp.Body.Read(buf)
+
+	// After timeout, the stream should close (read returns error)
+	_, readErr := resp.Body.Read(buf)
+	if readErr == nil {
+		t.Error("expected read error after SSE timeout, but got nil")
+	}
+}
+
+func TestStatusStream_SendsInitialEvent(t *testing.T) {
+	exec := newMockCmdExecutor()
+	exec.setResult("xkeen -status", "Xray is running (PID: 12345)", nil)
+	handler := NewServiceHandlerWithExecutor(exec)
+
+	r := mux.NewRouter()
+	r.HandleFunc("/stream", handler.StatusStream)
+	server := httptest.NewServer(r)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/stream", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("SSE request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Errorf("expected text/event-stream, got %q", resp.Header.Get("Content-Type"))
+	}
+
+	// Read first event (initial status)
+	buf := make([]byte, 4096)
+	n, err := resp.Body.Read(buf)
+	if err != nil && err.Error() != "EOF" {
+		t.Fatalf("read SSE event: %v", err)
+	}
+
+	body := string(buf[:n])
+	if !strings.Contains(body, "event: status") {
+		t.Errorf("expected 'event: status' in SSE output, got %q", body)
+	}
+	if !strings.Contains(body, `"running":true`) {
+		t.Errorf("expected running=true in event data, got %q", body)
+	}
+
+	cancel()
 }

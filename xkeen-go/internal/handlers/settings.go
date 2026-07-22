@@ -116,8 +116,8 @@ func (h *SettingsHandler) GetXraySettings(w http.ResponseWriter, _ *http.Request
 	response := XraySettingsResponse{
 		LogLevel:  "none",
 		LogLevels: []string{"debug", "info", "warning", "error", "none"},
-		AccessLog: "/opt/var/log/xray/access.log",
-		ErrorLog:  "/opt/var/log/xray/error.log",
+		AccessLog: filepath.Join(h.cfg.XrayLogDir, "access.log"),
+		ErrorLog:  filepath.Join(h.cfg.XrayLogDir, "error.log"),
 	}
 
 	// Read log config file
@@ -184,8 +184,8 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 	// Read existing config or create new one
 	logCfg := XrayLogConfigFile{
 		Log: XrayLogConfig{
-			Access:   "/opt/var/log/xray/access.log",
-			Error:    "/opt/var/log/xray/error.log",
+			Access:   filepath.Join(h.cfg.XrayLogDir, "access.log"),
+			Error:    filepath.Join(h.cfg.XrayLogDir, "error.log"),
 			LogLevel: req.LogLevel,
 		},
 	}
@@ -247,29 +247,8 @@ func (h *SettingsHandler) UpdateLogLevel(w http.ResponseWriter, r *http.Request)
 
 // createBackup creates a timestamped backup of the specified file.
 func (h *SettingsHandler) createBackup(filePath string) (string, error) {
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return "", nil
-	}
-
-	if err := os.MkdirAll(h.backupDir, 0o750); err != nil {
-		return "", fmt.Errorf("failed to create backup directory: %w", err)
-	}
-
 	timestamp := getFileModTime(filePath)
-	baseName := filepath.Base(filePath)
-	backupName := fmt.Sprintf("%s.%s.bak", baseName, timestamp)
-	backupPath := filepath.Join(h.backupDir, backupName)
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read file for backup: %w", err)
-	}
-
-	if err := os.WriteFile(backupPath, data, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write backup file: %w", err)
-	}
-
-	return backupPath, nil
+	return createBackupCore(filePath, h.backupDir, timestamp)
 }
 
 // getFileModTime returns formatted modification time for backup naming.

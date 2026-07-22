@@ -35,6 +35,12 @@ type Config struct {
 	// MihomoConfigDir is the directory containing Mihomo configuration files.
 	MihomoConfigDir string `json:"mihomo_config_dir"`
 
+	// XrayLogDir is the directory containing Xray log files.
+	XrayLogDir string `json:"xray_log_dir"`
+
+	// MihomoLogDir is the directory containing Mihomo log files.
+	MihomoLogDir string `json:"mihomo_log_dir"`
+
 	// MihomoBinary is the path or name of the mihomo binary.
 	MihomoBinary string `json:"mihomo_binary"`
 
@@ -127,6 +133,8 @@ func DefaultConfig() *Config {
 		XkeenConfigDir:  "/opt/etc/xkeen",
 		XkeenBinary:     "xkeen",
 		MihomoConfigDir: "/opt/etc/mihomo",
+		XrayLogDir:      "/opt/var/log/xray",
+		MihomoLogDir:    "/opt/var/log/mihomo",
 		MihomoBinary:    "mihomo",
 		AWGConfigDir:    "/opt/etc/awg",
 		AllowedRoots: []string{

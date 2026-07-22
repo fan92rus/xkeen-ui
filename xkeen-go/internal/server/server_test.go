@@ -77,6 +77,11 @@ func testServer(t *testing.T) (s *Server, tmpDir string) {
 
 	// Setup only the auth routes we need for testing
 	s.router.HandleFunc("/login", s.loginPage).Methods("GET")
+
+	// Apply the same global middleware order as setupRoutes() in production.
+	s.router.Use(SecurityHeadersMiddleware)
+	s.router.Use(BodySizeLimitMiddleware(MaxBodyBytes))
+
 	s.router.Handle("/api/auth/login", s.middleware.RateLimitMiddleware(http.HandlerFunc(s.login))).Methods("POST")
 	s.router.Handle("/api/auth/logout", s.middleware.RateLimitMiddleware(http.HandlerFunc(s.logout))).Methods("POST")
 	s.router.Handle("/api/auth/status", s.middleware.RateLimitMiddleware(http.HandlerFunc(s.authStatus))).Methods("GET")
@@ -180,6 +185,16 @@ type emptyFS struct{}
 
 func (e *emptyFS) Open(_ string) (fs.File, error) {
 	return nil, os.ErrNotExist
+}
+
+// newTestServerWithBodyLimit creates a test server with the BodySizeLimitMiddleware applied.
+// Since testServer() now mirrors the production middleware chain (which includes
+// BodySizeLimitMiddleware), this is equivalent to testServer and kept for
+// readability of body-limit-specific tests.
+func newTestServerWithBodyLimit(t *testing.T) *Server {
+	t.Helper()
+	s, _ := testServer(t)
+	return s
 }
 
 // ---------- Login Tests ----------
@@ -1475,5 +1490,40 @@ func TestLoginPage_InvalidSession(t *testing.T) {
 	// With real FS → 200 with HTML
 	if rec.Code == http.StatusFound {
 		t.Error("should not redirect with invalid session")
+	}
+}
+
+// --- Body Size Limit Middleware Tests ---
+
+func TestBodySizeLimit_RejectsLargeBody(t *testing.T) {
+	// Create a body larger than the limit (1MB default)
+	largeBody := bytes.Repeat([]byte("a"), MaxBodyBytes+1)
+
+	s := newTestServerWithBodyLimit(t)
+	rec := doReq(t, s.router, "POST", "/api/auth/login", bytes.NewReader(largeBody))
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 for large body, got %d", rec.Code)
+	}
+}
+
+func TestBodySizeLimit_AllowsSmallBody(t *testing.T) {
+	smallBody := bytes.NewReader([]byte(`{"password":"test"}`))
+
+	s := newTestServerWithBodyLimit(t)
+	rec := doReq(t, s.router, "POST", "/api/auth/login", smallBody)
+
+	// Should NOT get 413 — should get 401 (wrong password) or 200 (correct)
+	if rec.Code == http.StatusRequestEntityTooLarge {
+		t.Error("small body should not be rejected by body size limit")
+	}
+}
+
+func TestBodySizeLimit_ConstantDefined(t *testing.T) {
+	if MaxBodyBytes <= 0 {
+		t.Error("MaxBodyBytes must be positive")
+	}
+	if MaxBodyBytes > 10*1024*1024 {
+		t.Errorf("MaxBodyBytes %d is too large (max 10MB)", MaxBodyBytes)
 	}
 }

@@ -12,6 +12,7 @@ func (s *Server) setupRoutes() {
 	// Apply global middleware
 	s.router.Use(s.middleware.LoggingMiddleware)
 	s.router.Use(SecurityHeadersMiddleware)
+	s.router.Use(BodySizeLimitMiddleware(MaxBodyBytes))
 
 	// Static files from embedded FS (no auth required). Wrapped in gzip
 	// middleware so the ~750KB frontend bundle (and other large text

@@ -3,8 +3,10 @@ package handlers
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -20,12 +22,23 @@ import (
 	"github.com/fan92rus/xkeen-ui/internal/utils"
 )
 
-// Default log files to watch
+// Default log directories. These mirror config.DefaultConfig and are
+// used only as a fallback when no LogFiles are explicitly provided to
+// NewLogsHandler (e.g. in tests). In production, server.go always passes
+// LogFiles derived from cfg.XrayLogDir / cfg.MihomoLogDir.
+const (
+	defaultXrayLogDir   = "/opt/var/log/xray"
+	defaultMihomoLogDir = "/opt/var/log/mihomo"
+)
+
+// defaultLogFiles lists the fallback log paths used when LogsConfig.LogFiles
+// is empty. Derived from the defaultXrayLogDir / defaultMihomoLogDir constants
+// above so that the paths live in one place.
 var defaultLogFiles = []string{
-	"/opt/var/log/xray/access.log",
-	"/opt/var/log/xray/error.log",
-	"/opt/var/log/mihomo/access.log",
-	"/opt/var/log/mihomo/error.log",
+	filepath.Join(defaultXrayLogDir, "access.log"),
+	filepath.Join(defaultXrayLogDir, "error.log"),
+	filepath.Join(defaultMihomoLogDir, "access.log"),
+	filepath.Join(defaultMihomoLogDir, "error.log"),
 }
 
 // LogsHandler handles log-related operations.
@@ -306,7 +319,9 @@ func (h *LogsHandler) tailFile(path string) {
 func (h *LogsHandler) ReadLogs(w http.ResponseWriter, r *http.Request) {
 	logPath := r.URL.Query().Get("path")
 	if logPath == "" {
-		logPath = "/opt/var/log/xray/access.log"
+		if len(h.logFiles) > 0 {
+			logPath = h.logFiles[0]
+		}
 	}
 
 	// Validate path
@@ -345,33 +360,105 @@ func (h *LogsHandler) ReadLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// readLastLines reads the last N lines from a file.
+// readLastLines reads the last N lines from a file using a seek-based approach
+// that reads backward from the end of the file. This avoids loading the entire
+// file into memory, which is critical for large log files (gigabytes).
 func (h *LogsHandler) readLastLines(path string, n int) ([]LogMessage, error) {
+	if n <= 0 {
+		return nil, nil
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 
-	var entries []LogMessage
-	scanner := bufio.NewScanner(file)
-
-	// Simple implementation: read all and take last n
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	lines, err := tailLines(file, n)
+	if err != nil {
+		return nil, err
 	}
 
-	start := 0
-	if len(lines) > n {
-		start = len(lines) - n
+	entries := make([]LogMessage, len(lines))
+	for i, line := range lines {
+		entries[i] = h.parseLogLine(line, path)
+	}
+	return entries, nil
+}
+
+// tailChunkSize is the size of each backward read performed by tailLines.
+const tailChunkSize = 64 * 1024 // 64KB
+
+// tailLines reads the last n lines from file using backward block reads.
+// It seeks from the end of the file so that only the tail containing the
+// requested lines is loaded into memory, not the whole file. Lines are
+// returned in file order (oldest of the selected set first).
+func tailLines(file *os.File, n int) ([]string, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	size := stat.Size()
+	if size == 0 {
+		return nil, nil
 	}
 
-	for i := start; i < len(lines); i++ {
-		entries = append(entries, h.parseLogLine(lines[i], path))
+	// Read backward chunks until we have enough newlines or reach the start.
+	// parts[0] is the newest chunk (end of file); we reverse on assembly.
+	var parts [][]byte
+	newlineCount := 0
+	offset := size
+	startReached := false
+
+	for !startReached && newlineCount <= n {
+		readSize := int64(tailChunkSize)
+		if offset < readSize {
+			readSize = offset
+			startReached = true
+		}
+		offset -= readSize
+
+		buf := make([]byte, readSize)
+		if _, err := file.ReadAt(buf, offset); err != nil && err != io.EOF {
+			return nil, err
+		}
+		parts = append(parts, buf)
+		newlineCount += bytes.Count(buf, []byte{'\n'})
 	}
 
-	return entries, scanner.Err()
+	// Assemble collected chunks in correct (file) order.
+	tailLen := size - offset
+	tail := make([]byte, 0, tailLen)
+	for i := len(parts) - 1; i >= 0; i-- {
+		tail = append(tail, parts[i]...)
+	}
+
+	// Split into lines. Trim a single trailing newline so the final line is
+	// not reported as an empty entry.
+	if len(tail) > 0 && tail[len(tail)-1] == '\n' {
+		tail = tail[:len(tail)-1]
+	}
+	allLines := strings.Split(string(tail), "\n")
+
+	// Strip a trailing carriage return from each line so that CRLF (Windows)
+	// line endings are handled identically to bufio.Scanner, which the
+	// previous read-all implementation used.
+	for i, l := range allLines {
+		allLines[i] = strings.TrimSuffix(l, "\r")
+	}
+
+	// If the first collected line is a fragment (its start was before the
+	// earliest read boundary) and we have more than n lines, drop it.
+	if len(allLines) > n && !startReached {
+		allLines = allLines[len(allLines)-n:]
+	}
+
+	if len(allLines) > n {
+		allLines = allLines[len(allLines)-n:]
+	}
+	return allLines, nil
 }
 
 // parseLogLine parses a log line into a LogMessage.

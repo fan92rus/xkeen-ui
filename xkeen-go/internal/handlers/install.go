@@ -5,8 +5,8 @@
 package handlers
 
 import (
+	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -140,21 +140,20 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 	}()
 
-	// SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, ok := w.(http.Flusher)
+	// SSE setup via shared SSEWriter
+	sse, ok := NewSSEWriter(w)
 	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
 
+	// Bounded SSE connection lifetime (prevents idle clients from holding fds).
+	ctx, cancel := context.WithTimeout(r.Context(), SSEStreamTimeout)
+	defer cancel()
+
 	sendEvent := func(event string, data interface{}) {
-		jsonData, _ := json.Marshal(data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(jsonData))
-		flusher.Flush()
+		if sse.Send(event, data) != nil {
+			cancel() // client gone — abort operations via ctx
+		}
 	}
 
 	// Write install script to temp
@@ -170,7 +169,7 @@ func (h *InstallHandler) Install(w http.ResponseWriter, r *http.Request) {
 	sendEvent("progress", AWGInstallProgress{Percent: 5, Status: "starting installation..."})
 
 	// Execute install script, pipe stdout line by line
-	cmd := exec.CommandContext(r.Context(), "sh", installScriptPath)
+	cmd := exec.CommandContext(ctx, "sh", installScriptPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		sendEvent("error", AWGInstallProgress{Percent: 0, Status: "failed",
@@ -284,21 +283,20 @@ func (h *InstallHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 	}()
 
-	// SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, ok := w.(http.Flusher)
+	// SSE setup via shared SSEWriter
+	sse, ok := NewSSEWriter(w)
 	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
 
+	// Bounded SSE connection lifetime (prevents idle clients from holding fds).
+	ctx, cancel := context.WithTimeout(r.Context(), SSEStreamTimeout)
+	defer cancel()
+
 	sendEvent := func(event string, data interface{}) {
-		jsonData, _ := json.Marshal(data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(jsonData))
-		flusher.Flush()
+		if sse.Send(event, data) != nil {
+			cancel() // client gone — abort operations via ctx
+		}
 	}
 
 	// Write uninstall script to temp
@@ -314,7 +312,7 @@ func (h *InstallHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 	sendEvent("progress", AWGInstallProgress{Percent: 5, Status: "starting uninstall..."})
 
 	// Execute uninstall script, pipe stdout line by line
-	cmd := exec.CommandContext(r.Context(), "sh", scriptPath)
+	cmd := exec.CommandContext(ctx, "sh", scriptPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		sendEvent("error", AWGInstallProgress{Percent: 0, Status: "failed",

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -622,15 +623,15 @@ func TestTruncate_ZeroMaxLen(t *testing.T) {
 // === LogsHandler construction ===
 
 func TestNewLogsHandler_DefaultLogFiles(t *testing.T) {
-	// Verify that empty LogFiles triggers the default paths
-	// We can't call NewLogsHandler directly (it starts tail goroutines)
-	// so we verify the logic by checking defaultLogFiles
+	// Verify that empty LogFiles triggers the default paths derived from
+	// the defaultXrayLogDir / defaultMihomoLogDir constants.
 	if len(defaultLogFiles) == 0 {
 		t.Error("expected default log files to be defined")
 	}
 	for _, f := range defaultLogFiles {
-		if !strings.HasPrefix(f, "/opt/") {
-			t.Errorf("expected default path under /opt/, got %q", f)
+		f = filepath.ToSlash(f)
+		if !strings.HasPrefix(f, defaultXrayLogDir) && !strings.HasPrefix(f, defaultMihomoLogDir) {
+			t.Errorf("expected path under a known default log dir, got %q", f)
 		}
 	}
 }
@@ -799,4 +800,146 @@ func TestLogsHandler_SendToClients_DeadClientRemoved(t *testing.T) {
 	if count != 0 {
 		t.Errorf("expected dead client to be removed, got %d remaining", count)
 	}
+}
+
+// === tailLines Tests (seek-based reading from end of file) ===
+
+func TestTailLines_LastN(t *testing.T) {
+	f := makeTempFile(t, "a\nb\nc\nd\ne\n")
+	got, err := tailLines(f, 2)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	want := []string{"d", "e"}
+	if !equalStringSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestTailLines_NoTrailingNewline(t *testing.T) {
+	f := makeTempFile(t, "a\nb\nc")
+	got, err := tailLines(f, 2)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	want := []string{"b", "c"}
+	if !equalStringSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestTailLines_NMoreThanLines(t *testing.T) {
+	f := makeTempFile(t, "only\nshort\nfile\n")
+	got, err := tailLines(f, 10)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	want := []string{"only", "short", "file"}
+	if !equalStringSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestTailLines_EmptyFile(t *testing.T) {
+	f := makeTempFile(t, "")
+	got, err := tailLines(f, 5)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %v", got)
+	}
+}
+
+func TestTailLines_ExactlyNLines(t *testing.T) {
+	f := makeTempFile(t, "x\ny\nz\n")
+	got, err := tailLines(f, 3)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	want := []string{"x", "y", "z"}
+	if !equalStringSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestTailLines_LongLines(t *testing.T) {
+	// Lines longer than the read chunk to verify multi-chunk line assembly.
+	longA := strings.Repeat("A", 100000)
+	longB := strings.Repeat("B", 100000)
+	f := makeTempFile(t, longA+"\n"+longB+"\nend\n")
+	got, err := tailLines(f, 2)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	want := []string{longB, "end"}
+	if !equalStringSlice(got, want) {
+		t.Errorf("got %d lines (first len=%d), want %d lines", len(got), lenOfFirst(got), len(want))
+	}
+}
+
+func TestTailLines_LargeFile(t *testing.T) {
+	// Generate a large file (50k numbered lines) and verify correctness.
+	var sb strings.Builder
+	const total = 50000
+	for i := 0; i < total; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i)
+	}
+	f := makeTempFile(t, sb.String())
+	got, err := tailLines(f, 5)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	want := []string{"line 49995", "line 49996", "line 49997", "line 49998", "line 49999"}
+	if !equalStringSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestTailLines_NegativeN(t *testing.T) {
+	f := makeTempFile(t, "a\nb\n")
+	got, err := tailLines(f, 0)
+	if err != nil {
+		t.Fatalf("tailLines error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty for n=0, got %v", got)
+	}
+}
+
+// makeTempFile creates a temp file with the given content and returns an open *os.File.
+// The file is closed automatically via t.Cleanup so the temp dir can be removed.
+func makeTempFile(t *testing.T, content string) *os.File {
+	t.Helper()
+	tmp, err := os.CreateTemp(t.TempDir(), "tail*.log")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = tmp.Close() })
+	if _, err := tmp.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	if _, err := tmp.Seek(0, 0); err != nil {
+		t.Fatalf("Seek: %v", err)
+	}
+	return tmp
+}
+
+func equalStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func lenOfFirst(s []string) int {
+	if len(s) == 0 {
+		return 0
+	}
+	return len(s[0])
 }

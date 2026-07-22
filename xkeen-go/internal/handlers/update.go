@@ -336,23 +336,22 @@ type CompleteData struct {
 // StartUpdate starts the update process with SSE progress.
 // POST /api/update/start?prerelease=true to download dev build
 func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
-	// Set SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// Apply a bounded SSE timeout so malicious clients cannot hold the
+	// connection open indefinitely; client disconnects still cancel promptly.
+	ctx, cancel := context.WithTimeout(r.Context(), SSEStreamTimeout)
+	defer cancel()
 
-	flusher, ok := w.(http.Flusher)
+	sse, ok := NewSSEWriter(w, "Access-Control-Allow-Origin: *")
 	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
 
-	// Helper to send SSE event
+	// Helper to send SSE event. If the client disconnects, cancel the
+	// context so that ongoing downloads/commands abort promptly.
 	sendEvent := func(event string, data interface{}) {
-		jsonData, _ := json.Marshal(data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(jsonData))
-		flusher.Flush()
+		if sse.Send(event, data) != nil {
+			cancel()
+		}
 	}
 
 	// Determine download URL
@@ -374,7 +373,7 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	sendEvent("progress", ProgressData{Percent: 5, Status: "downloading"})
 
 	tmpFile := "/tmp/" + h.binaryName + ".new"
-	if err := h.downloadWithChecksum(r.Context(), tmpFile, downloadURL); err != nil {
+	if err := h.downloadWithChecksum(ctx, tmpFile, downloadURL); err != nil {
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Download/verification failed: %v", err)})
 		return
 	}

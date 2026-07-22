@@ -205,17 +205,15 @@ func TestSecurityHeadersMiddleware_SetsHeaders(t *testing.T) {
 	if !strings.Contains(csp, "default-src 'self'") {
 		t.Errorf("CSP missing default-src: %s", csp)
 	}
-	// style-src includes 'unsafe-inline' because CodeMirror 6 dynamically injects
-	// <style> elements and inline styles for syntax highlighting, themes, and
-	// editor chrome. These cannot be pre-compiled into bundle.css — they're
-	// generated at runtime by the codemirror/view and @codemirror/theme-* packages.
-	// script-src 'self' remains as the primary XSS defense. This is a local router
-	// admin interface, so the CSS exfiltration threat is negligible.
+	// style-src should NOT include 'unsafe-inline' — styles are served from
+	// external bundle.css. CodeMirror 6 inline styles are handled via CSSOM
+	// (document.documentElement.style) which does not require 'unsafe-inline'
+	// in CSP style-src (only <style> tags and style="" attributes do).
 	if !strings.Contains(csp, "style-src 'self'") {
 		t.Errorf("CSP missing style-src 'self': %s", csp)
 	}
-	if !strings.Contains(csp, "unsafe-inline") {
-		t.Errorf("CSP must contain 'unsafe-inline' in style-src for CodeMirror: %s", csp)
+	if strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+		t.Errorf("CSP must NOT contain 'unsafe-inline' in style-src: %s", csp)
 	}
 	if strings.Contains(csp, "unsafe-eval") {
 		t.Errorf("CSP must NOT contain 'unsafe-eval': %s", csp)

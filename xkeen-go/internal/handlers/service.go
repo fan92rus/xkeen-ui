@@ -24,6 +24,9 @@ const (
 	StartStopTimeout = 30 * time.Second
 	// RestartTimeout is the timeout for restart operations (stop + start).
 	RestartTimeout = 45 * time.Second
+	// SSEStreamTimeout is the maximum lifetime of an SSE stream connection.
+	// Prevents malicious clients from holding connections open indefinitely.
+	SSEStreamTimeout = 5 * time.Minute
 )
 
 // CommandExecutor defines the interface for executing system commands.
@@ -132,24 +135,32 @@ type ServiceResponse struct {
 	Status  *ServiceStatus `json:"status,omitempty"`
 }
 
+// parseServiceStatus determines whether the xkeen service is running from
+// the command output and error. Negative patterns ("is not running" / "не запущен")
+// are checked first to avoid false positives when both positive and negative
+// substrings are present. Supports English and Russian output from the init script.
+func parseServiceStatus(output string, err error) bool {
+	if err != nil {
+		return false
+	}
+	notRunning := strings.Contains(output, "is not running") ||
+		strings.Contains(output, "не запущен")
+	if notRunning {
+		return false
+	}
+	return strings.Contains(output, "is running") ||
+		strings.Contains(output, "running (PID:") ||
+		strings.Contains(output, "active (running)") ||
+		strings.Contains(output, "запущен")
+}
+
 // checkServiceRunning runs "status" and returns true if the service appears running.
 func (h *ServiceHandler) checkServiceRunning(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, StatusTimeout)
 	defer cancel()
 
 	output, err := h.executeCommandWithTimeout(ctx, "status")
-	if err != nil {
-		return false
-	}
-
-	notRunning := strings.Contains(output, "is not running") ||
-		strings.Contains(output, "не запущен")
-
-	return !notRunning &&
-		(strings.Contains(output, "is running") ||
-			strings.Contains(output, "running (PID:") ||
-			strings.Contains(output, "active (running)") ||
-			strings.Contains(output, "запущен"))
+	return parseServiceStatus(output, err)
 }
 
 // waitForStatus polls service status until it matches expected or timeout expires.
@@ -192,17 +203,7 @@ func (h *ServiceHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	// Log for debugging
 	log.Printf("Status check: output=%q, err=%v", output, err)
 
-	// Check if service is running - look for positive indicators
-	// Support both English and Russian output from xkeen init script
-	// IMPORTANT: Check negative patterns first to avoid false positives
-	notRunning := strings.Contains(output, "is not running") ||
-		strings.Contains(output, "не запущен")
-
-	isRunning := err == nil && !notRunning &&
-		(strings.Contains(output, "is running") ||
-			strings.Contains(output, "running (PID:") ||
-			strings.Contains(output, "active (running)") ||
-			strings.Contains(output, "запущен"))
+	isRunning := parseServiceStatus(output, err)
 
 	status := &ServiceStatus{
 		LastCheck: time.Now(),
@@ -232,18 +233,19 @@ func (h *ServiceHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 // StatusStream handles SSE connections for real-time status updates.
 // GET /api/xkeen/status/stream
 func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
-	// Set SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-
-	flusher, ok := w.(http.Flusher)
+	sse, ok := NewSSEWriter(w)
 	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
+	// Apply a bounded timeout so malicious clients cannot hold connections
+	// open indefinitely. The context is derived from r.Context() so that
+	// client disconnects still cancel promptly.
+	ctx, cancel := context.WithTimeout(r.Context(), SSEStreamTimeout)
+	defer cancel()
+
 	// Send initial status immediately
-	_ = h.sendStatusEvent(r.Context(), w, flusher)
+	_ = h.sendStatusEvent(ctx, sse)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -251,14 +253,14 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ticker.C:
-			if err := h.sendStatusEvent(r.Context(), w, flusher); err != nil {
+			if err := h.sendStatusEvent(ctx, sse); err != nil {
 				return
 			}
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case <-h.statusTrigger:
 			// Instant check triggered by start/stop/restart
-			if err := h.sendStatusEvent(r.Context(), w, flusher); err != nil {
+			if err := h.sendStatusEvent(ctx, sse); err != nil {
 				return
 			}
 		}
@@ -266,20 +268,13 @@ func (h *ServiceHandler) StatusStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendStatusEvent sends a single status event to the SSE client
-func (h *ServiceHandler) sendStatusEvent(ctx context.Context, w http.ResponseWriter, flusher http.Flusher) error {
+func (h *ServiceHandler) sendStatusEvent(ctx context.Context, sse *SSEWriter) error {
 	cmdCtx, cancel := context.WithTimeout(ctx, StatusTimeout)
 	defer cancel()
 
 	output, err := h.executeCommandWithTimeout(cmdCtx, "status")
 
-	notRunning := strings.Contains(output, "is not running") ||
-		strings.Contains(output, "не запущен")
-
-	isRunning := err == nil && !notRunning &&
-		(strings.Contains(output, "is running") ||
-			strings.Contains(output, "running (PID:") ||
-			strings.Contains(output, "active (running)") ||
-			strings.Contains(output, "запущен"))
+	isRunning := parseServiceStatus(output, err)
 
 	status := ServiceStatus{
 		LastCheck: time.Now(),
@@ -291,12 +286,7 @@ func (h *ServiceHandler) sendStatusEvent(ctx context.Context, w http.ResponseWri
 
 	data, _ := json.Marshal(status)
 	log.Printf("[SSE] Status event sent (running=%v)", status.Running)
-	_, writeErr := fmt.Fprintf(w, "event: status\ndata: %s\n\n", data)
-	if writeErr != nil {
-		return writeErr
-	}
-	flusher.Flush()
-	return nil
+	return sse.SendRaw("status", string(data))
 }
 
 // Start starts the xkeen service.

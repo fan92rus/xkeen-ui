@@ -51,6 +51,12 @@ func TestDefaultConfig_ReturnsValidConfig(t *testing.T) {
 	if cfg.MihomoBinary != "mihomo" {
 		t.Errorf("MihomoBinary = %q, want %q", cfg.MihomoBinary, "mihomo")
 	}
+	if cfg.XrayLogDir != "/opt/var/log/xray" {
+		t.Errorf("XrayLogDir = %q, want %q", cfg.XrayLogDir, "/opt/var/log/xray")
+	}
+	if cfg.MihomoLogDir != "/opt/var/log/mihomo" {
+		t.Errorf("MihomoLogDir = %q, want %q", cfg.MihomoLogDir, "/opt/var/log/mihomo")
+	}
 	if cfg.AWGConfigDir != "/opt/etc/awg" {
 		t.Errorf("AWGConfigDir = %q, want %q", cfg.AWGConfigDir, "/opt/etc/awg")
 	}

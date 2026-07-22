@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -476,7 +475,7 @@ func (h *ConfigHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 // WriteFile saves content to a config file with automatic backup.
 // POST /api/config/file
 func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024)
+	// Body size is enforced globally by BodySizeLimitMiddleware (MaxBodyBytes).
 
 	var req WriteFileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -579,65 +578,19 @@ func (h *ConfigHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 
 // createBackup creates a timestamped backup of the specified file.
 func (h *ConfigHandler) createBackup(filePath string) (string, error) {
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return "", nil
-	}
-
-	if err := os.MkdirAll(h.backupDir, 0o750); err != nil {
-		return "", fmt.Errorf("failed to create backup directory: %w", err)
-	}
-
 	timestamp := time.Now().Format("20060102-150405")
-	baseName := filepath.Base(filePath)
-	backupName := fmt.Sprintf("%s.%s.bak", baseName, timestamp)
-	backupPath := filepath.Join(h.backupDir, backupName)
-
-	data, err := os.ReadFile(filePath)
+	backupPath, err := createBackupCore(filePath, h.backupDir, timestamp)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file for backup: %w", err)
+		return "", err
 	}
-
-	if err := os.WriteFile(backupPath, data, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write backup file: %w", err)
-	}
-
 	// Cleanup old backups (keep only 5)
 	h.cleanupOldBackups(filePath, 5)
-
 	return backupPath, nil
 }
 
 // cleanupOldBackups removes old backups, keeping only the most recent ones.
 func (h *ConfigHandler) cleanupOldBackups(filePath string, keep int) {
-	entries, err := os.ReadDir(h.backupDir)
-	if err != nil {
-		return
-	}
-
-	baseName := filepath.Base(filePath)
-	var backups []os.DirEntry
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, baseName+".") && strings.HasSuffix(name, ".bak") {
-			backups = append(backups, entry)
-		}
-	}
-
-	// Sort by modification time (newest first)
-	sort.Slice(backups, func(i, j int) bool {
-		infoI, errI := backups[i].Info()
-		infoJ, errJ := backups[j].Info()
-		if errI != nil || errJ != nil {
-			return false
-		}
-		return infoI.ModTime().After(infoJ.ModTime())
-	})
-
-	// Remove old backups beyond keep limit
-	for i := keep; i < len(backups); i++ {
-		backupPath := filepath.Join(h.backupDir, backups[i].Name())
-		_ = os.Remove(backupPath)
-	}
+	cleanupOldBackupsCore(filePath, h.backupDir, keep)
 }
 
 // DeleteFileRequest is the request body for the DeleteFile endpoint.

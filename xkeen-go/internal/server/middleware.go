@@ -18,6 +18,11 @@ import (
 // contextKey type for context keys to avoid collisions.
 type contextKey string
 
+// MaxBodyBytes is the global limit for request body size (5MB).
+// Prevents DoS via oversized payloads while allowing large config
+// writes (e.g. complex Xray routing configs with hundreds of outbounds).
+const MaxBodyBytes = 5 * 1024 * 1024
+
 const (
 	// SessionKey is the context key for session data.
 	SessionKey contextKey = "session"
@@ -425,7 +430,7 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 		// Styles are served from external files only (no inline <style>, no
 		// 'unsafe-inline'), which prevents style-based data exfiltration. Scripts
 		// are likewise 'self' only. The favicon uses a data: URI (img-src data:).
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
 
 		next.ServeHTTP(w, r)
 	})
@@ -565,4 +570,22 @@ func GetCSRFToken(ctx context.Context) string {
 func GetClientIP(ctx context.Context) string {
 	ip, _ := ctx.Value(contextKey("client_ip")).(string)
 	return ip
+}
+
+// BodySizeLimitMiddleware limits the request body size to maxBytes.
+// Returns 413 Request Entity Too Large if the body exceeds the limit.
+func BodySizeLimitMiddleware(maxBytes int64) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Early reject when Content-Length is known and exceeds the limit.
+			// This avoids passing an oversized body to the handler (which may
+			// return its own 4xx before ever hitting the MaxBytesReader limit).
+			if r.ContentLength > maxBytes {
+				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			next.ServeHTTP(w, r)
+		})
+	}
 }

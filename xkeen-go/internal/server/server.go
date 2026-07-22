@@ -134,8 +134,8 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		AllowedRoots:   cfg.AllowedRoots,
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 		LogFiles: []string{
-			"/opt/var/log/xray/access.log",
-			"/opt/var/log/xray/error.log",
+			filepath.Join(cfg.XrayLogDir, "access.log"),
+			filepath.Join(cfg.XrayLogDir, "error.log"),
 		},
 	})
 	s.commandRegistry = handlers.NewCommandRegistry(handlers.DefaultXKeenPath)

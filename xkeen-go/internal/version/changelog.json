@@ -1,6 +1,26 @@
 {
-  "unreleased": [],
-  "releases": [
+  "unreleased": [
+    {
+      "type": "fix",
+      "text": "Жёсткий лимит размера тела запроса (5MB) для защиты от DoS",
+      "important": true
+    },
+    {
+      "type": "fix",
+      "text": "Ограничение времени жизни SSE-соединений (5 минут) для всех потоковых эндпоинтов",
+      "important": true
+    },
+    {
+      "type": "tweak",
+      "text": "Эффективное чтение логов (seek-based) вместо загрузки всего файла в память",
+      "important": false
+    },
+    {
+      "type": "tweak",
+      "text": "Отмена операций установки/обновления при отключении клиента",
+      "important": false
+    }
+  ],  "releases": [
     {
       "version": "0.11.4",
       "date": "2026-07-22",

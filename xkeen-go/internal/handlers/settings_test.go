@@ -174,10 +174,10 @@ func TestGetXraySettings_DefaultsWhenNoConfigFile(t *testing.T) {
 		t.Errorf("expected 5 log levels, got %v", result["log_levels"])
 	}
 
-	if result["access_log"] != "/opt/var/log/xray/access.log" {
+	if result["access_log"] != filepath.Join("/opt/var/log/xray", "access.log") {
 		t.Errorf("expected default access_log path, got %v", result["access_log"])
 	}
-	if result["error_log"] != "/opt/var/log/xray/error.log" {
+	if result["error_log"] != filepath.Join("/opt/var/log/xray", "error.log") {
 		t.Errorf("expected default error_log path, got %v", result["error_log"])
 	}
 }
@@ -378,10 +378,10 @@ func TestUpdateLogLevel_CreatesFileIfNotExists(t *testing.T) {
 	if logCfg.Log.LogLevel != "info" {
 		t.Errorf("got level %q, want 'info'", logCfg.Log.LogLevel)
 	}
-	if logCfg.Log.Access != "/opt/var/log/xray/access.log" {
+	if logCfg.Log.Access != filepath.Join("/opt/var/log/xray", "access.log") {
 		t.Errorf("expected default access path, got %q", logCfg.Log.Access)
 	}
-	if logCfg.Log.Error != "/opt/var/log/xray/error.log" {
+	if logCfg.Log.Error != filepath.Join("/opt/var/log/xray", "error.log") {
 		t.Errorf("expected default error path, got %q", logCfg.Log.Error)
 	}
 }
