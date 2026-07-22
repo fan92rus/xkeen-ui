@@ -18,9 +18,10 @@ function devEntryPlugin() {
 // Production CSS handling: Vite extracts CSS to a separate file
 // (static/dist/bundle.css). Because the Go binary serves index.html directly
 // (not processed by Vite), the <link> tag must be added to index.html by hand.
-// An external CSS file is REQUIRED for a strict Content-Security-Policy
-// (style-src 'self') — the previous approach inlined CSS into the JS bundle
-// and injected a <style> element at runtime, which forced 'unsafe-inline'.
+// External CSS extraction keeps the bulk of Vue component styles out of the
+// JS bundle and into bundle.css (linked from index.html). CodeMirror 6 still
+// injects a small amount of <style> elements at runtime for theme/syntax
+// highlighting — the CSP uses style-src 'self' 'unsafe-inline' for this.
 
 export default defineConfig({
     plugins: [vue(), ...(isDev ? [devEntryPlugin()] : [])],

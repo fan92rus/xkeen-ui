@@ -24,6 +24,11 @@
       "type": "fix",
       "text": "Восстановлен 'unsafe-inline' в style-src CSP для работы редактора CodeMirror (подсветка синтаксиса, тема)",
       "important": true
+    },
+    {
+      "type": "tweak",
+      "text": "E2E-тест теперь отслеживает CSP-нарушения (securitypolicyviolation + console.error) и падает при их наличии",
+      "important": false
     }
   ],  "releases": [
     {

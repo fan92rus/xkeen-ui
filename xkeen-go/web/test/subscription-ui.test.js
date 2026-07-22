@@ -22,6 +22,7 @@ const PASSWORD = 'password';
 let browser, page, serverProcess;
 let passed = 0, failed = 0, errors = [];
 const jsErrors = [];
+const cspViolations = [];
 
 function ensureConfig() {
     const configDir = path.join(TMP, 'xkeen-test', 'config');
@@ -107,6 +108,15 @@ async function main() {
     await page.setViewport({ width: 1280, height: 900 });
     page.setDefaultTimeout(10000);
     page.on('pageerror', err => jsErrors.push(err.message));
+    // Collect CSP violations (console errors + SecurityPolicyViolationEvent).
+    // CSP violations are NOT pageerror — they fire as console.error and
+    // a securitypolicyviolation event on document. Both are collected here
+    // so we can assert zero violations at the end of the test suite.
+    page.on('console', msg => {
+        if (msg.type() === 'error' && /Content.Security.Policy|style-src|script-src/i.test(msg.text())) {
+            cspViolations.push(msg.text());
+        }
+    });
 
     // ── Tests ──
 
@@ -155,6 +165,29 @@ async function main() {
     await test('No JS errors on page load', async () => {
         const bad = jsErrors.filter(e => /vue|subscription|component/i.test(e));
         assert(bad.length === 0, `Errors: ${bad.join('; ')}`);
+    });
+
+    await test('No CSP violations', async () => {
+        await page.evaluate(() => {
+            // Also collect via SecurityPolicyViolationEvent for completeness
+            window.__cspViolations = window.__cspViolations || [];
+            document.addEventListener('securitypolicyviolation', e => {
+                window.__cspViolations.push(`${e.violatedDirective} blocked ${e.blockedURI}`);
+            });
+        });
+        // Navigate to Editor tab to trigger CodeMirror style injection
+        await page.evaluate(() => {
+            const btns = document.querySelectorAll('.nav-btn');
+            if (btns[0]) btns[0].click(); // Editor tab
+        });
+        await wait(2000);
+        const violations = [
+            ...cspViolations,
+            ...(await page.evaluate(() => window.__cspViolations || [])),
+        ];
+        const styleViolations = violations.filter(v => /style-src|inline.style/i.test(v));
+        assert(styleViolations.length === 0,
+            `CSP style-src violations: ${styleViolations.join('; ')}`);
     });
 
     await test('Add subscription via Enter key', async () => {
@@ -317,6 +350,10 @@ async function main() {
     if (jsErrors.length) {
         console.log(`\nJS Errors (${jsErrors.length}):`);
         for (const e of [...new Set(jsErrors)]) console.log(`  • ${e.split('\n')[0]}`);
+    }
+    if (cspViolations.length) {
+        console.log(`\nCSP Violations (${cspViolations.length}):`);
+        for (const v of [...new Set(cspViolations)]) console.log(`  • ${v.split('\n')[0]}`);
     }
     if (errors.length) {
         console.log('\nFailures:');
