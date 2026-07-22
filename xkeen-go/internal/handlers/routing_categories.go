@@ -1,4 +1,3 @@
-// Package handlers provides HTTP handlers for the XKEEN-UI server.
 package handlers
 
 import (
@@ -56,14 +55,19 @@ func scanDatFiles(configDir string) (*GeoCategories, error) {
 	result := &GeoCategories{}
 	entries, err := os.ReadDir(configDir)
 	if err != nil {
-		// Directory might not exist yet — return empty lists, no error.
 		return result, nil
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".dat") {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(name), ".dat") {
 			continue
 		}
-		fullPath := filepath.Join(configDir, e.Name())
+		// Skip temporary files (e.g. interrupted downloads).
+		if strings.HasSuffix(strings.ToLower(name), ".tmp") ||
+			strings.Contains(name, ".tmp.") {
+			continue
+		}
+		fullPath := filepath.Join(configDir, name)
 		data, err := os.ReadFile(fullPath)
 		if err != nil || len(data) == 0 {
 			continue
@@ -72,10 +76,11 @@ func scanDatFiles(configDir string) (*GeoCategories, error) {
 		if err != nil || len(categories) == 0 {
 			continue
 		}
-		fileType := data[0]
+		// Classify by filename: "geoip" in name → GeoIP, otherwise GeoSite.
+		isGeoIP := strings.Contains(strings.ToLower(name), "geoip")
 		for _, cat := range categories {
-			entry := DatCategory{Name: cat, File: e.Name()}
-			if fileType == 0x02 {
+			entry := DatCategory{Name: cat, File: name}
+			if isGeoIP {
 				result.GeoIP = append(result.GeoIP, entry)
 			} else {
 				result.GeoSite = append(result.GeoSite, entry)
@@ -85,24 +90,19 @@ func scanDatFiles(configDir string) (*GeoCategories, error) {
 	return result, nil
 }
 
-// parseDatCategories reads a V2Ray .dat file and extracts category names.
+// parseDatCategories reads a V2Ray .dat file (protobuf) and extracts
+// category/region names from the outer repeated-field 1 entries.
 //
-// File format:
-//   - Byte 0: 0x01 for GeoSiteList, 0x02 for GeoIPList
-//   - Bytes 1..N: protobuf-encoded top-level message
-//
-// Both message types share the same relevant structure:
+// Shared structure for both GeoSiteList and GeoIPList:
 //
 //	repeated message {                 // field 1 (entry)
 //	    string country_code = 1;       // field 1 — the name we extract
 //	    repeated Domain/CIDR = 2;     // field 2 — skipped
 //	}
 func parseDatCategories(data []byte) ([]string, error) {
-	if len(data) < 2 {
+	if len(data) < 1 {
 		return nil, nil
 	}
-	data = data[1:] // skip type byte
-
 	var result []string
 	for len(data) > 0 {
 		num, typ, n := protowire.ConsumeTag(data)
@@ -134,12 +134,11 @@ func parseDatCategories(data []byte) ([]string, error) {
 					entryData = entryData[n3:]
 				}
 			} else {
-				// Skip other fields (e.g. field 2 = repeated Domain/CIDR).
-				skipped, n3 := protowire.ConsumeBytes(entryData)
+				_, n3 := protowire.ConsumeBytes(entryData)
 				if n3 < 0 {
 					break
 				}
-				entryData = entryData[len(skipped)+n3:]
+				entryData = entryData[n3:]
 			}
 		}
 	}

@@ -11,17 +11,15 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
-// buildTestDat constructs a minimal .dat file in protobuf wire format.
-// fileType: 0x01 for geosite, 0x02 for geoip.
-func buildTestDat(fileType byte, categories []string) []byte {
+// buildTestDat constructs a minimal .dat protobuf (no leading type byte).
+func buildTestDat(categories []string) []byte {
 	var buf []byte
-	buf = append(buf, fileType)
 	for _, cat := range categories {
-		// Inner message: field 1 (country_code string).
 		var inner []byte
+		// field 1: country_code (string)
 		inner = protowire.AppendTag(inner, 1, protowire.BytesType)
 		inner = protowire.AppendString(inner, cat)
-		// Outer: repeated field 1 containing the inner message.
+		// outer: repeated field 1 (entry)
 		buf = protowire.AppendTag(buf, 1, protowire.BytesType)
 		buf = protowire.AppendBytes(buf, inner)
 	}
@@ -29,7 +27,7 @@ func buildTestDat(fileType byte, categories []string) []byte {
 }
 
 func TestParseDatCategories_GeoSite(t *testing.T) {
-	data := buildTestDat(0x01, []string{"google", "youtube", "netflix"})
+	data := buildTestDat([]string{"google", "youtube", "netflix"})
 	result, err := parseDatCategories(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -46,7 +44,7 @@ func TestParseDatCategories_GeoSite(t *testing.T) {
 }
 
 func TestParseDatCategories_GeoIP(t *testing.T) {
-	data := buildTestDat(0x02, []string{"ru", "cn", "us", "private"})
+	data := buildTestDat([]string{"ru", "cn", "us", "private"})
 	result, err := parseDatCategories(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -57,7 +55,7 @@ func TestParseDatCategories_GeoIP(t *testing.T) {
 }
 
 func TestParseDatCategories_SingleCategory(t *testing.T) {
-	data := buildTestDat(0x01, []string{"single"})
+	data := buildTestDat([]string{"single"})
 	result, _ := parseDatCategories(data)
 	if len(result) != 1 || result[0] != "single" {
 		t.Errorf("expected [single], got %v", result)
@@ -74,10 +72,36 @@ func TestParseDatCategories_Empty(t *testing.T) {
 	}
 }
 
-func TestParseDatCategories_OneByte(t *testing.T) {
-	result, _ := parseDatCategories([]byte{0x01})
+func TestParseDatCategories_EmptyInput(t *testing.T) {
+	result, _ := parseDatCategories([]byte{})
 	if len(result) != 0 {
-		t.Errorf("expected empty for type-byte-only, got %v", result)
+		t.Errorf("expected empty for empty input, got %v", result)
+	}
+}
+
+func TestParseRealFixture_GeoSiteZkeen(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "geosite_zkeen.dat"))
+	if err != nil {
+		t.Skipf("test fixture not found: %v", err)
+	}
+	categories, err := parseDatCategories(data)
+	if err != nil {
+		t.Fatalf("parseDatCategories failed on real .dat file: %v", err)
+	}
+	if len(categories) == 0 {
+		t.Fatal("expected at least one category from real geosite file")
+	}
+	// Verify known categories from zkeen .dat exist.
+	known := map[string]bool{"BYPASS": false, "CN": false, "DOMAINS": false}
+	for _, c := range categories {
+		if _, ok := known[c]; ok {
+			known[c] = true
+		}
+	}
+	for name, found := range known {
+		if !found {
+			t.Errorf("expected category %q not found in real .dat file", name)
+		}
 	}
 }
 
@@ -95,12 +119,12 @@ func TestScanDatFiles_Success(t *testing.T) {
 	dir := t.TempDir()
 
 	geoSite := filepath.Join(dir, "geosite.dat")
-	if err := os.WriteFile(geoSite, buildTestDat(0x01, []string{"google", "youtube"}), 0o644); err != nil {
+	if err := os.WriteFile(geoSite, buildTestDat([]string{"google", "youtube"}), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	geoIP := filepath.Join(dir, "geoip.dat")
-	if err := os.WriteFile(geoIP, buildTestDat(0x02, []string{"ru", "us"}), 0o644); err != nil {
+	if err := os.WriteFile(geoIP, buildTestDat([]string{"ru", "us"}), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,7 +165,7 @@ func TestScanDatFiles_EmptyDir(t *testing.T) {
 
 func TestRoutingCategoriesHandler_Success(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "geosite.dat"), buildTestDat(0x01, []string{"google"}), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "geosite.dat"), buildTestDat([]string{"google"}), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -187,5 +211,20 @@ func TestRoutingCategoriesHandler_MethodNotAllowed(t *testing.T) {
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestScanDatFiles_SkipsTmpFiles(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "geosite.dat"), buildTestDat([]string{"good"}), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "geosite.dat.tmp"), buildTestDat([]string{"bad"}), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "geosite.tmp.dat"), buildTestDat([]string{"bad2"}), 0o644)
+
+	result, err := scanDatFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.GeoSite) != 1 {
+		t.Errorf("expected 1 geosite entry, got %d", len(result.GeoSite))
 	}
 }
