@@ -29,7 +29,7 @@ const observatoryConcurrency = ref(false);
 const autoUpdate = ref(true);
 const changelogData = ref(null);
 const sbAvailable = ref(false);
-const sbSettings = ref({ enabled: false, interval: 15, hysteresis: 25, balancer: 'default-balancer', max_time: 8, test_url: '' });
+const sbSettings = ref({ enabled: false, interval: 15, hysteresis: 25, balancer: 'default-balancer', max_time: 8, test_url: '', routing_file: '05_routing.json', outbounds_file: '04_outbounds.json', log: false });
 const sbSaving = ref(false);
 const sbStatusLoading = ref(false);
 
@@ -575,6 +575,28 @@ onMounted(() => {
               <div class="s-row-label">{{ i18n.t('settings.sb_test_url') }}</div>
               <div class="s-row-desc">{{ i18n.t('settings.sb_test_url_desc') }}</div>
               <input v-model="sbSettings.test_url" type="text" class="s-input" style="width:100%; font-family:var(--font-mono)">
+            </div>
+            <div class="sb-grid">
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('settings.sb_routing_file') }}</span>
+                <span class="s-row-desc">{{ i18n.t('settings.sb_routing_file_desc') }}</span>
+                <input v-model="sbSettings.routing_file" type="text" class="s-input" style="font-family:var(--font-mono)">
+              </label>
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('settings.sb_outbounds_file') }}</span>
+                <span class="s-row-desc">{{ i18n.t('settings.sb_outbounds_file_desc') }}</span>
+                <input v-model="sbSettings.outbounds_file" type="text" class="s-input" style="font-family:var(--font-mono)">
+              </label>
+            </div>
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.sb_log') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.sb_log_desc') }}</div>
+              </div>
+              <label class="toggle">
+                <input v-model="sbSettings.log" type="checkbox">
+                <span class="toggle-slider" />
+              </label>
             </div>
             <div class="s-row s-row-actions">
               <button :disabled="sbSaving" class="btn btn-primary" @click="saveSpeedBalancer()">

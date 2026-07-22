@@ -20,6 +20,11 @@ import (
 // speed_balancer tool (scripts/_xkeen/04_tools/08_tools_balancer).
 const minSpeedBalancerVersion = "2.0.1"
 
+// Default file names for Xray config — used by XKeen and overridable via
+// .xkeen.speed_balancer.routing_file / outbounds_file in xkeen.json.
+const defaultRoutingFile = "05_routing.json"
+const defaultOutboundsFile = "04_outbounds.json"
+
 // xkeenDefaultVersionFile is the shell variable file shipped with every
 // XKeen install: xkeen_current_version="2.0.1".
 const xkeenDefaultVersionFile = "/opt/sbin/.xkeen/01_info/01_info_variable.sh"
@@ -137,22 +142,28 @@ func (h *XkeenInfoHandler) GetXkeenVersion(w http.ResponseWriter, _ *http.Reques
 
 // SpeedBalancerSettings mirrors .xkeen.speed_balancer.* in xkeen.json.
 type SpeedBalancerSettings struct {
-	Enabled    bool   `json:"enabled"`
-	Interval   int    `json:"interval,omitempty"`
-	Hysteresis int    `json:"hysteresis,omitempty"`
-	Balancer   string `json:"balancer,omitempty"`
-	MaxTime    int    `json:"max_time,omitempty"`
-	TestURL    string `json:"test_url,omitempty"`
+	Enabled       bool   `json:"enabled"`
+	Interval      int    `json:"interval,omitempty"`
+	Hysteresis    int    `json:"hysteresis,omitempty"`
+	Balancer      string `json:"balancer,omitempty"`
+	MaxTime       int    `json:"max_time,omitempty"`
+	TestURL       string `json:"test_url,omitempty"`
+	RoutingFile   string `json:"routing_file"`
+	OutboundsFile string `json:"outbounds_file"`
+	Log           bool   `json:"log"`
 }
 
 func defaultSpeedBalancerSettings() SpeedBalancerSettings {
 	return SpeedBalancerSettings{
-		Enabled:    false,
-		Interval:   15,
-		Hysteresis: 25,
-		Balancer:   "default-balancer",
-		MaxTime:    8,
-		TestURL:    "https://speed.cloudflare.com/__down?bytes=50000000",
+		Enabled:       false,
+		Interval:      15,
+		Hysteresis:    25,
+		Balancer:      "default-balancer",
+		MaxTime:       8,
+		TestURL:       "https://speed.cloudflare.com/__down?bytes=50000000",
+		RoutingFile:   defaultRoutingFile,
+		OutboundsFile: defaultOutboundsFile,
+		Log:           false,
 	}
 }
 
@@ -216,6 +227,15 @@ func (h *SpeedBalancerHandler) readSettings() (SpeedBalancerSettings, error) {
 	if v, ok := sb["test_url"].(string); ok && v != "" {
 		settings.TestURL = v
 	}
+	if v, ok := sb["routing_file"].(string); ok && v != "" {
+		settings.RoutingFile = v
+	}
+	if v, ok := sb["outbounds_file"].(string); ok && v != "" {
+		settings.OutboundsFile = v
+	}
+	if v, ok := sb["log"].(bool); ok {
+		settings.Log = v
+	}
 	return settings, nil
 }
 
@@ -254,6 +274,17 @@ func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSetting
 	}
 	if settings.TestURL != "" {
 		sb["test_url"] = settings.TestURL
+	}
+	// Only write routing_file/outbounds_file if they differ from defaults
+	if settings.RoutingFile != "" && settings.RoutingFile != defaultRoutingFile {
+		sb["routing_file"] = settings.RoutingFile
+	}
+	if settings.OutboundsFile != "" && settings.OutboundsFile != defaultOutboundsFile {
+		sb["outbounds_file"] = settings.OutboundsFile
+	}
+	// Only write log if true (default is false)
+	if settings.Log {
+		sb["log"] = settings.Log
 	}
 
 	xkeen["speed_balancer"] = sb

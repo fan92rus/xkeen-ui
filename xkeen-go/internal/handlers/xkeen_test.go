@@ -136,6 +136,15 @@ func TestSpeedBalancer_ReadDefaults(t *testing.T) {
 	if settings.Balancer != "default-balancer" {
 		t.Errorf("Balancer = %q, want default-balancer", settings.Balancer)
 	}
+	if settings.RoutingFile != defaultRoutingFile {
+		t.Errorf("RoutingFile = %q, want %q", settings.RoutingFile, defaultRoutingFile)
+	}
+	if settings.OutboundsFile != defaultOutboundsFile {
+		t.Errorf("OutboundsFile = %q, want %q", settings.OutboundsFile, defaultOutboundsFile)
+	}
+	if settings.Log {
+		t.Error("expected Log=false by default")
+	}
 }
 
 func TestSpeedBalancer_WriteAndRead(t *testing.T) {
@@ -145,12 +154,15 @@ func TestSpeedBalancer_WriteAndRead(t *testing.T) {
 	h := NewSpeedBalancerHandler(configPath, "xkeen")
 
 	settings := SpeedBalancerSettings{
-		Enabled:    true,
-		Interval:   10,
-		Hysteresis: 30,
-		Balancer:   "my-balancer",
-		MaxTime:    12,
-		TestURL:    "https://example.com/test",
+		Enabled:       true,
+		Interval:      10,
+		Hysteresis:    30,
+		Balancer:      "my-balancer",
+		MaxTime:       12,
+		TestURL:       "https://example.com/test",
+		RoutingFile:   "custom_routing.json",
+		OutboundsFile: "custom_outbounds.json",
+		Log:           true,
 	}
 
 	if err := h.writeSettings(settings); err != nil {
@@ -170,6 +182,15 @@ func TestSpeedBalancer_WriteAndRead(t *testing.T) {
 	}
 	if read.Enabled != true || read.Interval != 10 || read.Balancer != "my-balancer" {
 		t.Errorf("readback mismatch: %+v", read)
+	}
+	if read.RoutingFile != "custom_routing.json" {
+		t.Errorf("RoutingFile readback = %q, want custom_routing.json", read.RoutingFile)
+	}
+	if read.OutboundsFile != "custom_outbounds.json" {
+		t.Errorf("OutboundsFile readback = %q, want custom_outbounds.json", read.OutboundsFile)
+	}
+	if !read.Log {
+		t.Error("expected Log=true after readback")
 	}
 }
 
@@ -199,6 +220,8 @@ func TestSpeedBalancer_PreservesOtherKeys(t *testing.T) {
 	newSettings.Balancer = "default-balancer"
 	newSettings.MaxTime = 8
 	newSettings.TestURL = "https://speed.cloudflare.com/__down?bytes=50000000"
+	newSettings.RoutingFile = defaultRoutingFile
+	newSettings.OutboundsFile = defaultOutboundsFile
 
 	if err := h.writeSettings(newSettings); err != nil {
 		t.Fatalf("writeSettings error: %v", err)
@@ -329,6 +352,71 @@ func TestSpeedBalancer_UpdateEndpoint_NoToggle(t *testing.T) {
 		t.Error("expected no enable/disable call when enabled flag unchanged")
 	case <-time.After(200 * time.Millisecond):
 		// Good — no call expected
+	}
+}
+
+func TestSpeedBalancer_DefaultFilesNotWritten(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "xkeen.json")
+
+	h := NewSpeedBalancerHandler(configPath, "xkeen")
+
+	settings := defaultSpeedBalancerSettings()
+	settings.Enabled = true
+	// RoutingFile and OutboundsFile are default, Log is false
+
+	if err := h.writeSettings(settings); err != nil {
+		t.Fatalf("writeSettings error: %v", err)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+
+	xkeen := raw["xkeen"].(map[string]interface{})
+	sb := xkeen["speed_balancer"].(map[string]interface{})
+
+	if _, exists := sb["routing_file"]; exists {
+		t.Error("routing_file should NOT be written when equal to default")
+	}
+	if _, exists := sb["outbounds_file"]; exists {
+		t.Error("outbounds_file should NOT be written when equal to default")
+	}
+	if _, exists := sb["log"]; exists {
+		t.Error("log should NOT be written when false (default)")
+	}
+}
+
+func TestSpeedBalancer_CustomFilesWritten(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "xkeen.json")
+
+	h := NewSpeedBalancerHandler(configPath, "xkeen")
+
+	settings := defaultSpeedBalancerSettings()
+	settings.RoutingFile = "custom_routing.json"
+	settings.OutboundsFile = "custom_outbounds.json"
+	settings.Log = true
+
+	if err := h.writeSettings(settings); err != nil {
+		t.Fatalf("writeSettings error: %v", err)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+
+	xkeen := raw["xkeen"].(map[string]interface{})
+	sb := xkeen["speed_balancer"].(map[string]interface{})
+
+	if sb["routing_file"] != "custom_routing.json" {
+		t.Errorf("routing_file = %v, want custom_routing.json", sb["routing_file"])
+	}
+	if sb["outbounds_file"] != "custom_outbounds.json" {
+		t.Errorf("outbounds_file = %v, want custom_outbounds.json", sb["outbounds_file"])
+	}
+	if sb["log"] != true {
+		t.Errorf("log = %v, want true", sb["log"])
 	}
 }
 

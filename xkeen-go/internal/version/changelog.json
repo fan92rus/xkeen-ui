@@ -1,22 +1,12 @@
 {
-  "unreleased": [],
-  "releases": [
+  "unreleased": [
     {
-      "version": "0.11.3",
-      "date": "2026-07-22",
-      "changes": [
-        {
-          "type": "feat",
-          "text": "Настройки балансировщика по скорости (speed balancer) в UI с определением версии XKeen",
-          "important": true
-        },
-        {
-          "type": "feat",
-          "text": "Редактор xkeen.json в файловом дереве",
-          "important": false
-        }
-      ]
-    },
+      "type": "feat",
+      "text": "Настройки routing_file, outbounds_file и log для speed balancer",
+      "important": false
+    }
+  ],
+  "releases": [
     {
       "version": "0.11.2",
       "date": "2026-07-21",
