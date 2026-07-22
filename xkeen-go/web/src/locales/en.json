@@ -8,6 +8,7 @@
     "awg": "AWG",
     "settings": "Settings",
     "subscriptions": "Subscriptions",
+    "routing": "🔀 Routing",
     "light_theme": "Light theme",
     "dark_theme": "Dark theme",
     "switch_light": "Switch to light theme",
@@ -422,5 +423,28 @@
     "proxy_client": "Proxy client management",
     "info": "Information",
     "other": "Other"
+  },
+  "routing": {
+    "dns": "DNS:",
+    "templates": "📦 Templates",
+    "add_rule": "+ Rule",
+    "save": "💾 Save",
+    "cancel": "↩ Undo",
+    "info": "💡 Rules are applied <strong>top to bottom</strong>. First match wins. Drag <span class=\"drag-hint\">⋮⋮</span> to reorder.",
+    "name_label": "Name",
+    "domains_label": "Domains & sites",
+    "ips_label": "IPs & subnets",
+    "protocol_label": "Protocol",
+    "port_label": "Port",
+    "action_label": "Action",
+    "done": "Done",
+    "delete_confirm": "❓Sure?",
+    "drag_hint": "Drag to reorder",
+    "new_rule": "New rule",
+    "loading": "Loading...",
+    "domain_placeholder": "domain.com or geosite:google or regexp:...",
+    "ip_placeholder": "1.2.3.0/24 or geoip:ru",
+    "port_placeholder": "* or 443 or 19200-19400",
+    "name_placeholder": "e.g. RU Direct"
   }
 }

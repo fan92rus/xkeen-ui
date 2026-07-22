@@ -4,7 +4,7 @@
 		<div class="rt-header">
 			<div class="rt-header-left">
 				<label class="rt-strategy">
-					<span class="rt-strategy-label">DNS:</span>
+					<span class="rt-strategy-label">{{ i18n.t('routing.dns') }}</span>
 					<select v-model="localRouting.domainStrategy" class="rt-select" @change="markDirty">
 						<option value="AsIs">AsIs</option>
 						<option value="IPIfNonMatch">IPIfNonMatch</option>
@@ -14,33 +14,32 @@
 				<span class="rt-rule-count">{{ rules.length }} {{ pluralize(rules.length) }}</span>
 			</div>
 			<div class="rt-header-right">
-				<button class="btn btn-sm" @click="showTemplates = !showTemplates">📦 Шаблоны</button>
-				<button class="btn btn-sm btn-primary" @click="addRule">+ Правило</button>
-				<button v-if="dirty" class="btn btn-sm btn-success" @click="save">💾 Сохранить</button>
+				<button class="btn btn-sm" @click="showTemplates = !showTemplates">{{ i18n.t('routing.templates') }}</button>
+				<button v-if="dirty" class="btn btn-sm" @click="undo">{{ i18n.t('routing.cancel') }}</button>
+				<button class="btn btn-sm btn-primary" @click="addRule">{{ i18n.t('routing.add_rule') }}</button>
+				<button v-if="dirty" class="btn btn-sm btn-success" @click="save">{{ i18n.t('routing.save') }}</button>
 			</div>
 		</div>
 
 		<!-- Info banner -->
-		<div class="rt-info">
-			💡 Правила применяются <strong>сверху вниз</strong>. Первое совпадение выигрывает. Перетаскивайте за <span class="drag-hint">⋮⋮</span> для смены приоритета.
-		</div>
+		<div class="rt-info" v-html="i18n.t('routing.info')"></div>
 
 		<!-- Templates panel -->
 		<div v-if="showTemplates" class="rt-templates">
 			<div class="rt-template" @click="applyTemplate('ru-direct')">
 				<span class="rt-tpl-icon">🇷🇺</span>
 				<span class="rt-tpl-name">RU Direct</span>
-				<span class="rt-tpl-desc">Российские домены → напрямую</span>
+				<span class="rt-tpl-desc">🇷🇺 → direct</span>
 			</div>
 			<div class="rt-template" @click="applyTemplate('block-ads')">
 				<span class="rt-tpl-icon">🚫</span>
 				<span class="rt-tpl-name">Block Ads</span>
-				<span class="rt-tpl-desc">Реклама → блок</span>
+				<span class="rt-tpl-desc">Ads → block</span>
 			</div>
 			<div class="rt-template" @click="applyTemplate('streaming')">
 				<span class="rt-tpl-icon">📺</span>
 				<span class="rt-tpl-name">Streaming</span>
-				<span class="rt-tpl-desc">Netflix, YouTube → прокси</span>
+				<span class="rt-tpl-desc">Netflix, YouTube → proxy</span>
 			</div>
 		</div>
 
@@ -49,6 +48,7 @@
 			<div
 				v-for="(rule, idx) in rules"
 				:key="rule.id"
+				:id="rule.id"
 				class="rt-card"
 				:class="{
 					dragging: dragIdx === idx,
@@ -64,11 +64,11 @@
 			>
 				<!-- Card header (collapsed view) -->
 				<div class="rt-card-header" @click="toggleExpand(rule.id)">
-					<span class="rt-drag-handle" @click.stop title="Перетащите для смены приоритета">⋮⋮</span>
+					<span class="rt-drag-handle" @click.stop :title="i18n.t('routing.drag_hint')">⋮⋮</span>
 					<span class="rt-card-num">{{ idx + 1 }}</span>
 					<span class="rt-card-icon">{{ ruleIcon(rule) }}</span>
 					<span class="rt-card-name">{{ rule.name }}</span>
-					<span class="rt-card-summary" v-if="!expandedId">
+					<span class="rt-card-summary" v-if="expandedId !== rule.id">
 						<span v-if="rule.domains.length" class="rt-badge rt-badge-domain">D:{{ rule.domains.length }}</span>
 						<span v-if="rule.ips.length" class="rt-badge rt-badge-ip">IP:{{ rule.ips.length }}</span>
 						<span v-if="rule.port" class="rt-badge rt-badge-port">:{{ rule.port }}</span>
@@ -78,8 +78,9 @@
 						{{ actionLabel(rule.action) }}
 					</span>
 					<span class="rt-card-actions" @click.stop>
-						<button class="rt-icon-btn" @click="toggleExpand(rule.id)" :title="expandedId === rule.id ? 'Свернуть' : 'Изменить'">{{ expandedId === rule.id ? '▲' : '✏️' }}</button>
-						<button class="rt-icon-btn rt-icon-danger" @click="deleteRule(idx)" title="Удалить">🗑️</button>
+						<button class="rt-icon-btn" @click="duplicateRule(idx)" title="Copy">📋</button>
+						<button class="rt-icon-btn" @click="toggleExpand(rule.id)" :title="expandedId === rule.id ? 'Collapse' : 'Edit'">{{ expandedId === rule.id ? '▲' : '✏️' }}</button>
+						<button class="rt-icon-btn" :class="{ 'rt-icon-danger': deleteConfirm !== idx, 'rt-icon-confirm': deleteConfirm === idx }" @click="deleteRule(idx)" :title="deleteConfirm === idx ? 'Confirm' : 'Delete'">{{ deleteConfirm === idx ? i18n.t('routing.delete_confirm') : '🗑️' }}</button>
 					</span>
 				</div>
 
@@ -87,13 +88,13 @@
 				<div v-if="expandedId === rule.id" class="rt-card-body">
 					<!-- Name -->
 					<div class="rt-field">
-						<label class="rt-field-label">Название</label>
-						<input v-model="rule.name" class="rt-input" placeholder="Например: RU Direct" @input="markDirty">
+						<label class="rt-field-label">{{ i18n.t('routing.name_label') }}</label>
+						<input v-model="rule.name" class="rt-input" :placeholder="i18n.t('routing.name_placeholder')" @input="markDirty">
 					</div>
 
 					<!-- Domains -->
 					<div class="rt-field">
-						<label class="rt-field-label">Домены и сайты</label>
+						<label class="rt-field-label">{{ i18n.t('routing.domains_label') }}</label>
 						<div class="rt-tag-list">
 							<span v-for="(d, di) in rule.domains" :key="di" class="rt-tag" :class="'rt-tag-' + d.type">
 								<span class="rt-tag-icon">{{ entryIcon(d) }}</span>
@@ -105,10 +106,11 @@
 							<input
 								v-model="domainInput[idx]"
 								class="rt-input rt-tag-input"
-								placeholder="домен.com или geosite:google или regexp:..."
+								:placeholder="i18n.t('routing.domain_placeholder')"
 								@keydown.enter.prevent="addDomain(idx)"
 								@input="showDomainSuggest(idx, $event.target.value)"
 							>
+							<div v-if="regexWarnings[idx]" class="rt-regex-warn">⚠️ {{ regexWarnings[idx] }}</div>
 							<div v-if="domainSuggestions[idx]?.length" class="rt-suggest">
 								<div
 									v-for="s in domainSuggestions[idx]"
@@ -125,7 +127,7 @@
 
 					<!-- IPs -->
 					<div class="rt-field">
-						<label class="rt-field-label">IP-адреса и подсети</label>
+						<label class="rt-field-label">{{ i18n.t('routing.ips_label') }}</label>
 						<div class="rt-tag-list">
 							<span v-for="(ip, ii) in rule.ips" :key="ii" class="rt-tag" :class="'rt-tag-' + ip.type">
 								<span class="rt-tag-icon">{{ entryIcon(ip) }}</span>
@@ -137,7 +139,7 @@
 							<input
 								v-model="ipInput[idx]"
 								class="rt-input rt-tag-input"
-								placeholder="1.2.3.0/24 или geoip:ru"
+								:placeholder="i18n.t('routing.ip_placeholder')"
 								@keydown.enter.prevent="addIp(idx)"
 								@input="showIpSuggest(idx, $event.target.value)"
 							>
@@ -155,34 +157,46 @@
 						</div>
 					</div>
 
-					<!-- Two-column: protocol/port + action -->
+					<!-- Two-column: protocol/port -->
 					<div class="rt-row-2col">
 						<div class="rt-field">
-							<label class="rt-field-label">Протокол</label>
+							<label class="rt-field-label">{{ i18n.t('routing.protocol_label') }}</label>
 							<div class="rt-checkboxes">
 								<label class="rt-check"><input type="checkbox" :checked="rule.networks.includes('tcp')" @change="toggleNetwork(rule, 'tcp')"> TCP</label>
 								<label class="rt-check"><input type="checkbox" :checked="rule.networks.includes('udp')" @change="toggleNetwork(rule, 'udp')"> UDP</label>
 							</div>
 						</div>
 						<div class="rt-field">
-							<label class="rt-field-label">Порт</label>
-							<input v-model="rule.port" class="rt-input" placeholder="* или 443 или 19200-19400" @input="markDirty">
+							<label class="rt-field-label">{{ i18n.t('routing.port_label') }}</label>
+							<input v-model="rule.port" class="rt-input" :placeholder="i18n.t('routing.port_placeholder')" @input="markDirty">
 						</div>
 					</div>
 
 					<!-- Action selector -->
 					<div class="rt-field">
-						<label class="rt-field-label">Действие</label>
+						<label class="rt-field-label">{{ i18n.t('routing.action_label') }}</label>
 						<div class="rt-actions">
 							<button
 								class="rt-action-btn"
 								:class="{ active: rule.action.tag === 'direct' && rule.action.kind === 'outbound' }"
 								@click="rule.action = { kind: 'outbound', tag: 'direct' }; markDirty()"
 							>⚪ Direct</button>
+							<select
+								v-if="balancerTags.length > 0"
+								class="rt-select rt-balancer-select"
+								:class="{ active: rule.action.kind === 'balancer' }"
+								:value="rule.action.kind === 'balancer' ? rule.action.tag : ''"
+								@change="rule.action = { kind: 'balancer', tag: $event.target.value }; markDirty()"
+							>
+								<option value="" disabled>🟢 Balancer</option>
+								<option v-for="bt in balancerTags" :key="bt" :value="bt">{{ bt }}</option>
+							</select>
 							<button
+								v-else
 								class="rt-action-btn"
 								:class="{ active: rule.action.kind === 'balancer' }"
 								@click="rule.action = { kind: 'balancer', tag: 'default-balancer' }; markDirty()"
+								title="No balancers configured"
 							>🟢 Balancer</button>
 							<button
 								class="rt-action-btn"
@@ -198,25 +212,28 @@
 					</div>
 
 					<div class="rt-card-footer">
-						<button class="btn btn-sm" @click="expandedId = null">Готово</button>
+						<button class="btn btn-sm" @click="expandedId = null">{{ i18n.t('routing.done') }}</button>
 					</div>
 				</div>
 			</div>
 		</div>
 
 		<!-- Loading / error -->
-		<div v-if="loading" class="rt-loading">Загрузка...</div>
+		<div v-if="loading" class="rt-loading">{{ i18n.t('routing.loading') }}</div>
 		<div v-if="error" class="rt-error">⚠️ {{ error }}</div>
 	</div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue';
+import { ref, reactive, onMounted, computed, nextTick } from 'vue';
+import { useI18nStore } from '../stores/i18n.js';
 import {
 	getRouting, saveRouting, normalizeRule, parseEntry,
 	entryLabel, entryIcon, COMMON_GEOSITE, COMMON_GEOIP,
-	serializeRule,
+	serializeRule, fetchCategories,
 } from '../services/routing-rules.js';
+
+const i18n = useI18nStore();
 
 const loading = ref(true);
 const error = ref('');
@@ -230,28 +247,91 @@ const rawBalancers = ref([]);
 
 const rules = computed(() => rawRules.value);
 
-// Drag-and-drop state
+// ── Undo / cancel ──
+const originalState = ref(null);
+
+function storeOriginal() {
+	originalState.value = JSON.parse(JSON.stringify({
+		rules: rawRules.value,
+		balancers: rawBalancers.value,
+		domainStrategy: localRouting.domainStrategy,
+	}));
+}
+
+function undo() {
+	if (!originalState.value) return;
+	const s = originalState.value;
+	rawRules.value = JSON.parse(JSON.stringify(s.rules));
+	rawBalancers.value = JSON.parse(JSON.stringify(s.balancers));
+	localRouting.domainStrategy = s.domainStrategy;
+	dirty.value = false;
+	expandedId.value = null;
+}
+
+// ── Drag-and-drop state ──
 const dragIdx = ref(null);
 const dragOverIdx = ref(null);
 
-// Tag input state
+// ── Tag input state ──
 const domainInput = reactive({});
 const domainSuggestions = reactive({});
 const ipInput = reactive({});
 const ipSuggestions = reactive({});
 
+// ── API categories ──
+const apiCategories = ref(null);
+
+const mergedGeoSite = computed(() => {
+	const hard = COMMON_GEOSITE;
+	if (!apiCategories.value?.geosite?.length) return hard;
+	const fromApi = apiCategories.value.geosite.map(c => ({
+		value: c.name, label: c.name, db: c.file, flag: '📁',
+	}));
+	const apiKeys = new Set(fromApi.map(e => (e.db || '') + ':' + e.value));
+	return [...fromApi, ...hard.filter(h => !apiKeys.has((h.db || '') + ':' + h.value))];
+});
+
+const mergedGeoIP = computed(() => {
+	const hard = COMMON_GEOIP;
+	if (!apiCategories.value?.geoip?.length) return hard;
+	const fromApi = apiCategories.value.geoip.map(c => ({
+		value: c.name, label: c.name, db: c.file, flag: '🌍',
+	}));
+	const apiKeys = new Set(fromApi.map(e => (e.db || '') + ':' + e.value));
+	return [...fromApi, ...hard.filter(h => !apiKeys.has((h.db || '') + ':' + h.value))];
+});
+
+// ── Balancer tags from config ──
+const balancerTags = computed(() =>
+	rawBalancers.value.map(b => b.tag).filter(Boolean));
+
+// ── Delete confirmation ──
+const deleteConfirm = ref(null);
+let deleteTimer = null;
+
+// ── Regex validation ──
+const regexWarnings = reactive({});
+
+function validateRegex(val) {
+	try { new RegExp(val); return ''; } catch (e) { return e.message; }
+}
+
+// ── Lifecycle ──
 onMounted(async () => {
 	try {
 		const data = await getRouting();
-		const routing = data.routing || data;
-		localRouting.domainStrategy = routing.domainStrategy || 'AsIs';
-		rawBalancers.value = routing.balancers || [];
-		rawRules.value = (routing.rules || []).map((r, i) => normalizeRule(r, i));
+		const r = data.routing || data;
+		localRouting.domainStrategy = r.domainStrategy || 'AsIs';
+		rawBalancers.value = r.balancers || [];
+		rawRules.value = (r.rules || []).map((rule, i) => normalizeRule(rule, i));
+		storeOriginal();
 	} catch (e) {
 		error.value = e.message || 'Failed to load routing config';
 	} finally {
 		loading.value = false;
 	}
+	// Fetch categories async (non-blocking)
+	fetchCategories().then(d => apiCategories.value = d).catch(() => {});
 });
 
 function markDirty() { dirty.value = true; }
@@ -266,6 +346,11 @@ function pluralize(n) {
 // ── Expand/collapse ──
 function toggleExpand(id) {
 	expandedId.value = expandedId.value === id ? null : id;
+	if (expandedId.value) {
+		nextTick(() => {
+			document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		});
+	}
 }
 
 // ── Drag and drop ──
@@ -274,12 +359,8 @@ function onDragStart(e, idx) {
 	e.dataTransfer.effectAllowed = 'move';
 	e.dataTransfer.setData('text/plain', String(idx));
 }
-function onDragOver(idx) {
-	dragOverIdx.value = idx;
-}
-function onDragLeave() {
-	dragOverIdx.value = null;
-}
+function onDragOver(idx) { dragOverIdx.value = idx; }
+function onDragLeave() { dragOverIdx.value = null; }
 function onDrop(targetIdx) {
 	const srcIdx = dragIdx.value;
 	if (srcIdx === null || srcIdx === targetIdx) return;
@@ -300,14 +381,31 @@ function addRule() {
 		domain: [],
 		outboundTag: 'direct',
 	}, Date.now());
-	newRule.name = 'Новое правило';
-	rawRules.value.splice(rawRules.value.length - 1, 0, newRule); // before catch-all
+	newRule.name = i18n.t('routing.new_rule');
+	rawRules.value.push(newRule);
 	expandedId.value = newRule.id;
 	markDirty();
 }
 
 function deleteRule(idx) {
+	if (deleteConfirm.value !== idx) {
+		deleteConfirm.value = idx;
+		clearTimeout(deleteTimer);
+		deleteTimer = setTimeout(() => { deleteConfirm.value = null; }, 3000);
+		return;
+	}
+	clearTimeout(deleteTimer);
+	deleteConfirm.value = null;
 	rawRules.value.splice(idx, 1);
+	markDirty();
+}
+
+function duplicateRule(idx) {
+	const clone = JSON.parse(JSON.stringify(rawRules.value[idx]));
+	clone.id = 'rule-' + Date.now();
+	clone.name = clone.name + ' (copy)';
+	rawRules.value.splice(idx + 1, 0, clone);
+	expandedId.value = clone.id;
 	markDirty();
 }
 
@@ -315,7 +413,13 @@ function deleteRule(idx) {
 function addDomain(idx) {
 	const val = (domainInput[idx] || '').trim();
 	if (!val) return;
-	rawRules.value[idx].domains.push(parseEntry(val));
+	const entry = parseEntry(val);
+	if (entry.type === 'regexp') {
+		const err = validateRegex(entry.value);
+		if (err) { regexWarnings[idx] = err; return; }
+	}
+	regexWarnings[idx] = '';
+	rawRules.value[idx].domains.push(entry);
 	domainInput[idx] = '';
 	domainSuggestions[idx] = [];
 	markDirty();
@@ -326,13 +430,14 @@ function addDomainEntry(idx, suggestion) {
 		? `ext:${suggestion.db}:${suggestion.value}`
 		: `geosite:${suggestion.value}`;
 	rawRules.value[idx].domains.push(parseEntry(raw));
+	regexWarnings[idx] = '';
 	markDirty();
 }
 
 function showDomainSuggest(idx, val) {
 	if (!val || val.length < 2) { domainSuggestions[idx] = []; return; }
 	const q = val.replace(/^geosite:|^ext:.*:/, '').toLowerCase();
-	domainSuggestions[idx] = COMMON_GEOSITE
+	domainSuggestions[idx] = mergedGeoSite.value
 		.filter(s => s.value.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
 		.slice(0, 8);
 }
@@ -357,7 +462,7 @@ function addIpEntry(idx, suggestion) {
 function showIpSuggest(idx, val) {
 	if (!val || val.length < 2) { ipSuggestions[idx] = []; return; }
 	const q = val.replace(/^geoip:|^ext:.*:/, '').toLowerCase();
-	ipSuggestions[idx] = COMMON_GEOIP
+	ipSuggestions[idx] = mergedGeoIP.value
 		.filter(s => s.value.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
 		.slice(0, 8);
 }
@@ -423,7 +528,7 @@ function applyTemplate(name) {
 			ips: [],
 			networks: [],
 			port: '',
-			action: { kind: 'balancer', tag: 'default-balancer' },
+			action: { kind: 'balancer', tag: balancerTags.value[0] || 'default-balancer' },
 		},
 	};
 	const tpl = templates[name];
@@ -435,7 +540,7 @@ function applyTemplate(name) {
 		balancerTag: tpl.action.kind === 'balancer' ? tpl.action.tag : undefined,
 	}, Date.now());
 	newRule.name = tpl.name;
-	rawRules.value.splice(rawRules.value.length - 1, 0, newRule);
+	rawRules.value.push(newRule);
 	expandedId.value = newRule.id;
 	showTemplates.value = false;
 	markDirty();
@@ -454,6 +559,7 @@ async function save() {
 			rules: rulesJson,
 		});
 		dirty.value = false;
+		storeOriginal();
 	} catch (e) {
 		error.value = e.message || 'Failed to save';
 	} finally {
@@ -501,7 +607,7 @@ async function save() {
 	padding: 8px 12px;
 	margin-bottom: 12px;
 }
-.drag-hint {
+:deep(.drag-hint) {
 	cursor: grab;
 	font-weight: bold;
 	letter-spacing: -2px;
@@ -620,6 +726,27 @@ async function save() {
 }
 .rt-icon-btn:hover { background: rgba(255,255,255,0.1); }
 .rt-icon-danger:hover { color: #e74c3c; }
+.rt-icon-confirm {
+	color: #e74c3c;
+	animation: pulse 0.6s infinite alternate;
+}
+@keyframes pulse {
+	from { opacity: 1; }
+	to { opacity: 0.5; }
+}
+
+/* Balancer select */
+.rt-balancer-select {
+	width: auto;
+	min-width: 120px;
+	color: var(--text-muted);
+}
+.rt-balancer-select.active {
+	border-color: var(--accent, #4a9eff);
+	background: rgba(74,158,255,0.15);
+	color: var(--accent, #4a9eff);
+	font-weight: 600;
+}
 
 /* Card body (expanded) */
 .rt-card-body {
@@ -646,6 +773,13 @@ async function save() {
 	font-family: inherit;
 }
 .rt-input:focus { outline: none; border-color: var(--accent, #4a9eff); }
+
+/* Regex warning */
+.rt-regex-warn {
+	color: #f5a623;
+	font-size: 11px;
+	margin-top: 4px;
+}
 
 /* Tag list */
 .rt-tag-list {
@@ -724,7 +858,7 @@ async function save() {
 }
 
 /* Action buttons */
-.rt-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.rt-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .rt-action-btn {
 	padding: 6px 14px;
 	border-radius: 6px;

@@ -71,7 +71,7 @@ const tabs = computed(() => {
 		const list = [
 			{ id: 'editor', label: i18n.t('nav.editor') },
 			{ id: 'subscriptions', label: i18n.t('nav.subscriptions') },
-			{ id: 'routing', label: '🔀 Routing' },
+		{ id: 'routing', label: i18n.t('nav.routing') },
 			{ id: 'logs', label: i18n.t('nav.logs') },
 			{ id: 'settings', label: i18n.t('nav.settings') },
 			{ id: 'commands', label: i18n.t('nav.commands') },
