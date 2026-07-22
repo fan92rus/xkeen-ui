@@ -1305,3 +1305,119 @@ func TestQuadraticBackoff(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractBranchFromRelease_Body(t *testing.T) {
+	rel := GitHubRelease{
+		Body: `## Dev Build
+
+| Property | Value |
+|----------|-------|
+| Branch | feat/routing-ui |
+| Commit | abc123 |`,
+	}
+	if got := extractBranchFromRelease(rel); got != "feat/routing-ui" {
+		t.Errorf("expected feat/routing-ui, got %q", got)
+	}
+}
+
+func TestExtractBranchFromRelease_TagWithBranch(t *testing.T) {
+	rel := GitHubRelease{
+		TagName: "v0.11.4-dev.feat-routing-ui.1724921234",
+	}
+	if got := extractBranchFromRelease(rel); got != "feat-routing-ui" {
+		t.Errorf("expected feat-routing-ui, got %q", got)
+	}
+}
+
+func TestExtractBranchFromRelease_TagMaster(t *testing.T) {
+	rel := GitHubRelease{
+		TagName: "v0.11.4-dev.1724921234",
+	}
+	if got := extractBranchFromRelease(rel); got != "master" {
+		t.Errorf("expected master, got %q", got)
+	}
+}
+
+func TestExtractBranchFromRelease_NoDev(t *testing.T) {
+	rel := GitHubRelease{
+		TagName: "v0.11.4",
+	}
+	if got := extractBranchFromRelease(rel); got != "master" {
+		t.Errorf("expected master, got %q", got)
+	}
+}
+
+func TestCheckBranches_Empty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	h := NewUpdateHandler()
+	h.apiBaseURL = server.URL
+
+	resp := h.fetchBranches()
+	if resp.Error != "" {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+	if len(resp.Branches) != 0 {
+		t.Errorf("expected 0 branches, got %d", len(resp.Branches))
+	}
+}
+
+func TestCheckBranches_MultipleBranches(t *testing.T) {
+	// Simulate GitHub response with 2 dev releases on different branches
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v0.11.4-dev.feature-a.2000000000","prerelease":true,"body":"| Branch | feature-a |","html_url":"https://example.com/a","published_at":"2026-01-01T00:00:00Z"},
+			{"tag_name":"v0.11.4-dev.feature-b.2000000001","prerelease":true,"body":"| Branch | feature-b |","html_url":"https://example.com/b","published_at":"2026-01-02T00:00:00Z"}
+		]`))
+	}))
+	defer server.Close()
+
+	h := NewUpdateHandler()
+	h.apiBaseURL = server.URL
+
+	resp := h.fetchBranches()
+	if resp.Error != "" {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+	if len(resp.Branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(resp.Branches))
+	}
+	// feature-a should come before feature-b (alphabetical)
+	if resp.Branches[0].Name != "feature-a" {
+		t.Errorf("expected first branch feature-a, got %q", resp.Branches[0].Name)
+	}
+	if resp.Branches[1].Name != "feature-b" {
+		t.Errorf("expected second branch feature-b, got %q", resp.Branches[1].Name)
+	}
+}
+
+func TestCheckBranches_MasterFirst(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v0.11.4-dev.feat-x.2000000002","prerelease":true,"body":"| Branch | feat-x |","html_url":"https://example.com/x","published_at":"2026-01-03T00:00:00Z"},
+			{"tag_name":"v0.11.4-dev.2000000000","prerelease":true,"body":"| Branch | master |","html_url":"https://example.com/master","published_at":"2026-01-01T00:00:00Z"}
+		]`))
+	}))
+	defer server.Close()
+
+	h := NewUpdateHandler()
+	h.apiBaseURL = server.URL
+
+	resp := h.fetchBranches()
+	if resp.Error != "" {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+	if len(resp.Branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d: %+v", len(resp.Branches), resp.Branches)
+	}
+	// master always first
+	if resp.Branches[0].Name != "master" {
+		t.Errorf("expected master first, got %q", resp.Branches[0].Name)
+	}
+}

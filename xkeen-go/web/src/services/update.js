@@ -2,9 +2,17 @@
 import * as api from './api.js';
 import { readSSEStream } from '../utils/sse-stream.js';
 
-export async function checkUpdate(prerelease = false) {
-    const url = prerelease ? '/api/update/check?prerelease=true' : '/api/update/check';
+export async function checkUpdate(prerelease = false, branch = '') {
+    let url = '/api/update/check';
+    const params = [];
+    if (prerelease) params.push('prerelease=true');
+    if (branch) params.push('branch=' + encodeURIComponent(branch));
+    url = params.length ? url + '?' + params.join('&') : url;
     return api.get(url);
+}
+
+export async function getBranches() {
+    return api.get('/api/update/branches');
 }
 
 /**

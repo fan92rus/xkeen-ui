@@ -21,8 +21,9 @@ import (
 // Build information (set via ldflags)
 var (
 	appVersion   = "0.1.0"
-	buildDate = "unknown"
-	gitCommit = "unknown"
+	buildDate    = "unknown"
+	gitCommit    = "unknown"
+	buildBranch  = "master"
 )
 
 // Installation paths for Keenetic/Entware
@@ -206,9 +207,10 @@ func runServer() {
 
 	// Initialize version package with ldflags values
 	version.SetVersion(appVersion, buildDate, gitCommit)
+	version.BuildBranch = buildBranch
 
 	// Log startup information
-	log.Printf("XKEEN-UI %s starting...", appVersion)
+	log.Printf("XKEEN-UI %s (branch: %s) starting...", appVersion, buildBranch)
 	log.Printf("Config file: %s", configPath)
 	log.Printf("Listen port: %d", cfg.Port)
 	log.Printf("Xray config dir: %s", cfg.XrayConfigDir)

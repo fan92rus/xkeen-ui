@@ -420,6 +420,20 @@ onMounted(() => {
                 <span class="toggle-slider" />
               </label>
             </div>
+            <div v-if="app.availableBranches.length > 1" class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.branch') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.branch_desc') }}</div>
+              </div>
+              <select v-model="app.selectedBranch" class="s-select" @change="app.checkUpdate()">
+                <option v-for="b in app.availableBranches" :key="b.name" :value="b.name">
+                  {{ b.name }} ({{ b.latest_version }})
+                </option>
+              </select>
+              <span v-if="app.currentBranch && app.selectedBranch !== app.currentBranch" class="s-hint">
+                {{ i18n.t('settings.branch_differs') }}
+              </span>
+            </div>
             <div class="s-row s-row-actions">
               <button :disabled="app.updateChecking || app.updating" class="btn" @click="app.checkUpdate()">
                 {{ app.updateChecking ? i18n.t('settings.checking') : i18n.t('settings.check_btn') }}
