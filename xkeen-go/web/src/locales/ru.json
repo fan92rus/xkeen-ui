@@ -287,7 +287,7 @@
     "sb_routing_file": "Файл роутинга",
     "sb_routing_file_desc": "Имя файла маршрутизации Xray (по умолчанию 05_routing.json)",
     "sb_outbounds_file": "Файл outbounds",
-    "sb_outbounds_file_desc": "Имя файл outbound-соединий Xray (по умолчанию 04_outbounds.json)",
+    "sb_outbounds_file_desc": "Имя файла outbound-соединений Xray (по умолчанию 04_outbounds.json)",
     "sb_log": "Логировать",
     "sb_log_desc": "Записывать замеры и переключения в файл"
   },

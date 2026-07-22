@@ -8,6 +8,22 @@
   ],
   "releases": [
     {
+      "version": "0.11.3",
+      "date": "2026-07-22",
+      "changes": [
+        {
+          "type": "feat",
+          "text": "Настройки балансировщика по скорости (speed balancer) в UI с определением версии XKeen",
+          "important": true
+        },
+        {
+          "type": "feat",
+          "text": "Редактор xkeen.json в файловом дереве",
+          "important": false
+        }
+      ]
+    },
+    {
       "version": "0.11.2",
       "date": "2026-07-21",
       "changes": [

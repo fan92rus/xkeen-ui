@@ -420,6 +420,36 @@ func TestSpeedBalancer_CustomFilesWritten(t *testing.T) {
 	}
 }
 
+func TestSpeedBalancer_ResetToRemoveKey(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "xkeen.json")
+
+	// Start with log=true and custom routing_file in xkeen.json
+	os.WriteFile(configPath, []byte(`{"xkeen":{"speed_balancer":{"log":true,"routing_file":"custom.json"}}}`), 0o644)
+
+	h := NewSpeedBalancerHandler(configPath, "xkeen")
+
+	// Save with defaults: log=false, routing_file=default
+	settings := defaultSpeedBalancerSettings()
+	settings.Enabled = true
+	if err := h.writeSettings(settings); err != nil {
+		t.Fatalf("writeSettings error: %v", err)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+
+	sb := raw["xkeen"].(map[string]interface{})["speed_balancer"].(map[string]interface{})
+
+	if _, exists := sb["log"]; exists {
+		t.Error("log key should be removed when reset to false")
+	}
+	if _, exists := sb["routing_file"]; exists {
+		t.Error("routing_file key should be removed when reset to default")
+	}
+}
+
 func TestSpeedBalancer_StatusEndpoint(t *testing.T) {
 	h := NewSpeedBalancerHandler("/dev/null", "nonexistent-binary")
 
