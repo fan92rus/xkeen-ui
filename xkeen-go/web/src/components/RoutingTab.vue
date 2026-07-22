@@ -215,6 +215,7 @@ import { ref, reactive, onMounted, computed } from 'vue';
 import {
 	getRouting, saveRouting, normalizeRule, parseEntry,
 	entryLabel, entryIcon, COMMON_GEOSITE, COMMON_GEOIP,
+	serializeRule,
 } from '../services/routing-rules.js';
 
 const loading = ref(true);
@@ -445,17 +446,7 @@ async function save() {
 	loading.value = true;
 	error.value = '';
 	try {
-		const rulesJson = rawRules.value.map(r => {
-			const obj = { type: 'field' };
-			if (r.domains.length) obj.domain = r.domains.map(d => d.raw);
-			if (r.ips.length) obj.ip = r.ips.map(ip => ip.raw);
-			if (r.networks.length) obj.network = r.networks.join(',');
-			if (r.port) obj.port = r.port;
-			if (r.inbound.length) obj.inboundTag = r.inbound;
-			if (r.action.kind === 'balancer') obj.balancerTag = r.action.tag;
-			else obj.outboundTag = r.action.tag;
-			return obj;
-		});
+		const rulesJson = rawRules.value.map(r => serializeRule(r));
 
 		await saveRouting({
 			domainStrategy: localRouting.domainStrategy,

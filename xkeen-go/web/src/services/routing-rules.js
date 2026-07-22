@@ -1,14 +1,20 @@
 // routing-rules.js — read/write 05_routing.json via existing config API
 import { getFile, saveFile, listFiles } from './config.js';
+import { get } from './api.js';
 
 const ROUTING_FILE = '05_routing.json';
 
 // Resolve the full path of the routing config file via the files API.
+// Cache the resolved path to avoid duplicate listFiles calls.
+let _routingPath = null;
+
 async function resolveRoutingPath() {
+	if (_routingPath) return _routingPath;
 	const files = await listFiles('xray');
 	const found = files.find(f => f.name === ROUTING_FILE);
 	if (!found) throw new Error(`${ROUTING_FILE} not found in config directory`);
-	return found.path;
+	_routingPath = found.path;
+	return _routingPath;
 }
 
 export async function getRouting() {
@@ -189,3 +195,30 @@ export const COMMON_GEOIP = [
 	{ value: 'fastly', label: 'Fastly CDN', db: 'zkeenip.dat', flag: '⚡' },
 	{ value: 'gcore', label: 'Gcore CDN', db: 'zkeenip.dat', flag: '🌐' },
 ];
+
+// ── Serialization (UI rule → Xray wire format) ──
+
+export function serializeRule(rule) {
+	const obj = { ...rule.raw }; // preserve unknown fields from original (protocol, routeOnly, etc.)
+	delete obj.type; // UI-only field, not part of Xray wire format
+	obj.domain = rule.domains.map(d => d.raw);
+	delete obj.ip;
+	delete obj.network;
+	delete obj.port;
+	delete obj.outboundTag;
+	delete obj.balancerTag;
+	delete obj.inboundTag;
+	if (rule.ips.length) obj.ip = rule.ips.map(ip => ip.raw);
+	if (rule.networks.length) obj.network = rule.networks.join(',');
+	if (rule.port) obj.port = rule.port;
+	if (rule.inbound.length) obj.inboundTag = rule.inbound;
+	if (rule.action.kind === 'balancer') obj.balancerTag = rule.action.tag;
+	else obj.outboundTag = rule.action.tag;
+	return obj;
+}
+
+// ── Category autocomplete from backend ──
+
+export async function fetchCategories() {
+	return get('/api/routing/categories');
+}
