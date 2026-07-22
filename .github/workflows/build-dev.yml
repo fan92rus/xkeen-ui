@@ -53,8 +53,11 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
 
       # ── E2E tests (Puppeteer + Chromium) ──
+      # Install Chrome (download) as non-root, then install system deps as root
       - name: Install Chromium + system deps
-        run: npx puppeteer browsers install chrome --install-deps
+        run: |
+          npx puppeteer browsers install chrome
+          sudo -E npx puppeteer browsers install chrome --install-deps
 
       - name: Setup Go (for e2e server binary)
         uses: actions/setup-go@v6
