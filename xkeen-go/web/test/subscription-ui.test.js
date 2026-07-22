@@ -110,11 +110,15 @@ async function getTotalCardCount() {
 async function waitForNonBuiltinCard(timeoutMs = 8000) {
     await waitFor(async () => {
         const card = await page.evaluate(() => {
-            const c = document.querySelector('.sub-card:not(.builtin)');
-            if (!c) return false;
-            const btns = c.querySelectorAll('.acts button');
-            return btns.length >= 2;
-        });
+            try {
+                const c = document.querySelector('.sub-card:not(.builtin)');
+                if (!c) return false;
+                const btns = c.querySelectorAll('.acts button');
+                return btns.length >= 2;
+            } catch (e) {
+                return false; // transient context errors — keep polling
+            }
+        }).catch(() => false); // page.evaluate itself may throw (context destroyed)
         return card;
     }, timeoutMs);
 }
@@ -147,8 +151,10 @@ async function main() {
     await page.setViewport({ width: 1280, height: 900 });
     page.setDefaultTimeout(10000);
 
-    // Force Russian locale so button titles match our test expectations
-    // regardless of the CI runner's Accept-Language header.
+    // Force Russian locale before any page navigation runs.
+    // This runs on every new document before any page script (including Vue/i18n
+    // init), so detectLang() picks up 'ru' even when the CI runner sends
+    // Accept-Language: en-US.
     await page.evaluateOnNewDocument(() => {
         localStorage.setItem('xkeen_lang', 'ru');
     });
