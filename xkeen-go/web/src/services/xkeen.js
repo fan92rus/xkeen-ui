@@ -52,3 +52,21 @@ export async function getAWGInterfaces() {
 export async function updateAWGInterfaces(lanIface, wanIface, endpoint) {
     return put('/api/settings/awg-interfaces', { lan_iface: lanIface, wan_iface: wanIface, endpoint });
 }
+
+// --- Speed Balancer settings ---
+
+export async function getXkeenVersion() {
+    return get('/api/xkeen/version');
+}
+
+export async function getSpeedBalancer() {
+    return get('/api/settings/speed-balancer');
+}
+
+export async function updateSpeedBalancer(settings) {
+    return put('/api/settings/speed-balancer', { settings });
+}
+
+export async function getSpeedBalancerStatus() {
+    return get('/api/settings/speed-balancer/status');
+}

@@ -40,6 +40,7 @@ func (s *Server) setupRoutes() {
 	handlers.RegisterSettingsRoutes(apiRouter, s.settingsHandler)
 	handlers.RegisterCommandsRoutes(apiRouter, s.commandsHandler)
 	handlers.RegisterUpdateRoutes(apiRouter, s.updateHandler)
+	handlers.RegisterXkeenRoutes(apiRouter, s.xkeenInfoHandler, s.speedBalancerHandler)
 
 	// Subscription routes
 	if s.subscriptionHandler != nil {

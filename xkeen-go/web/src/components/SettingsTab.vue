@@ -9,6 +9,7 @@ import { checkNetwork } from '../services/diagnostics.js';
 import { getProxyEntware, setProxyEntware } from '../services/routing.js';
 import { getAutoUpdate, updateAutoUpdate } from '../services/update.js';
 import { getChangelog } from '../services/changelog.js';
+import { getXkeenVersion, getSpeedBalancer, updateSpeedBalancer, getSpeedBalancerStatus } from '../services/xkeen.js';
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -27,6 +28,10 @@ const observatoryConcurrency = ref(false);
 // Auto-update (stable releases, 10-min check)
 const autoUpdate = ref(true);
 const changelogData = ref(null);
+const sbAvailable = ref(false);
+const sbSettings = ref({ enabled: false, interval: 15, hysteresis: 25, balancer: 'default-balancer', max_time: 8, test_url: '' });
+const sbSaving = ref(false);
+const sbStatusLoading = ref(false);
 
 async function loadMetricsPort() {
 	metricsLoading.value = true;
@@ -85,6 +90,44 @@ async function loadChangelog() {
 
 function changelogIcon(type) {
 	return { feat: '✨', fix: '🐛', tweak: '🔧' }[type] || '•';
+}
+
+async function loadSpeedBalancer() {
+	try {
+		const [ver, sb] = await Promise.all([getXkeenVersion(), getSpeedBalancer()]);
+		sbAvailable.value = ver.info?.speed_balancer_supported || false;
+		if (sb.settings) sbSettings.value = { ...sbSettings.value, ...sb.settings };
+	} catch {
+		/* non-critical */
+	}
+}
+
+async function saveSpeedBalancer() {
+	sbSaving.value = true;
+	try {
+		await updateSpeedBalancer(sbSettings.value);
+		app.showToast(i18n.t('settings.saved'), 'success');
+	} catch (e) {
+		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
+	} finally {
+		sbSaving.value = false;
+	}
+}
+
+async function loadSpeedBalancerStatus() {
+	sbStatusLoading.value = true;
+	try {
+		const res = await getSpeedBalancerStatus();
+		app.modal.output = res.output || '';
+		app.modal.error = res.error || '';
+		app.modal.command = 'xkeen -sb status';
+		app.modal.show = true;
+		app.commandComplete = true;
+	} catch (e) {
+		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
+	} finally {
+		sbStatusLoading.value = false;
+	}
 }
 
 async function saveMetricsPort() {
@@ -268,6 +311,7 @@ onMounted(() => {
 	loadObservatoryConcurrency();
 	loadAutoUpdate();
 	loadChangelog();
+	loadSpeedBalancer();
 	app.loadXraySettings();
   checkAWG();
   loadProxyEntware();
@@ -486,6 +530,58 @@ onMounted(() => {
             <div class="s-row s-row-actions">
               <button :disabled="autoApplySaving" class="btn btn-primary" @click="saveAutoApply()">
                 {{ autoApplySaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Speed Balancer (conditional on XKeen version) -->
+        <section v-if="sbAvailable" id="speed-balancer" class="s-section">
+          <h2 class="s-title">⚡ {{ i18n.t('settings.sb_title') }}</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.sb_enable') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.sb_enable_desc') }}</div>
+              </div>
+              <label class="toggle">
+                <input v-model="sbSettings.enabled" type="checkbox">
+                <span class="toggle-slider" />
+              </label>
+            </div>
+            <div class="sb-grid">
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('settings.sb_interval') }}</span>
+                <span class="s-row-desc">{{ i18n.t('settings.sb_interval_desc') }}</span>
+                <input v-model.number="sbSettings.interval" type="number" min="1" class="s-input">
+              </label>
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('settings.sb_hysteresis') }}</span>
+                <span class="s-row-desc">{{ i18n.t('settings.sb_hysteresis_desc') }}</span>
+                <input v-model.number="sbSettings.hysteresis" type="number" min="0" class="s-input">
+              </label>
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('settings.sb_maxtime') }}</span>
+                <span class="s-row-desc">{{ i18n.t('settings.sb_maxtime_desc') }}</span>
+                <input v-model.number="sbSettings.max_time" type="number" min="1" class="s-input">
+              </label>
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('settings.sb_balancer') }}</span>
+                <span class="s-row-desc">{{ i18n.t('settings.sb_balancer_desc') }}</span>
+                <input v-model="sbSettings.balancer" type="text" class="s-input">
+              </label>
+            </div>
+            <div class="s-row s-row-col">
+              <div class="s-row-label">{{ i18n.t('settings.sb_test_url') }}</div>
+              <div class="s-row-desc">{{ i18n.t('settings.sb_test_url_desc') }}</div>
+              <input v-model="sbSettings.test_url" type="text" class="s-input" style="width:100%; font-family:var(--font-mono)">
+            </div>
+            <div class="s-row s-row-actions">
+              <button :disabled="sbSaving" class="btn btn-primary" @click="saveSpeedBalancer()">
+                {{ sbSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
+              </button>
+              <button :disabled="sbStatusLoading" class="btn" @click="loadSpeedBalancerStatus()">
+                {{ sbStatusLoading ? i18n.t('settings.loading') : i18n.t('settings.sb_status') }}
               </button>
             </div>
           </div>
@@ -734,6 +830,29 @@ onMounted(() => {
 }
 .s-row:last-child {
   border-bottom: none;
+}
+.s-row-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.sb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-rows: auto auto auto;
+  gap: 4px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--menu-border);
+}
+.sb-field {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 3;
+  row-gap: 2px;
+}
+.sb-field .s-input {
+  width: 100%;
+  align-self: end;
 }
 .s-row-main {
   min-width: 0;

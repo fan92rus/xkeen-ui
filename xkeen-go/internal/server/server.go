@@ -51,6 +51,8 @@ type Server struct {
 	metricsPort        atomic.Int64
 	commandRegistry    *handlers.CommandRegistry
 	installHandler     *handlers.InstallHandler
+	xkeenInfoHandler   *handlers.XkeenInfoHandler
+	speedBalancerHandler *handlers.SpeedBalancerHandler
 	awgHandler         *handlers.AWGHandler
 	diagnosticsHandler *handlers.DiagnosticsHandler
 
@@ -95,6 +97,12 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	// Initialize handlers from handlers package
 	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.XkeenConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, configPath, cfg.Mode)
 	s.serviceHandler = handlers.NewServiceHandler()
+	if cfg.XkeenVersionFile != "" {
+		s.xkeenInfoHandler = handlers.NewXkeenInfoHandlerWithFile(cfg.XkeenVersionFile)
+	} else {
+		s.xkeenInfoHandler = handlers.NewXkeenInfoHandler()
+	}
+	s.speedBalancerHandler = handlers.NewSpeedBalancerHandler(filepath.Join(cfg.XkeenConfigDir, "xkeen.json"), cfg.XkeenBinary)
 	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
 		func(port int) {
 			// Option E: enabling/disabling metrics is a data update, not a

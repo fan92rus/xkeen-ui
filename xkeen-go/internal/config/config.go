@@ -27,6 +27,11 @@ type Config struct {
 	// XkeenBinary is the path or name of the xkeen binary.
 	XkeenBinary string `json:"xkeen_binary"`
 
+	// XkeenVersionFile is the path to the XKeen variable file that contains
+	// the installed version string. Empty = use default
+	// (/opt/sbin/.xkeen/01_info/01_info_variable.sh).
+	XkeenVersionFile string `json:"xkeen_version_file"`
+
 	// MihomoConfigDir is the directory containing Mihomo configuration files.
 	MihomoConfigDir string `json:"mihomo_config_dir"`
 

@@ -2,6 +2,11 @@
   "unreleased": [
     {
       "type": "feat",
+      "text": "Настройки балансировщика по скорости (speed balancer) в UI с определением версии XKeen",
+      "important": true
+    },
+    {
+      "type": "feat",
       "text": "Редактор xkeen.json в файловом дереве",
       "important": false
     }
