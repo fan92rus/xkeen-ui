@@ -41,6 +41,11 @@
       "important": false
     },
     {
+      "type": "feat",
+      "text": "Routing: add geosite/geoip .dat file parser endpoint (GET /api/routing/categories) for autocomplete suggestions",
+      "important": false
+    },
+    {
       "type": "fix",
       "text": "Branch-builds: выбор master с выключенным dev теперь показывает стабильный релиз; StartUpdate с branch отдаёт ошибку вместо молчаливого скачивания stable",
       "important": false

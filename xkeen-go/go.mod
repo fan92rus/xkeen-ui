@@ -16,3 +16,4 @@ require (
 require golang.org/x/net v0.56.0
 
 require golang.org/x/sys v0.46.0 // indirect
+require google.golang.org/protobuf v1.36.11 // indirect
