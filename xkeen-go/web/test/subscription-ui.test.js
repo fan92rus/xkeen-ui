@@ -92,7 +92,17 @@ async function goToSubscriptions() {
 }
 
 async function getSubCount() {
-    return page.evaluate(() => document.querySelectorAll('.sub-card').length);
+    return page.evaluate(() =>
+        document.querySelectorAll('.sub-card:not(.builtin)').length
+    );
+}
+
+// Returns the total card count including builtin.
+// Used only for display/reporting, not for CRUD assertions.
+async function getTotalCardCount() {
+    return page.evaluate(() =>
+        document.querySelectorAll('.sub-card').length
+    );
 }
 
 async function test(name, fn) {
@@ -190,13 +200,17 @@ async function main() {
     });
 
     // Clean up any leftover subs from previous runs
+    // Builtin subscriptions (AWG, is_builtin=true) are system-managed
+    // and have no delete button — skip them.
     await test('Clean slate', async () => {
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < 10; i++) {
-            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
+            const remaining = await page.evaluate(() =>
+                document.querySelectorAll('.sub-card:not(.builtin)').length
+            );
             if (remaining === 0) break;
             await page.evaluate(() => {
-                const cards = document.querySelectorAll('.sub-card');
+                const cards = document.querySelectorAll('.sub-card:not(.builtin)');
                 const last = cards[cards.length - 1];
                 if (!last) return;
                 for (const b of last.querySelectorAll('.acts button')) {
@@ -206,7 +220,7 @@ async function main() {
             await wait(600);
         }
         await page.evaluate(() => { window.confirm = window.__origConfirm; });
-        const count = await getSubCount();
+        const count = await getSubCount(); // only non-builtin
         assert(count === 0, `Should be clean, got ${count}`);
     });
 
@@ -430,12 +444,14 @@ async function main() {
         }, 'https://example.com/e2e-test');
         await waitFor(async () => (await getSubCount()) > 0, 5000);
         const count = await getSubCount();
-        assert(count >= 1, `Should have 1+ sub, got ${count}`);
+        assert(count >= 1, `Should have 1+ non-builtin subs, got ${count}`);
     });
 
     await test('Subscription cards have name and action buttons', async () => {
         const info = await page.evaluate(() => {
-            const cards = document.querySelectorAll('.sub-card');
+            // Skip builtin subscriptions (e.g. AWG) — they only have
+            // a refresh button, no edit/delete.
+            const cards = document.querySelectorAll('.sub-card:not(.builtin)');
             return Array.from(cards).map(c => ({
                 name: c.querySelector('.name')?.textContent,
                 btnCount: c.querySelectorAll('.acts button').length,
@@ -451,7 +467,7 @@ async function main() {
 
     await test('Edit toggles inline form', async () => {
         const clicked = await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card')[0];
+            const card = document.querySelector('.sub-card:not(.builtin)');
             if (!card) return false;
             for (const b of card.querySelectorAll('.acts button')) {
                 if (b.title === 'Редактировать') { b.click(); return true; }
@@ -494,7 +510,7 @@ async function main() {
 
     await test('Fetch button clicks without error', async () => {
         const result = await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card')[0];
+            const card = document.querySelector('.sub-card:not(.builtin)');
             if (!card) return { clicked: false, reason: 'no card' };
             const btns = card.querySelectorAll('.acts button');
             const titles = Array.from(btns).map(b => b.title);
@@ -512,7 +528,7 @@ async function main() {
         const before = await getSubCount();
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         await page.evaluate(() => {
-            const card = document.querySelectorAll('.sub-card')[0];
+            const card = document.querySelector('.sub-card:not(.builtin)');
             if (!card) return;
             for (const b of card.querySelectorAll('.acts button')) {
                 if (b.title === 'Удалить') { b.click(); return; }
@@ -556,10 +572,12 @@ async function main() {
         if (count === 0) return;
         await page.evaluate(() => { window.__origConfirm = window.confirm; window.confirm = () => true; });
         for (let i = 0; i < count + 2; i++) {
-            const remaining = await page.evaluate(() => document.querySelectorAll('.sub-card').length);
+            const remaining = await page.evaluate(() =>
+                document.querySelectorAll('.sub-card:not(.builtin)').length
+            );
             if (remaining === 0) break;
             await page.evaluate(() => {
-                const cards = document.querySelectorAll('.sub-card');
+                const cards = document.querySelectorAll('.sub-card:not(.builtin)');
                 const last = cards[cards.length - 1];
                 if (!last) return;
                 for (const b of last.querySelectorAll('.acts button')) {
