@@ -146,6 +146,13 @@ async function main() {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 900 });
     page.setDefaultTimeout(10000);
+
+    // Force Russian locale so button titles match our test expectations
+    // regardless of the CI runner's Accept-Language header.
+    await page.evaluateOnNewDocument(() => {
+        localStorage.setItem('xkeen_lang', 'ru');
+    });
+
     page.on('pageerror', err => jsErrors.push(err.message));
 
     // Collect ALL console errors — not just CSP. Vue warnings, JSON parse
