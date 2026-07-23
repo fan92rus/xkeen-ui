@@ -1,6 +1,5 @@
 // Composable: WebSocket lifecycle for live metrics.
 import { ref, shallowReactive } from 'vue';
-import { error as logError } from '../utils/logger.js';
 import { MetricsWS } from '../services/metrics.js';
 
 /**

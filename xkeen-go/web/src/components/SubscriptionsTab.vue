@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, reactive, computed, onMounted, nextTick } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { useI18nStore } from '../stores/i18n.js';
 import * as api from '../services/subscription.js';
@@ -47,7 +47,6 @@ const activeProfile = computed(() => {
     return profiles.value.find(p => p.id === activeProfileId.value) || profiles.value.find(p => p.is_default) || null;
 });
 
-const dp = computed(() => profiles.value.find(p => p.is_default) || null);
 
 const filters = computed(() => {
     const p = activeProfile.value;
@@ -599,31 +598,39 @@ onMounted(async () => {
             <div class="strat-settings">
               <label class="ss-field">
                 <span class="ss-label" :title="i18n.t('subs.ss_expected_tip')">expected</span>
-                <input type="number" min="0" class="ss-input ss-num"
-                       :value="strategySettings.expected || ''"
-                       :placeholder="i18n.t('subs.ss_expected_ph')"
-                       @change="setStrategySetting('expected', $event)" />
+                <input
+                  type="number" min="0" class="ss-input ss-num"
+                  :value="strategySettings.expected || ''"
+                  :placeholder="i18n.t('subs.ss_expected_ph')"
+                  @change="setStrategySetting('expected', $event)"
+                >
               </label>
               <label class="ss-field">
                 <span class="ss-label" :title="i18n.t('subs.ss_maxrtt_tip')">maxRTT</span>
-                <input type="text" class="ss-input"
-                       :value="strategySettings.max_rtt || ''"
-                       placeholder="2s"
-                       @change="setStrategySetting('max_rtt', $event)" />
+                <input
+                  type="text" class="ss-input"
+                  :value="strategySettings.max_rtt || ''"
+                  placeholder="2s"
+                  @change="setStrategySetting('max_rtt', $event)"
+                >
               </label>
               <label class="ss-field">
                 <span class="ss-label" :title="i18n.t('subs.ss_tolerance_tip')">tolerance</span>
-                <input type="number" min="0" max="1" step="0.05" class="ss-input ss-num"
-                       :value="strategySettings.tolerance || ''"
-                       placeholder="0.1"
-                       @change="setStrategySetting('tolerance', $event)" />
+                <input
+                  type="number" min="0" max="1" step="0.05" class="ss-input ss-num"
+                  :value="strategySettings.tolerance || ''"
+                  placeholder="0.1"
+                  @change="setStrategySetting('tolerance', $event)"
+                >
               </label>
               <label class="ss-field ss-field-wide">
                 <span class="ss-label" :title="i18n.t('subs.ss_baselines_tip')">baselines</span>
-                <input type="text" class="ss-input"
-                       :value="(strategySettings.baselines || []).join(', ')"
-                       placeholder="500ms, 1s"
-                       @change="setStrategySetting('baselines', $event)" />
+                <input
+                  type="text" class="ss-input"
+                  :value="(strategySettings.baselines || []).join(', ')"
+                  placeholder="500ms, 1s"
+                  @change="setStrategySetting('baselines', $event)"
+                >
               </label>
             </div>
           </div>
@@ -792,15 +799,15 @@ onMounted(async () => {
           </div>
           <details>
             <summary>outbounds.json</summary>
-            <pre class="preview-json" v-html="formatJson(previewData.outbounds)" />
+            <pre class="preview-json" v-html="formatJson(previewData.outbounds)" /> <!-- eslint-disable-line vue/no-v-html -- content escaped via json-format.js -->
           </details>
           <details>
             <summary>routing.json</summary>
-            <pre class="preview-json" v-html="formatJson(previewData.routing)" />
+            <pre class="preview-json" v-html="formatJson(previewData.routing)" /> <!-- eslint-disable-line vue/no-v-html -- content escaped via json-format.js -->
           </details>
           <details v-if="previewData.observatory">
             <summary>observatory.json</summary>
-            <pre class="preview-json" v-html="formatJson(previewData.observatory)" />
+            <pre class="preview-json" v-html="formatJson(previewData.observatory)" /> <!-- eslint-disable-line vue/no-v-html -- content escaped via json-format.js -->
           </details>
         </div>
         <div class="modal-footer">

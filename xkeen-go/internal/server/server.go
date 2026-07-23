@@ -52,9 +52,10 @@ type Server struct {
 	commandRegistry    *handlers.CommandRegistry
 	installHandler     *handlers.InstallHandler
 	xkeenInfoHandler   *handlers.XkeenInfoHandler
-	speedBalancerHandler *handlers.SpeedBalancerHandler
-	awgHandler         *handlers.AWGHandler
-	diagnosticsHandler *handlers.DiagnosticsHandler
+	speedBalancerHandler     *handlers.SpeedBalancerHandler
+	awgHandler               *handlers.AWGHandler
+	diagnosticsHandler        *handlers.DiagnosticsHandler
+	routingCategoriesHandler  *handlers.RoutingCategoriesHandler
 
 	// Shutdown state
 	shutdown    bool
@@ -200,6 +201,9 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 
 	// Diagnostics handler (network exit-IP check via fetcher cascade)
 	s.diagnosticsHandler = handlers.NewDiagnosticsHandler(subFetcher)
+
+	// Routing categories — parses geosite/geoip .dat files for autocomplete
+	s.routingCategoriesHandler = handlers.NewRoutingCategoriesHandler(cfg.XrayConfigDir)
 
 	// Helper: build tag→remarks from current proxy cache
 	buildProxyNames := func() map[string]string {

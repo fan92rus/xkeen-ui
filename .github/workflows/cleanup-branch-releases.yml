@@ -42,18 +42,37 @@ jobs:
 
           # Sanitize branch name to match tag format from CI
           SANITIZED=$(echo "${BRANCH_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+
+          # Safety: refuse to run if SANITIZED is empty or too short
+          if [ -z "${SANITIZED}" ] || [ ${#SANITIZED} -lt 3 ]; then
+            echo "ERROR: Sanitized branch name is empty or too short ('${SANITIZED}'), aborting"
+            exit 1
+          fi
+
+          # Escape regex special characters in SANITIZED so that dots, +, etc.
+          # in branch names (e.g. fix/v1.0.1) don't become wildcards.
+          ESCAPED=$(echo "${SANITIZED}" | sed 's/[.+*?^${}()|[\]\\]/\\&/g')
+          echo "Sanitized: ${SANITIZED}"
+          echo "Escaped:   ${ESCAPED}"
+
           # Pattern: v*.*.*-dev.{sanitized}.{timestamp}
-          FILTER_PATTERN='-dev\.'"$SANITIZED"'\.'
+          FILTER_PATTERN='-dev\.'"$ESCAPED"'\.'
           echo "Filter pattern: ${FILTER_PATTERN}"
 
-          # Find and delete matching releases
+          # Find matching releases
+          echo "Matching releases:"
           gh release list --limit 100 --json tagName,isPrerelease | \
             jq -r --arg pat "$FILTER_PATTERN" '.[] | select(.tagName | test($pat)) | .tagName' | \
-            while read tag; do
+            tee /tmp/matching-tags.txt
+
+          # Delete matches
+          while read tag; do
+            if [ -n "$tag" ]; then
               echo "Deleting release: $tag"
               gh release delete "$tag" --yes 2>/dev/null || true
               git push --delete origin "$tag" 2>/dev/null || true
-            done
+            fi
+          done < /tmp/matching-tags.txt
 
           echo "Cleanup complete"
 

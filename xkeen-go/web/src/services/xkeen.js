@@ -1,6 +1,6 @@
 // services/xkeen.js - XKeen service control
 
-import { get, post, request, put } from './api.js';
+import { get, post, put } from './api.js';
 
 export async function start() {
     return post('/api/xkeen/start', {});

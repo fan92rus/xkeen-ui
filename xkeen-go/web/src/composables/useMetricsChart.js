@@ -1,5 +1,5 @@
 // Composable: Chart.js lifecycle for the metrics speed graph.
-import { ref, nextTick } from 'vue';
+import { ref } from 'vue';
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Legend, Tooltip } from 'chart.js';
 import { fmtRate, fmtRateShort } from '../utils/metrics-format.js';
 

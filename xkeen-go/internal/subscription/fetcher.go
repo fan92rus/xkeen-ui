@@ -272,6 +272,12 @@ func (f *Fetcher) FetchWithCascade(ctx context.Context, subURL string) (*FetchRe
 
 	// HAPP-encrypted links need special handling: decrypt first,
 	// then HTTP fetch with X-HWID header, then convert sing-box JSON.
+	//
+	// KNOWN LIMITATION: HAPP fetches always use a direct HTTP connection
+	// (bypassing any configured SOCKS5 proxy) because the HAPP server
+	// requires the X-HWID hardware identifier header and a specific
+	// User-Agent. This means the real subscription URL is fetched from
+	// the host's IP, not through the tunnel.
 	if strings.HasPrefix(subURL, "happ://") {
 		return f.fetchHAPP(ctx, subURL)
 	}

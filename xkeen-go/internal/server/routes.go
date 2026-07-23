@@ -72,6 +72,9 @@ func (s *Server) setupRoutes() {
 	handlers.RegisterLogsWSRoute(s.router, s.logsHandler, s.middleware.AuthMiddleware)
 	handlers.RegisterInteractiveWSRoute(s.router, s.interactiveHandler, s.middleware.AuthMiddleware)
 
+	// Routing categories endpoint (geosite/geoip .dat file parsing)
+	apiRouter.Handle("/routing/categories", s.routingCategoriesHandler).Methods("GET")
+
 	// CSRF token endpoint
 	apiRouter.HandleFunc("/auth/csrf", s.getCSRFToken).Methods("GET")
 

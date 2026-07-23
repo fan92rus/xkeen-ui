@@ -8,6 +8,7 @@
     "awg": "AWG",
     "settings": "Настройки",
     "subscriptions": "Подписки",
+    "routing": "🔀 Routing",
     "light_theme": "Светлая тема",
     "dark_theme": "Тёмная тема",
     "switch_light": "Переключить на светлую тему",
@@ -422,5 +423,30 @@
     "proxy_client": "Управление прокси-клиентом",
     "info": "Информация",
     "other": "Прочее"
+  },
+  "routing": {
+    "dns": "DNS:",
+    "templates": "📦 Шаблоны",
+    "add_rule": "+ Правило",
+    "save": "💾 Сохранить",
+    "cancel": "↩ Отменить",
+    "info": "💡 Правила применяются <strong>сверху вниз</strong>. Первое совпадение выигрывает. Перетаскивайте за <span class=\"drag-hint\">⋮⋮</span> для смены приоритета.",
+    "name_label": "Название",
+    "domains_label": "Домены и сайты",
+    "ips_label": "IP-адреса и подсети",
+    "protocol_label": "Протокол",
+    "port_label": "Порт",
+    "action_label": "Действие",
+    "done": "Готово",
+    "delete_confirm": "❓Точно?",
+    "drag_hint": "Перетащите для смены приоритета",
+    "new_rule": "Новое правило",
+    "loading": "Загрузка...",
+    "domain_placeholder": "домен.com или geosite:google или regexp:...",
+    "ip_placeholder": "1.2.3.0/24 или geoip:ru",
+    "port_placeholder": "* или 443 или 19200-19400",
+    "name_placeholder": "Например: RU Direct",
+    "action_errors": "Некоторые правила указывают на несуществующие выходные точки",
+    "save_action_error": "Исправьте ошибки в действиях перед сохранением"
   }
 }

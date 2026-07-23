@@ -1,5 +1,46 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "feat",
+      "text": "Routing: add geosite/geoip .dat file parser endpoint (GET /api/routing/categories) for autocomplete suggestions",
+      "important": false
+    },
+    {
+      "type": "fix",
+      "text": "Routing UI: восстановлены поля сервера (xkeenInfoHandler, speedBalancerHandler), потерянные при ребейзе ветки",
+      "important": false
+    },
+    {
+      "type": "feat",
+      "text": "Routing: визуальный редактор правил маршрутизации с drag-and-drop, шаблонами, автодополнением категорий из .dat файлов",
+      "important": true
+    },
+    {
+      "type": "fix",
+      "text": "Routing: сохранение type:field в правилах Xray (без него Xray игнорирует правила), поддержка IPv6 CIDR, кеш путей инвалидируется после сохранения",
+      "important": true
+    },
+    {
+      "type": "tweak",
+      "text": "Вкладка «Маршрутизация» перенесена на вторую позицию (сразу после «Редактор»)",
+      "important": false
+    },
+    {
+      "type": "tweak",
+      "text": "ESLint: устранены все 242 warning'а (форматирование, неиспользуемые импорты, мёртвый код)",
+      "important": false
+    },
+    {
+      "type": "tweak",
+      "text": "Визуальный редактор маршрутизации: фиксированная ширина карточек (700px), box-sizing, без сдвигов при раскрытии",
+      "important": false
+    },
+    {
+      "type": "fix",
+      "text": "Drag-and-drop в редакторе маршрутов: consistent insertion — правило всегда вставляется перед таргетом независимо от направления перетаскивания",
+      "important": false
+    }
+  ],
   "releases": [
     {
       "version": "0.12.0",
