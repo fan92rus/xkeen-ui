@@ -30,10 +30,16 @@ import (
 // embeddedKeys holds the 36 RSA-4096 private keys for crypt5, indexed by
 // 8-char marker. Embedded at compile time so the binary is self-contained.
 //
+// NOTE: These keys are intentionally embedded in the public repo. HAPP
+// subscription links are encrypted client-side — the client must possess
+// the private key to decrypt them. This is by-design for this protocol;
+// the keys are not per-user secrets.
+//
 //go:embed assets/crypt5-keys.json
 var embeddedKeys []byte
 
 // embeddedCrypt1to4Keys holds the 4 PKCS#1 RSA private keys for crypt1–4.
+// Same rationale as embeddedKeys — intentionally public.
 //
 //go:embed assets/crypt-keys.json
 var embeddedCrypt1to4Keys []byte

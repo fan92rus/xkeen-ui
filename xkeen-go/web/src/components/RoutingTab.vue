@@ -404,7 +404,11 @@ function onDrop(targetIdx) {
 	const srcIdx = dragIdx.value;
 	if (srcIdx === null || srcIdx === targetIdx) return;
 	const moved = rawRules.value.splice(srcIdx, 1)[0];
-	rawRules.value.splice(targetIdx, 0, moved);
+	// After removing srcIdx, elements after it shift down by 1.
+	// Adjust insertion point so the rule always lands *before* the target,
+	// regardless of drag direction (consistent UX).
+	const insertAt = srcIdx < targetIdx ? targetIdx - 1 : targetIdx;
+	rawRules.value.splice(insertAt, 0, moved);
 	markDirty();
 	onDragEnd();
 }
