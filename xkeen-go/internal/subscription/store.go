@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -669,19 +668,23 @@ func (s *Store) ensureHAPPHWID() error {
 	}
 
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	groups := make([]string, 5)
-	for i := range groups {
-		g := make([]byte, 5)
-		for j := range g {
-			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
-			if err != nil {
-				return fmt.Errorf("generating HWID: %w", err)
-			}
-			g[j] = chars[n.Int64()]
-		}
-		groups[i] = string(g)
+	const charCount = 36
+
+	// Generate 25 random bytes — one per character — then map to chars.
+	raw := make([]byte, 25)
+	if _, err := rand.Read(raw); err != nil {
+		return fmt.Errorf("generating HWID: %w", err)
 	}
-	s.config.HAPPHWID = strings.Join(groups, "-")
+
+	var buf strings.Builder
+	buf.Grow(29) // 5×5 chars + 4 hyphens
+	for i, b := range raw {
+		if i > 0 && i%5 == 0 {
+			buf.WriteByte('-')
+		}
+		buf.WriteByte(chars[int(b)%charCount])
+	}
+	s.config.HAPPHWID = buf.String()
 
 	if err := s.saveConfig(s.config); err != nil {
 		return fmt.Errorf("saving HWID: %w", err)

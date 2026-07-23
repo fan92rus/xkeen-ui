@@ -47,10 +47,6 @@ type streamSettings struct {
 	Reality struct {
 		Fingerprint string `json:"fingerprint"`
 	} `json:"realitySettings"`
-	Hysteria struct {
-		Auth    string `json:"auth"`
-		Version int    `json:"version"`
-	} `json:"hysteriaSettings"`
 }
 
 type vlessSettings struct {
