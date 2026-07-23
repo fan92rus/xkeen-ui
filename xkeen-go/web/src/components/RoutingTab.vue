@@ -613,7 +613,9 @@ async function save() {
 
 <style scoped>
 .routing-container {
-	max-width: 780px;
+	max-width: 700px;
+	width: 100%;
+	min-width: 0;
 	margin: 0 auto;
 	padding: 12px;
 }
@@ -691,6 +693,7 @@ async function save() {
 	border: 1px solid var(--border, #2a2a3e);
 	border-radius: 8px;
 	width: 100%;
+	min-width: 0;
 	box-sizing: border-box;
 	transition: border-color 0.15s, opacity 0.15s;
 }
@@ -805,7 +808,7 @@ async function save() {
 	flex-direction: column;
 	gap: 12px;
 }
-.rt-field { display: flex; flex-direction: column; gap: 4px; }
+.rt-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rt-field-label {
 	font-size: 11px;
 	color: var(--text-muted);
@@ -836,6 +839,7 @@ async function save() {
 	flex-wrap: wrap;
 	gap: 4px;
 	min-height: 4px;
+	min-width: 0;
 }
 .rt-tag {
 	display: inline-flex;
