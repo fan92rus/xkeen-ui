@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/net/proxy"
+
+	"github.com/fan92rus/xkeen-ui/internal/happ"
 )
 
 // Source constants describe how the last successful fetch was delivered.
@@ -37,6 +40,11 @@ type Fetcher struct {
 	// inbound (typically Xray on 127.0.0.1). When empty, fetches go direct.
 	proxyURL string
 	proxyMu  sync.RWMutex
+
+	// HAPPHWID is the hardware ID sent as X-HWID header when fetching
+	// HAPP-encrypted subscriptions (happ://crypt5/ links). If empty,
+	// the server returns placeholder data.
+	HAPPHWID string
 }
 
 // NewFetcher creates a Fetcher with a 30-second timeout, Hiddify User-Agent,
@@ -262,6 +270,12 @@ func (f *Fetcher) FetchWithCascade(ctx context.Context, subURL string) (*FetchRe
 		return nil, fmt.Errorf("subscription URL is empty")
 	}
 
+	// HAPP-encrypted links need special handling: decrypt first,
+	// then HTTP fetch with X-HWID header, then convert sing-box JSON.
+	if strings.HasPrefix(subURL, "happ://") {
+		return f.fetchHAPP(ctx, subURL)
+	}
+
 	f.proxyMu.RLock()
 	pURL := f.proxyURL
 	f.proxyMu.RUnlock()
@@ -349,6 +363,76 @@ func (f *Fetcher) Fetch(ctx context.Context, subURL string) ([]*ProxyEntry, erro
 		return nil, err
 	}
 	return result.Entries, nil
+}
+
+// fetchHAPP handles happ://crypt5/ links: decrypts the link, fetches
+// the real subscription URL with X-HWID header, and converts the
+// sing-box JSON response to xkeen ProxyEntry values.
+func (f *Fetcher) fetchHAPP(ctx context.Context, subURL string) (*FetchResult, error) {
+	d, err := happ.NewDecryptorEmbedded()
+	if err != nil {
+		return nil, fmt.Errorf("happ: initialising decryptor: %w", err)
+	}
+
+	realURL, err := d.Decrypt(subURL)
+	if err != nil {
+		return nil, fmt.Errorf("happ: decrypting link: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, realURL, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("happ: creating request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "happ")
+	req.Header.Set("Accept", "*/*")
+	if f.HAPPHWID != "" {
+		req.Header.Set("X-HWID", f.HAPPHWID)
+	}
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("happ: fetching subscription: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("happ: server returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("happ: reading response: %w", err)
+	}
+
+	var servers []happ.Server
+	if err := json.Unmarshal(data, &servers); err != nil {
+		return nil, fmt.Errorf("happ: parsing server list: %w", err)
+	}
+
+	happEntries := happ.ConvertAllServers(servers)
+	if len(happEntries) == 0 {
+		return nil, fmt.Errorf("happ: no usable proxies found in response")
+	}
+
+	entries := make([]*ProxyEntry, 0, len(happEntries))
+	for _, he := range happEntries {
+		entries = append(entries, &ProxyEntry{
+			Protocol:    he.Protocol,
+			Fingerprint: he.Fingerprint,
+			TLSSecurity: he.TLSSecurity,
+			Network:     he.Network,
+			Outbound:    he.Outbound,
+			RawURI:      he.Tag,
+			Remarks:     he.Remarks,
+			Country:     he.Country,
+		})
+	}
+
+	GenerateTags(entries)
+
+	return &FetchResult{Entries: entries, Source: SourceDirect}, nil
 }
 
 // dialDNSServers tries multiple DNS servers with per-server timeouts.

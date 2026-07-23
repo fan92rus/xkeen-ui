@@ -1,6 +1,11 @@
 {
   "unreleased": [
     {
+      "type": "feat",
+      "text": "Поддержка HAPP (happ://crypt5/) подписок: расшифровка, загрузка, конвертация sing-box → ProxyEntry",
+      "important": true
+    },
+    {
       "type": "fix",
       "text": "Жёсткий лимит размера тела запроса (5MB) для защиты от DoS",
       "important": true
