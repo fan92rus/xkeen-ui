@@ -1,7 +1,7 @@
 // stores/update.js - Update check and install state.
 
 import { defineStore } from 'pinia';
-import { ref, reactive } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import * as updateService from '../services/update.js';
 import { useAppStore } from './app.js';
 import { useI18nStore } from './i18n.js';
@@ -12,7 +12,12 @@ export const useUpdateStore = defineStore('update', () => {
 	const currentBranch = ref('');
 	const availableBranches = ref([]);
 	const selectedBranch = ref('');
-	const checkDevUpdates = ref(false);
+	// Persist dev channel state
+	const savedDev = localStorage.getItem('xkeen_checkDevUpdates');
+	const checkDevUpdates = ref(savedDev === 'true');
+	watch(checkDevUpdates, (val) => {
+		localStorage.setItem('xkeen_checkDevUpdates', val);
+	});
 
 	const updateInfo = reactive({
 		update_available: false,
