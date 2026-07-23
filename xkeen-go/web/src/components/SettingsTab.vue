@@ -234,6 +234,9 @@ const sections = [
   { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
 ];
 
+// Lookup map for O(1) access by ID — eliminates fragile array index references
+const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+
 const awg = ref({ installed: false, interfaces: '', installing: false, uninstalling: false, error: '', progress: '' });
 
 async function checkAWG() {
@@ -332,8 +335,8 @@ onMounted(() => {
       <!-- Content -->
       <div class="s-content">
         <!-- Mode -->
-        <section :id="sections[0].id" class="s-section">
-          <h2 class="s-title">{{ sections[0].icon }} {{ sections[0].label }}</h2>
+        <section :id="secMap.mode.id" class="s-section">
+          <h2 class="s-title">{{ secMap.mode.icon }} {{ secMap.mode.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -367,8 +370,8 @@ onMounted(() => {
         </section>
 
         <!-- Logging -->
-        <section :id="sections[1].id" class="s-section">
-          <h2 class="s-title">{{ sections[1].icon }} {{ sections[1].label }}</h2>
+        <section :id="secMap.logging.id" class="s-section">
+          <h2 class="s-title">{{ secMap.logging.icon }} {{ secMap.logging.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -385,8 +388,8 @@ onMounted(() => {
         </section>
 
         <!-- Updates -->
-        <section :id="sections[2].id" class="s-section">
-          <h2 class="s-title">{{ sections[2].icon }} {{ sections[2].label }}</h2>
+        <section :id="secMap.updates.id" class="s-section">
+          <h2 class="s-title">{{ secMap.updates.icon }} {{ secMap.updates.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -485,8 +488,8 @@ onMounted(() => {
         </section>
 
         <!-- Security -->
-        <section :id="sections[3].id" class="s-section">
-          <h2 class="s-title">{{ sections[3].icon }} {{ sections[3].label }}</h2>
+        <section :id="secMap.security.id" class="s-section">
+          <h2 class="s-title">{{ secMap.security.icon }} {{ secMap.security.label }}</h2>
           <div class="s-block">
             <div class="pw-grid">
               <input
@@ -514,8 +517,8 @@ onMounted(() => {
         </section>
 
         <!-- Auto-Apply -->
-        <section :id="sections[4].id" class="s-section">
-          <h2 class="s-title">{{ sections[4].icon }} {{ sections[4].label }}</h2>
+        <section :id="secMap.autoapply.id" class="s-section">
+          <h2 class="s-title">{{ secMap.autoapply.icon }} {{ secMap.autoapply.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -627,8 +630,8 @@ onMounted(() => {
         </section>
 
         <!-- Network diagnostics -->
-        <section id="network" class="s-section">
-          <h2 class="s-title">🔍 {{ i18n.t('settings.net_section') }}</h2>
+        <section :id="secMap.network.id" class="s-section">
+          <h2 class="s-title">{{ secMap.network.icon }} {{ secMap.network.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -662,8 +665,8 @@ onMounted(() => {
         </section>
 
         <!-- Routing (proxy_entware) -->
-        <section id="routing" class="s-section">
-          <h2 class="s-title">🔀 {{ i18n.t('settings.routing_section') }}</h2>
+        <section :id="secMap.routing.id" class="s-section">
+          <h2 class="s-title">{{ secMap.routing.icon }} {{ secMap.routing.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-content">
@@ -692,8 +695,8 @@ onMounted(() => {
         </section>
 
         <!-- Metrics -->
-        <section :id="sections[5].id" class="s-section">
-          <h2 class="s-title">{{ sections[5].icon }} {{ sections[5].label }}</h2>
+        <section :id="secMap.metrics.id" class="s-section">
+          <h2 class="s-title">{{ secMap.metrics.icon }} {{ secMap.metrics.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
@@ -734,8 +737,8 @@ onMounted(() => {
         </section>
 
         <!-- AWG -->
-        <section :id="sections[6].id" class="s-section">
-          <h2 class="s-title">{{ sections[6].icon }} {{ sections[6].label }}</h2>
+        <section :id="secMap.awg.id" class="s-section">
+          <h2 class="s-title">{{ secMap.awg.icon }} {{ secMap.awg.label }}</h2>
 
           <!-- Install -->
           <div class="s-block">
@@ -763,8 +766,8 @@ onMounted(() => {
         </section>
 
         <!-- Language -->
-        <section :id="sections[7].id" class="s-section">
-          <h2 class="s-title">{{ sections[7].icon }} {{ sections[7].label }}</h2>
+        <section :id="secMap.lang.id" class="s-section">
+          <h2 class="s-title">{{ secMap.lang.icon }} {{ secMap.lang.label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
