@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - '**'         # all branches
-      - '!master'    # except master — merge to master doesn't need a dev build
+      - '**'
     paths:
       - 'xkeen-go/**'
       - '.github/workflows/build-dev.yml'
