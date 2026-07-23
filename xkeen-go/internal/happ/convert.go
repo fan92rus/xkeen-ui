@@ -3,6 +3,7 @@ package happ
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 )
 
 // ProxyEntry is a parsed proxy entry from a HAPP subscription response.
@@ -227,7 +228,11 @@ func (ob *singBoxOutbound) RawSettings() json.RawMessage {
 		"xudpConcurrency": 16,
 		"xudpProxyUDP443": "reject",
 	}
-	data, _ := json.Marshal(m)
+	data, err := json.Marshal(m)
+	if err != nil {
+		log.Printf("happ: RawSettings marshal error: %v", err)
+		return nil
+	}
 	return data
 }
 

@@ -432,6 +432,10 @@ func (f *Fetcher) parseHAPPJSON(data []byte) ([]*ProxyEntry, error) {
 	}
 
 	happEntries := happ.ConvertAllServers(servers)
+	if len(happEntries) == 0 {
+		return nil, fmt.Errorf("happ: no supported outbounds found in JSON")
+	}
+
 	entries := make([]*ProxyEntry, 0, len(happEntries))
 	for _, he := range happEntries {
 		entries = append(entries, &ProxyEntry{
