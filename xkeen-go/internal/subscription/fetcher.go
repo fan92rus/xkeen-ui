@@ -2,7 +2,6 @@ package subscription
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -406,31 +405,12 @@ func (f *Fetcher) fetchHAPP(ctx context.Context, subURL string) (*FetchResult, e
 		return nil, fmt.Errorf("happ: reading response: %w", err)
 	}
 
-	var servers []happ.Server
-	if err := json.Unmarshal(data, &servers); err != nil {
-		return nil, fmt.Errorf("happ: parsing server list: %w", err)
+	// HAPP server returns a standard subscription format (base64-encoded
+	// share URIs), not sing-box JSON. Use the normal parsing pipeline.
+	entries, err := ParseSubscriptionContent(data)
+	if err != nil {
+		return nil, fmt.Errorf("happ: parsing subscription: %w", err)
 	}
-
-	happEntries := happ.ConvertAllServers(servers)
-	if len(happEntries) == 0 {
-		return nil, fmt.Errorf("happ: no usable proxies found in response")
-	}
-
-	entries := make([]*ProxyEntry, 0, len(happEntries))
-	for _, he := range happEntries {
-		entries = append(entries, &ProxyEntry{
-			Protocol:    he.Protocol,
-			Fingerprint: he.Fingerprint,
-			TLSSecurity: he.TLSSecurity,
-			Network:     he.Network,
-			Outbound:    he.Outbound,
-			RawURI:      he.Tag,
-			Remarks:     he.Remarks,
-			Country:     he.Country,
-		})
-	}
-
-	GenerateTags(entries)
 
 	return &FetchResult{Entries: entries, Source: SourceDirect}, nil
 }
