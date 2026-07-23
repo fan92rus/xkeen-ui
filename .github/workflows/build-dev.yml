@@ -206,14 +206,25 @@ jobs:
           else
             # Feature branch: v0.11.4-dev.feat-x.1724921234  (dev + slug + timestamp)
             SANITIZED=$(echo "$BRANCH_SLUG" | sed 's/[^a-zA-Z0-9._-]/-/g')
-            FILTER_PATTERN='-dev\\.'"$SANITIZED"'\\.'
+            # Safety: refuse to run if SANITIZED is empty or too short
+            if [ -z "${SANITIZED}" ] || [ ${#SANITIZED} -lt 3 ]; then
+              echo "ERROR: Sanitized branch name is empty or too short ('${SANITIZED}'), aborting"
+              exit 1
+            fi
+            # Escape regex special characters so dots in branch names (e.g. fix/v1.0.1)
+            # don't become wildcards in the jq regex.
+            ESCAPED=$(echo "${SANITIZED}" | sed 's/[.+*?^${}()|[\]\\]/\\&/g')
+            FILTER_PATTERN='-dev\\.'"$ESCAPED"'\\.'
           fi
+          echo "Filter pattern: ${FILTER_PATTERN}"
           gh release list --limit 100 --json tagName,isPrerelease | \
             jq -r --arg pat "$FILTER_PATTERN" '.[] | select(.tagName | test($pat)) | .tagName' | \
             while read tag; do
-              echo "Deleting old dev release: $tag"
-              gh release delete "$tag" --yes 2>/dev/null || true
-              git push --delete origin "$tag" 2>/dev/null || true
+              if [ -n "$tag" ]; then
+                echo "Deleting old dev release: $tag"
+                gh release delete "$tag" --yes 2>/dev/null || true
+                git push --delete origin "$tag" 2>/dev/null || true
+              fi
             done
 
       - name: Create dev pre-release
