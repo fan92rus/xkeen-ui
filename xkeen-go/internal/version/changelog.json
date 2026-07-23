@@ -29,8 +29,14 @@
       "type": "tweak",
       "text": "E2E-тест теперь отслеживает CSP-нарушения, упавшие API-запросы (4xx/5xx), потерянные ресурсы (CSS/JS 404), console.error и unhandled rejection — и падает при любой из этих ошибок",
       "important": false
+    },
+    {
+      "type": "fix",
+      "text": "Branch-builds: выбор master с выключенным dev теперь показывает стабильный релиз; StartUpdate с branch отдаёт ошибку вместо молчаливого скачивания stable",
+      "important": false
     }
-  ],  "releases": [
+  ],
+  "releases": [
     {
       "version": "0.11.4",
       "date": "2026-07-22",

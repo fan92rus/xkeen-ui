@@ -1,3 +1,4 @@
+// Package handlers provides HTTP handlers for XKEEN-UI API endpoints.
 package handlers
 
 import (
@@ -43,18 +44,18 @@ type UpdateHandler struct {
 	updateScript string
 	downloadURL  string
 
-	httpClient        *http.Client
-	apiBaseURL        string
+	httpClient         *http.Client
+	apiBaseURL         string
 	maxDownloadRetries int
-	retryBackoff      func(attempt int) time.Duration
+	retryBackoff       func(attempt int) time.Duration
 
 	mu            sync.Mutex
 	devReleaseTag string
 	updateMu      sync.Mutex
 
-	branchesCache   *BranchListResponse
+	branchesCache    *BranchListResponse
 	branchesCachedAt time.Time
-	branchesCacheMu sync.Mutex
+	branchesCacheMu  sync.Mutex
 }
 
 // NewUpdateHandler creates a new UpdateHandler.
@@ -82,6 +83,7 @@ func quadraticBackoff(attempt int) time.Duration {
 
 // ── Types ──
 
+// GitHubRelease represents a GitHub release fetched from the API.
 type GitHubRelease struct {
 	TagName     string `json:"tag_name"`
 	Name        string `json:"name"`
@@ -91,6 +93,7 @@ type GitHubRelease struct {
 	Prerelease  bool   `json:"prerelease"`
 }
 
+// CheckUpdateResponse is returned by GET /api/update/check.
 type CheckUpdateResponse struct {
 	CurrentVersion  string `json:"current_version"`
 	LatestVersion   string `json:"latest_version"`
@@ -104,6 +107,7 @@ type CheckUpdateResponse struct {
 	Error           string `json:"error,omitempty"`
 }
 
+// BranchInfo describes one branch with a dev build available.
 type BranchInfo struct {
 	Name            string `json:"name"`
 	LatestVersion   string `json:"latest_version"`
@@ -112,6 +116,7 @@ type BranchInfo struct {
 	PublishedAt     string `json:"published_at"`
 }
 
+// BranchListResponse is returned by GET /api/update/branches.
 type BranchListResponse struct {
 	CurrentBranch string       `json:"current_branch"`
 	Branches      []BranchInfo `json:"branches"`
@@ -130,11 +135,12 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	var release *GitHubRelease
 	var err error
 
-	if branch != "" {
+	switch {
+	case branch != "" && branch != "master":
 		release, err = h.getLatestForBranch(r.Context(), branch)
-	} else if checkPrerelease {
+	case checkPrerelease:
 		release, err = h.getLatestPrerelease(r.Context())
-	} else {
+	default:
 		release, err = h.getLatestStableRelease(r.Context())
 	}
 
@@ -173,26 +179,32 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 // CheckBranches lists all branches with available dev builds.
 // GET /api/update/branches
 func (h *UpdateHandler) CheckBranches(w http.ResponseWriter, r *http.Request) {
-	resp := h.getBranchesCached()
+	resp := h.getBranchesCached(r.Context())
 	respondJSON(w, http.StatusOK, resp)
 }
 
-func (h *UpdateHandler) getBranchesCached() *BranchListResponse {
+func (h *UpdateHandler) getBranchesCached(ctx context.Context) *BranchListResponse {
+	// Fast path: check under RLock
 	h.branchesCacheMu.Lock()
-	defer h.branchesCacheMu.Unlock()
-
 	if h.branchesCache != nil && time.Since(h.branchesCachedAt) < 60*time.Second {
-		return h.branchesCache
+		resp := h.branchesCache
+		h.branchesCacheMu.Unlock()
+		return resp
 	}
+	h.branchesCacheMu.Unlock()
 
-	resp := h.fetchBranches()
+	// Fetch fresh data without holding the lock (includes HTTP call)
+	resp := h.fetchBranches(ctx)
+
+	h.branchesCacheMu.Lock()
 	h.branchesCache = resp
 	h.branchesCachedAt = time.Now()
+	h.branchesCacheMu.Unlock()
 	return resp
 }
 
-func (h *UpdateHandler) fetchBranches() *BranchListResponse {
-	releases, err := h.fetchAllReleases(context.Background())
+func (h *UpdateHandler) fetchBranches(ctx context.Context) *BranchListResponse {
+	releases, err := h.fetchAllReleases(ctx)
 	if err != nil {
 		return &BranchListResponse{
 			CurrentBranch: version.GetBuildBranch(),
@@ -367,12 +379,8 @@ func extractBranchFromRelease(release GitHubRelease) string {
 	if len(sub) < 2 {
 		return "master"
 	}
-	// If exactly 2 parts and first is numeric (timestamp), it's master
-	if len(sub) == 2 {
-		if _, err := strconv.ParseInt(sub[0], 10, 64); err == nil {
-			return "master"
-		}
-	}
+	// Master: v0.11.4-dev.<TIMESTAMP> (1 part after -dev.)
+	// Feature: v0.11.4-dev.<BRANCH>.<TIMESTAMP> (2+ parts)
 	// Branch name = everything except the last part (timestamp)
 	return strings.Join(sub[:len(sub)-1], ".")
 }
@@ -451,15 +459,18 @@ func extractTimestamp(pre string) int64 {
 
 // ── Progress / StartUpdate ──
 
+// ProgressData sent as an SSE event during an update.
 type ProgressData struct {
 	Percent int    `json:"percent"`
 	Status  string `json:"status"`
 }
 
+// ErrorData sent as an SSE event when an update fails.
 type ErrorData struct {
 	Error string `json:"error"`
 }
 
+// CompleteData sent as the final SSE event when an update finishes.
 type CompleteData struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
@@ -487,14 +498,20 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 	downloadURL := h.downloadURL
 	if branch != "" {
-		// Any branch that is not empty means a feature branch — download its prerelease
+		// Non-master branch: download the branch's prerelease
 		brCtx, brCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer brCancel()
 		brRelease, brErr := h.getLatestForBranch(brCtx, branch)
-		if brErr == nil && brRelease != nil {
-			downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
-				h.githubRepo, brRelease.TagName, h.binaryName)
+		if brErr != nil {
+			sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to fetch release for branch %s: %v", branch, brErr)})
+			return
 		}
+		if brRelease == nil {
+			sendEvent("error", ErrorData{Error: fmt.Sprintf("No release found for branch %s", branch)})
+			return
+		}
+		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
+			h.githubRepo, brRelease.TagName, h.binaryName)
 	} else if prerelease {
 		tag := h.getDevReleaseTag()
 		if tag != "" {
@@ -522,7 +539,7 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2: Set permissions
 	sendEvent("progress", ProgressData{Percent: 45, Status: "setting permissions"})
-	//nolint:gosec
+	//nolint:gosec // binary needs execute permission to run as a service
 	if err := os.Chmod(tmpFile, 0o755); err != nil {
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to set permissions: %v", err)})
 		return

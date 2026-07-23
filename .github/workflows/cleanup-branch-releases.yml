@@ -1,9 +1,9 @@
 name: Cleanup Branch Releases
 
+# The `delete` event fires for both branch and tag deletions.
+# The step-level ref_type check filters to branches only.
 on:
   delete:
-    branches:
-      - '**'
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

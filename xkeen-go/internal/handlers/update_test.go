@@ -1348,7 +1348,7 @@ func TestExtractBranchFromRelease_NoDev(t *testing.T) {
 }
 
 func TestCheckBranches_Empty(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
 	}))
@@ -1357,7 +1357,7 @@ func TestCheckBranches_Empty(t *testing.T) {
 	h := NewUpdateHandler()
 	h.apiBaseURL = server.URL
 
-	resp := h.fetchBranches()
+	resp := h.fetchBranches(context.Background())
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
 	}
@@ -1368,7 +1368,7 @@ func TestCheckBranches_Empty(t *testing.T) {
 
 func TestCheckBranches_MultipleBranches(t *testing.T) {
 	// Simulate GitHub response with 2 dev releases on different branches
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 			{"tag_name":"v0.11.4-dev.feature-a.2000000000","prerelease":true,"body":"| Branch | feature-a |","html_url":"https://example.com/a","published_at":"2026-01-01T00:00:00Z"},
@@ -1380,7 +1380,7 @@ func TestCheckBranches_MultipleBranches(t *testing.T) {
 	h := NewUpdateHandler()
 	h.apiBaseURL = server.URL
 
-	resp := h.fetchBranches()
+	resp := h.fetchBranches(context.Background())
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
 	}
@@ -1431,7 +1431,7 @@ func TestGetLatestForBranch_NoMatchFallsBackToStable(t *testing.T) {
 }
 
 func TestCheckBranches_MasterFirst(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 			{"tag_name":"v0.11.4-dev.feat-x.2000000002","prerelease":true,"body":"| Branch | feat-x |","html_url":"https://example.com/x","published_at":"2026-01-03T00:00:00Z"},
@@ -1443,7 +1443,7 @@ func TestCheckBranches_MasterFirst(t *testing.T) {
 	h := NewUpdateHandler()
 	h.apiBaseURL = server.URL
 
-	resp := h.fetchBranches()
+	resp := h.fetchBranches(context.Background())
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
 	}
