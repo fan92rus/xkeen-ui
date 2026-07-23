@@ -1103,6 +1103,13 @@ onMounted(() => {
 }
 
 /* ── Cron hint ── */
+.s-hint {
+  font-size: 12px;
+  color: var(--text-gray, #999);
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
 .s-cron-hint code {
   background: var(--background);
   padding: 1px 4px;

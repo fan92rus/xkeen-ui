@@ -1396,6 +1396,40 @@ func TestCheckBranches_MultipleBranches(t *testing.T) {
 	}
 }
 
+func TestGetLatestForBranch_NoMatchFallsBackToStable(t *testing.T) {
+	// When no prerelease matches the requested branch, should fall back to stable
+	calledStable := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/releases/latest") {
+			calledStable = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tag_name":"v0.11.4","prerelease":false}`))
+		} else {
+			// Return only prereleases for other branches - none for "feat-other"
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"tag_name":"v0.11.5-dev.master.2000000001","prerelease":true,"body":"| Branch | master |"},
+				{"tag_name":"v0.11.5-dev.feat-a.2000000000","prerelease":true,"body":"| Branch | feat-a |"}
+			]`))
+		}
+	}))
+	defer server.Close()
+
+	h := NewUpdateHandler()
+	h.apiBaseURL = server.URL
+
+	release, err := h.getLatestForBranch(context.Background(), "feat-other")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if release.TagName != "v0.11.4" {
+		t.Errorf("expected stable fallback v0.11.4, got %q", release.TagName)
+	}
+	if !calledStable {
+		t.Error("stable endpoint was never called")
+	}
+}
+
 func TestCheckBranches_MasterFirst(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

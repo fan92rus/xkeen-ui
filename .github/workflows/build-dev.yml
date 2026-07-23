@@ -193,14 +193,23 @@ jobs:
             if [ $(wc -w < "$file") -ne 2 ]; then echo "ERROR: Invalid checksum format in $file"; exit 1; fi
           done
 
-      - name: Delete old dev releases
+      - name: Delete old dev releases for this branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH_SLUG="${{ steps.branch.outputs.branch }}"
+          if [ "$BRANCH_SLUG" = "master" ]; then
+            # Master: v0.11.4-dev.1724921234  (dev + digits only)
+            FILTER_PATTERN='-dev\\.\\d+$'
+          else
+            # Feature branch: v0.11.4-dev.feat-x.1724921234  (dev + slug + timestamp)
+            SANITIZED=$(echo "$BRANCH_SLUG" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            FILTER_PATTERN='-dev\\.'"$SANITIZED"'\\.'
+          fi
           gh release list --limit 100 --json tagName,isPrerelease | \
-            jq -r '.[] | select(.tagName | test("-dev\\.")) | .tagName' | \
+            jq -r --arg pat "$FILTER_PATTERN" '.[] | select(.tagName | test($pat)) | .tagName' | \
             while read tag; do
               echo "Deleting old dev release: $tag"
               gh release delete "$tag" --yes 2>/dev/null || true

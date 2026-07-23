@@ -21,8 +21,11 @@ export async function getBranches() {
  * @returns {Promise<Object|void>}
  */
 export function startUpdate(options = {}) {
-    const { prerelease = false, onProgress, onComplete, onError } = options;
-    const url = prerelease ? '/api/update/start?prerelease=true' : '/api/update/start';
+    const { prerelease = false, branch = '', onProgress, onComplete, onError } = options;
+    const params = [];
+    if (prerelease) params.push('prerelease=true');
+    if (branch) params.push('branch=' + encodeURIComponent(branch));
+    const url = params.length ? '/api/update/start?' + params.join('&') : '/api/update/start';
     return api
         .request(url, { method: 'POST' })
         .then((res) => readSSEStream(res, { onProgress, onComplete, onError }));

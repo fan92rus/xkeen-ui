@@ -67,6 +67,7 @@ export const useUpdateStore = defineStore('update', () => {
 		try {
 			await updateService.startUpdate({
 				prerelease: checkDevUpdates.value,
+				branch: selectedBranch.value,
 				onProgress: (data) => { updateProgress.value = data.percent; updateStatus.value = data.status; },
 				onComplete: (data) => {
 					app.showToast(data.message || i18n.t('toast.update_done'), 'success');

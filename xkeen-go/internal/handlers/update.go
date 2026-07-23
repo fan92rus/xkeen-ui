@@ -218,12 +218,14 @@ func (h *UpdateHandler) fetchBranches() *BranchListResponse {
 	var featureBranches []BranchInfo
 	var masterBranch *BranchInfo
 
+	currentVersion := version.GetVersion()
 	for name, rel := range branchMap {
 		bi := BranchInfo{
-			Name:          name,
-			LatestVersion: rel.TagName,
-			ReleaseURL:    rel.HTMLURL,
-			PublishedAt:   rel.PublishedAt,
+			Name:            name,
+			LatestVersion:   rel.TagName,
+			UpdateAvailable: h.compareVersions(currentVersion, rel.TagName) < 0,
+			ReleaseURL:      rel.HTMLURL,
+			PublishedAt:     rel.PublishedAt,
 		}
 		if name == "master" {
 			masterBranch = &bi
@@ -481,9 +483,19 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	prerelease := r.URL.Query().Get("prerelease") == "true"
+	branch := r.URL.Query().Get("branch")
 
 	downloadURL := h.downloadURL
-	if prerelease {
+	if branch != "" {
+		// Any branch that is not empty means a feature branch — download its prerelease
+		brCtx, brCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer brCancel()
+		brRelease, brErr := h.getLatestForBranch(brCtx, branch)
+		if brErr == nil && brRelease != nil {
+			downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
+				h.githubRepo, brRelease.TagName, h.binaryName)
+		}
+	} else if prerelease {
 		tag := h.getDevReleaseTag()
 		if tag != "" {
 			downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
