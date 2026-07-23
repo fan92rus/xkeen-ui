@@ -34,6 +34,11 @@
       "type": "fix",
       "text": "Branch-builds: выбор master с выключенным dev теперь показывает стабильный релиз; StartUpdate с branch отдаёт ошибку вместо молчаливого скачивания stable",
       "important": false
+    },
+    {
+      "type": "fix",
+      "text": "Branch selector теперь всегда виден; включение Dev-канала загружает список веток",
+      "important": false
     }
   ],
   "releases": [

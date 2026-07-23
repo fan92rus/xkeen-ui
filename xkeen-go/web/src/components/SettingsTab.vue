@@ -416,16 +416,17 @@ onMounted(() => {
                 <div class="s-row-desc">{{ i18n.t('settings.dev_channel_desc') }}</div>
               </div>
               <label class="toggle">
-                <input v-model="app.checkDevUpdates" type="checkbox">
+                <input v-model="app.checkDevUpdates" type="checkbox" @change="app.checkUpdate()">
                 <span class="toggle-slider" />
               </label>
             </div>
-            <div v-if="app.availableBranches.length > 1" class="s-row">
+            <div class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label">{{ i18n.t('settings.branch') }}</div>
                 <div class="s-row-desc">{{ i18n.t('settings.branch_desc') }}</div>
               </div>
               <select v-model="app.selectedBranch" class="s-select" @change="app.checkUpdate()">
+                <option v-if="!app.availableBranches.length" value="" disabled>{{ i18n.t('settings.loading') }}</option>
                 <option v-for="b in app.availableBranches" :key="b.name" :value="b.name">
                   {{ b.name }} ({{ b.latest_version }})
                 </option>
