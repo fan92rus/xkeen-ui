@@ -153,6 +153,11 @@ type Config struct {
 	// AWGConfigs tracks AWG interface configurations with persistent marks.
 	AWGConfigs []AWGConfig `json:"awg_configs"`
 
+	// HAPPHWID is a persistent random device identifier sent as X-HWID
+	// when fetching HAPP-encrypted subscriptions (happ://crypt5/ links).
+	// Auto-generated on first load if empty.
+	HAPPHWID string `json:"hap_hwid"`
+
 	// AutoApply configures automatic proxy refresh + apply on a cron schedule.
 	AutoApplyEnabled bool   `json:"auto_apply_enabled"` // enable/disable
 	AutoApplyCron    string `json:"auto_apply_cron"`    // cron expression, e.g. "0 */6 * * *"

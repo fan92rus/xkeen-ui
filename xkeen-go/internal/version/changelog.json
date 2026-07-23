@@ -1,6 +1,16 @@
 {
   "unreleased": [
     {
+      "type": "feat",
+      "text": "Поддержка HAPP (happ://crypt5/) подписок: расшифровка, загрузка, конвертация sing-box → ProxyEntry",
+      "important": true
+    },
+    {
+      "type": "tweak",
+      "text": "Авто-генерация постоянного HAPP HWID для happ://crypt5/ подписок",
+      "important": false
+    },
+    {
       "type": "fix",
       "text": "Жёсткий лимит размера тела запроса (5MB) для защиты от DoS",
       "important": true

@@ -158,6 +158,12 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	}
 	subFetcher := subscription.NewFetcher()
 
+	// Pass HAPP HWID to the fetcher so happ://crypt5/ subscriptions
+	// can authenticate with the server.
+	if subStore != nil {
+		subFetcher.HAPPHWID = subStore.GetConfig().HAPPHWID
+	}
+
 	// Auto-detect a local SOCKS5/HTTP inbound from the Xray config so that
 	// subscription fetches are routed through the VPN tunnel (avoids leaks
 	// and works around ISP blocking of the subscription host). Falls back

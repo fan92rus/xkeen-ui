@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,6 +54,11 @@ func NewStore(path string) (*Store, error) {
 
 	// Ensure built-in subscriptions exist
 	s.initBuiltinSubscriptions()
+
+	// Generate HAPP HWID on first load
+	if err := s.ensureHAPPHWID(); err != nil {
+		log.Printf("Warning: failed to ensure HAPP HWID: %v", err)
+	}
 
 	return s, nil
 }
@@ -647,6 +653,45 @@ func (s *Store) SetGeneratedAt(t time.Time) error {
 
 	s.config.GeneratedAt = t
 	return s.saveConfig(s.config)
+}
+
+// ---------- HAPP HWID ----------
+
+// ensureHAPPHWID generates a random HWID (XXXXX-XXXXX-XXXXX-XXXXX-XXXXX)
+// if none is set. Matches Windows ProductId format for compatibility.
+func (s *Store) ensureHAPPHWID() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.config.HAPPHWID != "" {
+		return nil
+	}
+
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const charCount = 36
+
+	// Generate 25 random bytes — one per character — then map to chars.
+	raw := make([]byte, 25)
+	if _, err := rand.Read(raw); err != nil {
+		return fmt.Errorf("generating HWID: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.Grow(29) // 5×5 chars + 4 hyphens
+	for i, b := range raw {
+		if i > 0 && i%5 == 0 {
+			buf.WriteByte('-')
+		}
+		buf.WriteByte(chars[int(b)%charCount])
+	}
+	s.config.HAPPHWID = buf.String()
+
+	if err := s.saveConfig(s.config); err != nil {
+		return fmt.Errorf("saving HWID: %w", err)
+	}
+
+	log.Printf("Generated HAPP HWID: %s", s.config.HAPPHWID)
+	return nil
 }
 
 // ---------- Helpers ----------
