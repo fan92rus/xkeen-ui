@@ -273,13 +273,14 @@ export const COMMON_GEOIP = [
 export function serializeRule(rule) {
 	const obj = { ...rule.raw }; // preserve unknown fields from original (protocol, routeOnly, etc.)
 	obj.type = 'field'; // required by Xray for field routing rules
-	obj.domain = rule.domains.map(d => d.raw);
+	delete obj.domain;
 	delete obj.ip;
 	delete obj.network;
 	delete obj.port;
 	delete obj.outboundTag;
 	delete obj.balancerTag;
 	delete obj.inboundTag;
+	if (rule.domains.length) obj.domain = rule.domains.map(d => d.raw);
 	if (rule.ips.length) obj.ip = rule.ips.map(ip => ip.raw);
 	if (rule.networks.length) obj.network = rule.networks.join(',');
 	if (rule.port) obj.port = rule.port;

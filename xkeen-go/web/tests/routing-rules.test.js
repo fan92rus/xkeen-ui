@@ -553,3 +553,148 @@ describe('hardcoded category lists', () => {
 		}
 	});
 });
+
+// ── Round-trip: normalizeRule → serializeRule preserves the config ──
+
+describe('round-trip: normalize → serialize', () => {
+	it('preserves a simple direct rule with geosite domain', () => {
+		const raw = {
+			type: 'field',
+			domain: ['geosite:category-ads'],
+			outboundTag: 'block',
+		};
+		const result = serializeRule(normalizeRule(raw, 0));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves a rule with multiple domain types (ext, geosite, domain)', () => {
+		const raw = {
+			type: 'field',
+			domain: ['ext:geosite.dat:google', 'geosite:youtube', 'domain:example.com'],
+			outboundTag: 'proxy',
+		};
+		const result = serializeRule(normalizeRule(raw, 1));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves IP rules (geoip, CIDR IPv4/IPv6)', () => {
+		const raw = {
+			type: 'field',
+			ip: ['geoip:ru', '10.0.0.0/8', '2001:db8::/32'],
+			outboundTag: 'direct',
+		};
+		const result = serializeRule(normalizeRule(raw, 2));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves network field (tcp,udp)', () => {
+		const raw = {
+			type: 'field',
+			network: 'tcp,udp',
+			outboundTag: 'proxy',
+		};
+		const result = serializeRule(normalizeRule(raw, 0));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves port and inboundTag fields', () => {
+		const raw = {
+			type: 'field',
+			port: '443',
+			inboundTag: ['socks-in'],
+			outboundTag: 'proxy',
+		};
+		const result = serializeRule(normalizeRule(raw, 0));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves balancerTag rules', () => {
+		const raw = {
+			type: 'field',
+			domain: ['geosite:netflix'],
+			balancerTag: 'cdn',
+		};
+		const result = serializeRule(normalizeRule(raw, 0));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves unknown/extra Xray fields (protocol, routeOnly)', () => {
+		const raw = {
+			type: 'field',
+			domain: ['geosite:category-ads'],
+			protocol: ['bittorrent'],
+			routeOnly: true,
+			outboundTag: 'block',
+		};
+		const result = serializeRule(normalizeRule(raw, 0));
+		expect(result).toEqual(raw);
+	});
+
+	it('preserves a full realistic routing rules array', () => {
+		const fullConfig = [
+			{
+				type: 'field',
+				domain: ['geosite:category-ads'],
+				outboundTag: 'block',
+			},
+			{
+				type: 'field',
+				domain: ['geosite:ru', 'geosite:category-gov-ru'],
+				ip: ['geoip:ru', 'geoip:private'],
+				outboundTag: 'direct',
+			},
+			{
+				type: 'field',
+				domain: ['ext:geosite.dat:google', 'ext:geosite.dat:youtube'],
+				network: 'tcp,udp',
+				port: '443,80',
+				outboundTag: 'proxy',
+			},
+			{
+				type: 'field',
+				balancerTag: 'cdn',
+				domain: ['geosite:netflix'],
+			},
+			{
+				type: 'field',
+				outboundTag: 'direct', // catch-all
+				inboundTag: ['socks-in', 'http-in'],
+			},
+		];
+
+		const roundTripped = fullConfig.map((r, i) => serializeRule(normalizeRule(r, i)));
+		expect(roundTripped).toEqual(fullConfig);
+	});
+
+	it('does not add empty arrays for missing optional fields', () => {
+		const raw = {
+			type: 'field',
+			outboundTag: 'direct',
+		};
+		const result = serializeRule(normalizeRule(raw, 0));
+		expect(result).toEqual(raw);
+		expect(result.ip).toBeUndefined();
+		expect(result.network).toBeUndefined();
+		expect(result.port).toBeUndefined();
+		expect(result.inboundTag).toBeUndefined();
+	});
+
+	it('is idempotent: double normalize → serialize produces the same result', () => {
+		const raw = {
+			type: 'field',
+			domain: ['geosite:category-ads', 'domain:example.com'],
+			ip: ['geoip:ru', '10.0.0.0/8'],
+			network: 'tcp,udp',
+			port: '443',
+			outboundTag: 'proxy',
+		};
+
+		// First round-trip
+		const firstPass = serializeRule(normalizeRule(raw, 0));
+		// Second round-trip on the result
+		const secondPass = serializeRule(normalizeRule(firstPass, 0));
+
+		expect(secondPass).toEqual(firstPass);
+		expect(firstPass).toEqual(raw);
+	});
+});

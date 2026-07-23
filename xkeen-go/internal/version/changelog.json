@@ -1,5 +1,11 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "fix",
+      "text": "Routing: сериализация больше не добавляет пустой массив domain: [] в правила без доменов (чистый round-trip normalize → serialize)",
+      "important": false
+    }
+  ],
   "releases": [
     {
       "version": "0.13.0",
