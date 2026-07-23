@@ -86,7 +86,7 @@ async function goToSubscriptions() {
     // Nav buttons: 0=editor, 1=routing, 2=subs, 3=logs, 4=settings, 5=commands, 6=metrics
     await page.evaluate(() => {
         const btns = document.querySelectorAll('.nav-btn');
-        if (btns[1]) btns[1].click();
+        if (btns[2]) btns[2].click();
     });
     await wait(1000);
 }
