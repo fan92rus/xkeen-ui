@@ -8,6 +8,8 @@ var (
 	BuildDate = "unknown"
 	// GitCommit is set via ldflags during build
 	GitCommit = "unknown"
+	// BuildBranch is set via ldflags during build
+	BuildBranch = "master"
 )
 
 // SetVersion initializes version info from main.
@@ -30,4 +32,9 @@ func GetBuildDate() string {
 // GetGitCommit returns the git commit hash.
 func GetGitCommit() string {
 	return GitCommit
+}
+
+// GetBuildBranch returns the git branch the binary was built from.
+func GetBuildBranch() string {
+	return BuildBranch
 }

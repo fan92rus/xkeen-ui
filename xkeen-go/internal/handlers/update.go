@@ -44,25 +44,18 @@ type UpdateHandler struct {
 	updateScript string
 	downloadURL  string
 
-	// httpClient is the HTTP client for GitHub API calls.
-	// Defaults to http.DefaultClient; overridable in tests.
-	httpClient *http.Client
-
-	// apiBaseURL is the GitHub API base URL.
-	// Defaults to "https://api.github.com"; overridable in tests.
-	apiBaseURL string
-
-	// maxDownloadRetries is the number of retry attempts for downloads.
-	// Defaults to 5; overridable in tests to avoid slow quadratic backoff.
+	httpClient         *http.Client
+	apiBaseURL         string
 	maxDownloadRetries int
-
-	// retryBackoff returns the wait duration before retry attempt n (1-based).
-	// Defaults to quadratic backoff (n² seconds); overridable in tests.
-	retryBackoff func(attempt int) time.Duration
+	retryBackoff       func(attempt int) time.Duration
 
 	mu            sync.Mutex
-	devReleaseTag string // Latest dev release tag for download
-	updateMu      sync.Mutex  // serializes manual + auto updates so they can't overlap
+	devReleaseTag string
+	updateMu      sync.Mutex
+
+	branchesCache    *BranchListResponse
+	branchesCachedAt time.Time
+	branchesCacheMu  sync.Mutex
 }
 
 // NewUpdateHandler creates a new UpdateHandler.
@@ -70,27 +63,27 @@ func NewUpdateHandler() *UpdateHandler {
 	repo := "fan92rus/xkeen-ui"
 	binaryName := utils.GetBinaryNameForArch()
 	return &UpdateHandler{
-		githubRepo:        repo,
-		binaryName:        binaryName,
-		installPath:       "/opt/bin/" + binaryName,
-		initScript:        "/opt/etc/init.d/xkeen-ui",
-		updateScript:      "/opt/etc/xkeen-ui/update.sh",
-		downloadURL:       fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
-		httpClient:        http.DefaultClient,
-		apiBaseURL:        "https://api.github.com",
+		githubRepo:         repo,
+		binaryName:         binaryName,
+		installPath:        "/opt/bin/" + binaryName,
+		initScript:         "/opt/etc/init.d/xkeen-ui",
+		updateScript:       "/opt/etc/xkeen-ui/update.sh",
+		downloadURL:        fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName),
+		httpClient:         http.DefaultClient,
+		apiBaseURL:         "https://api.github.com",
 		maxDownloadRetries: 5,
 		retryBackoff:       quadraticBackoff,
 	}
 }
 
-// quadraticBackoff returns n² seconds — the retry wait after attempt n.
-// e.g. attempts 1–5 → 1s, 4s, 9s, 16s, 25s.
 func quadraticBackoff(attempt int) time.Duration {
 	n := int64(attempt)
 	return time.Duration(n*n) * time.Second
 }
 
-// GitHubRelease represents a GitHub release.
+// ── Types ──
+
+// GitHubRelease represents a GitHub release fetched from the API.
 type GitHubRelease struct {
 	TagName     string `json:"tag_name"`
 	Name        string `json:"name"`
@@ -100,7 +93,7 @@ type GitHubRelease struct {
 	Prerelease  bool   `json:"prerelease"`
 }
 
-// CheckUpdateResponse is the response for CheckUpdate.
+// CheckUpdateResponse is returned by GET /api/update/check.
 type CheckUpdateResponse struct {
 	CurrentVersion  string `json:"current_version"`
 	LatestVersion   string `json:"latest_version"`
@@ -110,21 +103,44 @@ type CheckUpdateResponse struct {
 	ReleaseNotes    string `json:"release_notes,omitempty"`
 	Architecture    string `json:"architecture"`
 	BinaryName      string `json:"binary_name"`
+	Branch          string `json:"branch,omitempty"`
 	Error           string `json:"error,omitempty"`
 }
 
+// BranchInfo describes one branch with a dev build available.
+type BranchInfo struct {
+	Name            string `json:"name"`
+	LatestVersion   string `json:"latest_version"`
+	UpdateAvailable bool   `json:"update_available"`
+	ReleaseURL      string `json:"release_url"`
+	PublishedAt     string `json:"published_at"`
+}
+
+// BranchListResponse is returned by GET /api/update/branches.
+type BranchListResponse struct {
+	CurrentBranch string       `json:"current_branch"`
+	Branches      []BranchInfo `json:"branches"`
+	Error         string       `json:"error,omitempty"`
+}
+
+// ── CheckUpdate ──
+
 // CheckUpdate checks GitHub for the latest release.
-// GET /api/update/check?prerelease=true to check for dev builds
+// GET /api/update/check?prerelease=true&branch=feat/routing-ui
 func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	currentVersion := version.GetVersion()
 	checkPrerelease := r.URL.Query().Get("prerelease") == "true"
+	branch := r.URL.Query().Get("branch")
 
 	var release *GitHubRelease
 	var err error
 
-	if checkPrerelease {
+	switch {
+	case branch != "" && branch != "master":
+		release, err = h.getLatestForBranch(r.Context(), branch)
+	case checkPrerelease:
 		release, err = h.getLatestPrerelease(r.Context())
-	} else {
+	default:
 		release, err = h.getLatestStableRelease(r.Context())
 	}
 
@@ -134,14 +150,13 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 			Architecture:   runtime.GOARCH,
 			BinaryName:     h.binaryName,
 			Error:          err.Error(),
+			Branch:         branch,
 		})
 		return
 	}
 
-	// Compare versions
 	updateAvailable := h.compareVersions(currentVersion, release.TagName) < 0
 
-	// Store dev release tag for download if checking prerelease
 	if checkPrerelease && updateAvailable {
 		h.setDevReleaseTag(release.TagName)
 	}
@@ -155,16 +170,109 @@ func (h *UpdateHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 		ReleaseNotes:    release.Body,
 		Architecture:    runtime.GOARCH,
 		BinaryName:      h.binaryName,
+		Branch:          branch,
 	})
 }
 
-// getLatestStableRelease fetches the latest stable release from GitHub.
+// ── CheckBranches ──
+
+// CheckBranches lists all branches with available dev builds.
+// GET /api/update/branches
+func (h *UpdateHandler) CheckBranches(w http.ResponseWriter, r *http.Request) {
+	resp := h.getBranchesCached(r.Context())
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *UpdateHandler) getBranchesCached(ctx context.Context) *BranchListResponse {
+	// Fast path: check under RLock
+	h.branchesCacheMu.Lock()
+	if h.branchesCache != nil && time.Since(h.branchesCachedAt) < 60*time.Second {
+		resp := h.branchesCache
+		h.branchesCacheMu.Unlock()
+		return resp
+	}
+	h.branchesCacheMu.Unlock()
+
+	// Fetch fresh data without holding the lock (includes HTTP call)
+	resp := h.fetchBranches(ctx)
+
+	h.branchesCacheMu.Lock()
+	h.branchesCache = resp
+	h.branchesCachedAt = time.Now()
+	h.branchesCacheMu.Unlock()
+	return resp
+}
+
+func (h *UpdateHandler) fetchBranches(ctx context.Context) *BranchListResponse {
+	releases, err := h.fetchAllReleases(ctx)
+	if err != nil {
+		return &BranchListResponse{
+			CurrentBranch: version.GetBuildBranch(),
+			Error:         err.Error(),
+		}
+	}
+
+	// Group releases by branch, keep latest per branch
+	branchMap := make(map[string]*GitHubRelease)
+	for i := range releases {
+		if !releases[i].Prerelease || !strings.Contains(releases[i].TagName, "-dev.") {
+			continue
+		}
+		br := extractBranchFromRelease(releases[i])
+		if _, ok := branchMap[br]; ok {
+			// Keep the newer one (GitHub returns newest first, so first match wins)
+			continue
+		}
+		branchMap[br] = &releases[i]
+	}
+
+	// Collect feature branches (non-master) and master separately
+	var featureBranches []BranchInfo
+	var masterBranch *BranchInfo
+
+	currentVersion := version.GetVersion()
+	for name, rel := range branchMap {
+		bi := BranchInfo{
+			Name:            name,
+			LatestVersion:   rel.TagName,
+			UpdateAvailable: h.compareVersions(currentVersion, rel.TagName) < 0,
+			ReleaseURL:      rel.HTMLURL,
+			PublishedAt:     rel.PublishedAt,
+		}
+		if name == "master" {
+			masterBranch = &bi
+		} else {
+			featureBranches = append(featureBranches, bi)
+		}
+	}
+
+	// Sort feature branches alphabetically
+	for i := 1; i < len(featureBranches); i++ {
+		for j := i; j > 0 && featureBranches[j].Name < featureBranches[j-1].Name; j-- {
+			featureBranches[j], featureBranches[j-1] = featureBranches[j-1], featureBranches[j]
+		}
+	}
+
+	// Prepend master to the sorted feature branches
+	branches := make([]BranchInfo, 0, len(branchMap))
+	if masterBranch != nil {
+		branches = append(branches, *masterBranch)
+	}
+	branches = append(branches, featureBranches...)
+
+	return &BranchListResponse{
+		CurrentBranch: version.GetBuildBranch(),
+		Branches:      branches,
+	}
+}
+
+// ── GitHub API calls ──
+
 func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/repos/%s/releases/latest", h.apiBaseURL, h.githubRepo), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "XKEEN-UI/"+version.GetVersion())
 
@@ -183,17 +291,42 @@ func (h *UpdateHandler) getLatestStableRelease(ctx context.Context) (*GitHubRele
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return nil, fmt.Errorf("failed to parse release info: %v", err)
 	}
-
 	return &release, nil
 }
 
-// getLatestPrerelease fetches the latest dev prerelease from GitHub.
 func (h *UpdateHandler) getLatestPrerelease(ctx context.Context) (*GitHubRelease, error) {
+	return h.getLatestForBranch(ctx, "")
+}
+
+// getLatestForBranch fetches the latest prerelease for a specific branch.
+// If branch is empty, returns the latest prerelease regardless of branch.
+func (h *UpdateHandler) getLatestForBranch(ctx context.Context, branch string) (*GitHubRelease, error) {
+	releases, err := h.fetchAllReleases(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range releases {
+		if !releases[i].Prerelease || !strings.Contains(releases[i].TagName, "-dev.") {
+			continue
+		}
+		if branch == "" {
+			return &releases[i], nil
+		}
+		if extractBranchFromRelease(releases[i]) == branch {
+			return &releases[i], nil
+		}
+	}
+
+	// No matching prerelease found, try stable
+	return h.getLatestStableRelease(ctx)
+}
+
+func (h *UpdateHandler) fetchAllReleases(ctx context.Context) ([]GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/repos/%s/releases?per_page=100", h.apiBaseURL, h.githubRepo), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "XKEEN-UI/"+version.GetVersion())
 
@@ -212,31 +345,55 @@ func (h *UpdateHandler) getLatestPrerelease(ctx context.Context) (*GitHubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("failed to parse releases: %v", err)
 	}
+	return releases, nil
+}
 
-	// Find the latest dev prerelease
-	for i := range releases {
-		if releases[i].Prerelease && strings.Contains(releases[i].TagName, "-dev.") {
-			return &releases[i], nil
+// extractBranchFromRelease extracts branch name from a release.
+// Priority: release body (| Branch | xxx |) → tag name parsing → "master".
+func extractBranchFromRelease(release GitHubRelease) string {
+	// Try release body first
+	for _, line := range strings.Split(release.Body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "| Branch |") {
+			parts := strings.Split(line, "|")
+			if len(parts) >= 3 {
+				branch := strings.TrimSpace(parts[2])
+				if branch != "" {
+					return branch
+				}
+			}
 		}
 	}
 
-	// No dev prerelease found, fall back to latest stable
-	return h.getLatestStableRelease(ctx)
+	// Fallback: parse tag v{base}-dev.{sanitized-branch}.{ts}
+	tag := release.TagName
+	if !strings.Contains(tag, "-dev.") {
+		return "master"
+	}
+	parts := strings.SplitAfterN(tag, "-dev.", 2)
+	if len(parts) < 2 {
+		return "master"
+	}
+	suffix := parts[1] // "feat-routing-ui.1724921234" or "1724921234"
+	sub := strings.Split(suffix, ".")
+	if len(sub) < 2 {
+		return "master"
+	}
+	// Master: v0.11.4-dev.<TIMESTAMP> (1 part after -dev.)
+	// Feature: v0.11.4-dev.<BRANCH>.<TIMESTAMP> (2+ parts)
+	// Branch name = everything except the last part (timestamp)
+	return strings.Join(sub[:len(sub)-1], ".")
 }
 
-// compareVersions compares two version strings (semver-aware).
-// Pre-release versions (e.g., 1.2.3-dev.123) are considered lower than release (1.2.3).
-// Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+// ── Version comparison ──
+
 func (h *UpdateHandler) compareVersions(v1, v2 string) int {
-	// Remove 'v' prefix if present
 	v1 = strings.TrimPrefix(v1, "v")
 	v2 = strings.TrimPrefix(v2, "v")
 
-	// Split off pre-release suffix (e.g., "1.2.3-dev.123" -> "1.2.3", "dev.123")
 	base1, pre1 := splitPreRelease(v1)
 	base2, pre2 := splitPreRelease(v2)
 
-	// Compare numeric parts
 	parts1 := strings.Split(base1, ".")
 	parts2 := strings.Split(base2, ".")
 
@@ -253,7 +410,6 @@ func (h *UpdateHandler) compareVersions(v1, v2 string) int {
 		if i < len(parts2) {
 			n2, _ = strconv.Atoi(parts2[i])
 		}
-
 		if n1 < n2 {
 			return -1
 		} else if n1 > n2 {
@@ -261,25 +417,18 @@ func (h *UpdateHandler) compareVersions(v1, v2 string) int {
 		}
 	}
 
-	// Numeric parts are equal, check pre-release
-	// Pre-release (<base>-something) is lower than release (<base>)
 	if pre1 != "" && pre2 == "" {
-		return -1 // v1 is pre-release, v2 is release
+		return -1
 	}
 	if pre1 == "" && pre2 != "" {
-		return 1 // v1 is release, v2 is pre-release
+		return 1
 	}
-
-	// Both are pre-release, compare timestamps if format is "dev.<timestamp>"
 	if pre1 != "" && pre2 != "" {
 		return comparePrereleaseSuffixes(pre1, pre2)
 	}
-
 	return 0
 }
 
-// splitPreRelease splits version into base and pre-release suffix.
-// e.g., "1.2.3-dev.123" -> ("1.2.3", "dev.123")
 func splitPreRelease(v string) (base, pre string) {
 	idx := strings.Index(v, "-")
 	if idx == -1 {
@@ -288,14 +437,9 @@ func splitPreRelease(v string) (base, pre string) {
 	return v[:idx], v[idx+1:]
 }
 
-// comparePrereleaseSuffixes compares two pre-release suffixes.
-// Format expected: "dev.<timestamp>" or similar.
-// Returns: -1 if p1 < p2, 0 if equal, 1 if p1 > p2
 func comparePrereleaseSuffixes(p1, p2 string) int {
-	// Extract timestamp from "dev.1234567890" format
 	ts1 := extractTimestamp(p1)
 	ts2 := extractTimestamp(p2)
-
 	if ts1 < ts2 {
 		return -1
 	} else if ts1 > ts2 {
@@ -304,10 +448,7 @@ func comparePrereleaseSuffixes(p1, p2 string) int {
 	return 0
 }
 
-// extractTimestamp extracts numeric timestamp from pre-release suffix.
-// e.g., "dev.1709876543" -> 1709876543
 func extractTimestamp(pre string) int64 {
-	// Find the last segment after "."
 	parts := strings.Split(pre, ".")
 	if len(parts) == 0 {
 		return 0
@@ -316,28 +457,28 @@ func extractTimestamp(pre string) int64 {
 	return ts
 }
 
-// ProgressData represents progress information.
+// ── Progress / StartUpdate ──
+
+// ProgressData sent as an SSE event during an update.
 type ProgressData struct {
 	Percent int    `json:"percent"`
 	Status  string `json:"status"`
 }
 
-// ErrorData represents error information.
+// ErrorData sent as an SSE event when an update fails.
 type ErrorData struct {
 	Error string `json:"error"`
 }
 
-// CompleteData represents completion information.
+// CompleteData sent as the final SSE event when an update finishes.
 type CompleteData struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
 
 // StartUpdate starts the update process with SSE progress.
-// POST /api/update/start?prerelease=true to download dev build
+// POST /api/update/start?prerelease=true&branch=feat/routing-ui
 func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
-	// Apply a bounded SSE timeout so malicious clients cannot hold the
-	// connection open indefinitely; client disconnects still cancel promptly.
 	ctx, cancel := context.WithTimeout(r.Context(), SSEStreamTimeout)
 	defer cancel()
 
@@ -346,23 +487,39 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Helper to send SSE event. If the client disconnects, cancel the
-	// context so that ongoing downloads/commands abort promptly.
 	sendEvent := func(event string, data interface{}) {
 		if sse.Send(event, data) != nil {
 			cancel()
 		}
 	}
 
-	// Determine download URL
 	prerelease := r.URL.Query().Get("prerelease") == "true"
+	branch := r.URL.Query().Get("branch")
+
 	downloadURL := h.downloadURL
-	if devTag := h.getDevReleaseTag(); prerelease && devTag != "" {
+	if branch != "" {
+		// Non-master branch: download the branch's prerelease
+		brCtx, brCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer brCancel()
+		brRelease, brErr := h.getLatestForBranch(brCtx, branch)
+		if brErr != nil {
+			sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to fetch release for branch %s: %v", branch, brErr)})
+			return
+		}
+		if brRelease == nil {
+			sendEvent("error", ErrorData{Error: fmt.Sprintf("No release found for branch %s", branch)})
+			return
+		}
 		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
-			h.githubRepo, devTag, h.binaryName)
+			h.githubRepo, brRelease.TagName, h.binaryName)
+	} else if prerelease {
+		tag := h.getDevReleaseTag()
+		if tag != "" {
+			downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s",
+				h.githubRepo, tag, h.binaryName)
+		}
 	}
 
-	// Acquire update lock so manual + auto updates can't overlap.
 	if !h.updateMu.TryLock() {
 		sendEvent("error", ErrorData{Error: "another update is already in progress"})
 		return
@@ -382,7 +539,7 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2: Set permissions
 	sendEvent("progress", ProgressData{Percent: 45, Status: "setting permissions"})
-	//nolint:gosec // binary needs execute permission
+	//nolint:gosec // binary needs execute permission to run as a service
 	if err := os.Chmod(tmpFile, 0o755); err != nil {
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to set permissions: %v", err)})
 		return
@@ -403,19 +560,12 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	sendEvent("progress", ProgressData{Percent: 60, Status: "verified"})
 
 	// Step 4: Launch update script in background
-	// The script will wait for this process to terminate, then replace the binary
 	sendEvent("progress", ProgressData{Percent: 70, Status: "preparing update"})
 
 	currentPID := os.Getpid()
-	// Pass binary name to update script so it can find the correct files.
-	// Use a subshell with stdio redirected to the log file instead of nohup,
-	// because nohup is not reliably available on BusyBox/Keenetic.
-	// The subshell ( ... & ) properly backgrounds the process and detaches it
-	// from the terminal, equivalent to a double-fork.
 	shellCmd := fmt.Sprintf("(sh %s %s %d </dev/null >>/opt/var/log/xkeen-ui.log 2>&1 &)", h.updateScript, h.binaryName, currentPID)
 	updateCmd := exec.Command("sh", "-c", shellCmd)
 	if err := updateCmd.Run(); err != nil {
-		// Clean up temp file on error
 		_ = os.Remove(tmpFile)
 		sendEvent("error", ErrorData{Error: fmt.Sprintf("Failed to start update script: %v", err)})
 		return
@@ -423,15 +573,12 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Update script started, current process %d will terminate", currentPID)
 
-	// Step 5: Notify client and schedule shutdown
 	sendEvent("progress", ProgressData{Percent: 90, Status: "restarting"})
 	sendEvent("complete", CompleteData{
 		Success: true,
 		Message: "Update downloaded. Service is restarting...",
 	})
 
-	// Give SSE response time to be sent, then trigger graceful shutdown
-	// The update script will replace the binary and restart the service
 	go func() {
 		time.Sleep(1 * time.Second)
 		log.Printf("Update: graceful shutdown requested")
@@ -442,13 +589,13 @@ func (h *UpdateHandler) StartUpdate(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// downloadFile downloads a file from URL to path.
+// ── Download helpers ──
+
 func (h *UpdateHandler) downloadFile(ctx context.Context, path, url string) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return err
 	}
-
 	req.Header.Set("User-Agent", "XKEEN-UI/"+version.GetVersion())
 
 	resp, err := h.httpClient.Do(req)
@@ -471,68 +618,48 @@ func (h *UpdateHandler) downloadFile(ctx context.Context, path, url string) erro
 	return err
 }
 
-// downloadWithChecksum downloads binary and verifies SHA256 checksum.
-// Returns error if checksum verification fails or checksum file is not available.
 func (h *UpdateHandler) downloadWithChecksum(ctx context.Context, binaryPath, binaryURL string) error {
-	// 1. Download binary (with retries on transient failures)
 	if err := h.downloadWithRetry(ctx, binaryPath, binaryURL); err != nil {
 		return fmt.Errorf("failed to download binary: %w", err)
 	}
 
-	// 2. Try to download checksum file
 	checksumURL := binaryURL + ".sha256"
 	checksumPath := binaryPath + ".sha256"
 
 	checksumErr := h.downloadFile(ctx, checksumPath, checksumURL)
 	if checksumErr != nil {
-		// Checksum file not available - log warning but continue
-		// This allows updates to work even if checksum file is missing
 		log.Printf("WARNING: Checksum file not available: %v", checksumErr)
 		log.Printf("WARNING: Skipping checksum verification (downloaded from HTTPS)")
 		return nil
 	}
 
-	// 3. Read expected checksum
 	expectedChecksumBytes, err := os.ReadFile(checksumPath)
 	if err != nil {
 		return fmt.Errorf("failed to read checksum file: %w", err)
 	}
 	expectedChecksum := strings.TrimSpace(string(expectedChecksumBytes))
-
-	// Extract just the hash (checksum file format: "hash  filename" or just "hash")
 	if parts := strings.Fields(expectedChecksum); len(parts) > 0 {
 		expectedChecksum = parts[0]
 	}
 
-	// 4. Calculate actual checksum
 	binaryData, err := os.ReadFile(binaryPath)
 	if err != nil {
 		return fmt.Errorf("failed to read binary for checksum: %w", err)
 	}
-
 	hash := sha256.Sum256(binaryData)
 	actualChecksum := hex.EncodeToString(hash[:])
 
-	// 5. Verify checksum (constant-time comparison)
 	if subtle.ConstantTimeCompare([]byte(expectedChecksum), []byte(actualChecksum)) != 1 {
-		// Remove corrupted binary
 		_ = os.Remove(binaryPath)
 		_ = os.Remove(checksumPath)
 		return fmt.Errorf("checksum verification failed: expected %s, got %s", expectedChecksum, actualChecksum)
 	}
 
 	log.Printf("Checksum verified successfully: %s", actualChecksum[:16]+"...")
-
-	// 6. Clean up checksum file
 	_ = os.Remove(checksumPath)
-
 	return nil
 }
 
-// downloadWithRetry downloads a file to path, retrying on failure up to
-// maxDownloadRetries times with quadratic backoff (n² seconds). Checksum
-// verification errors are NOT retried (a corrupt/mismatched file won't fix
-// itself); only network/HTTP errors trigger a retry.
 func (h *UpdateHandler) downloadWithRetry(ctx context.Context, path, url string) error {
 	var lastErr error
 	for attempt := 0; attempt <= h.maxDownloadRetries; attempt++ {
@@ -545,15 +672,12 @@ func (h *UpdateHandler) downloadWithRetry(ctx context.Context, path, url string)
 				return ctx.Err()
 			}
 		}
-
-		// Reset state for a clean attempt: remove any partial file from a failed attempt.
 		_ = os.Remove(path)
-
 		if err := h.downloadFile(ctx, path, url); err != nil {
 			lastErr = err
-			continue // network error → retry
+			continue
 		}
-		return nil // success
+		return nil
 	}
 	return fmt.Errorf("download failed after %d retries: %w", h.maxDownloadRetries, lastErr)
 }
@@ -574,4 +698,5 @@ func (h *UpdateHandler) getDevReleaseTag() string {
 func RegisterUpdateRoutes(r *mux.Router, handler *UpdateHandler) {
 	r.HandleFunc("/update/check", handler.CheckUpdate).Methods("GET")
 	r.HandleFunc("/update/start", handler.StartUpdate).Methods("POST")
+	r.HandleFunc("/update/branches", handler.CheckBranches).Methods("GET")
 }

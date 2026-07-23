@@ -2,9 +2,17 @@
 import * as api from './api.js';
 import { readSSEStream } from '../utils/sse-stream.js';
 
-export async function checkUpdate(prerelease = false) {
-    const url = prerelease ? '/api/update/check?prerelease=true' : '/api/update/check';
+export async function checkUpdate(prerelease = false, branch = '') {
+    let url = '/api/update/check';
+    const params = [];
+    if (prerelease) params.push('prerelease=true');
+    if (branch) params.push('branch=' + encodeURIComponent(branch));
+    url = params.length ? url + '?' + params.join('&') : url;
     return api.get(url);
+}
+
+export async function getBranches() {
+    return api.get('/api/update/branches');
 }
 
 /**
@@ -13,8 +21,11 @@ export async function checkUpdate(prerelease = false) {
  * @returns {Promise<Object|void>}
  */
 export function startUpdate(options = {}) {
-    const { prerelease = false, onProgress, onComplete, onError } = options;
-    const url = prerelease ? '/api/update/start?prerelease=true' : '/api/update/start';
+    const { prerelease = false, branch = '', onProgress, onComplete, onError } = options;
+    const params = [];
+    if (prerelease) params.push('prerelease=true');
+    if (branch) params.push('branch=' + encodeURIComponent(branch));
+    const url = params.length ? '/api/update/start?' + params.join('&') : '/api/update/start';
     return api
         .request(url, { method: 'POST' })
         .then((res) => readSSEStream(res, { onProgress, onComplete, onError }));

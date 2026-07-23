@@ -9,6 +9,9 @@ import { useI18nStore } from './i18n.js';
 export const useUpdateStore = defineStore('update', () => {
 	const i18n = useI18nStore();
 	const currentVersion = ref('unknown');
+	const currentBranch = ref('');
+	const availableBranches = ref([]);
+	const selectedBranch = ref('');
 	const checkDevUpdates = ref(false);
 
 	const updateInfo = reactive({
@@ -29,7 +32,21 @@ export const useUpdateStore = defineStore('update', () => {
 		const app = useAppStore();
 		updateChecking.value = true;
 		try {
-			const data = await updateService.checkUpdate(checkDevUpdates.value);
+			// 1. Fetch branches
+			const branchesData = await updateService.getBranches();
+			currentBranch.value = branchesData.current_branch || '';
+			availableBranches.value = branchesData.branches || [];
+
+			// Init selectedBranch on first call
+			if (!selectedBranch.value) {
+				selectedBranch.value = currentBranch.value;
+			}
+
+			// 2. Check update for selected branch
+			const data = await updateService.checkUpdate(
+				checkDevUpdates.value,
+				selectedBranch.value,
+			);
 			currentVersion.value = data.current_version;
 			Object.assign(updateInfo, {
 				update_available: data.update_available,
@@ -50,6 +67,7 @@ export const useUpdateStore = defineStore('update', () => {
 		try {
 			await updateService.startUpdate({
 				prerelease: checkDevUpdates.value,
+				branch: selectedBranch.value,
 				onProgress: (data) => { updateProgress.value = data.percent; updateStatus.value = data.status; },
 				onComplete: (data) => {
 					app.showToast(data.message || i18n.t('toast.update_done'), 'success');
@@ -67,7 +85,7 @@ export const useUpdateStore = defineStore('update', () => {
 	}
 
 	return {
-		currentVersion, checkDevUpdates,
+		currentVersion, currentBranch, availableBranches, selectedBranch, checkDevUpdates,
 		updateInfo, updateChecking, updating, updateProgress, updateStatus,
 		checkUpdate, startUpdate,
 	};
