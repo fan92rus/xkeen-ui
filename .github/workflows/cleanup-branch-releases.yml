@@ -1,0 +1,67 @@
+name: Cleanup Branch Releases
+
+on:
+  delete:
+    branches:
+      - '**'
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  cleanup:
+    name: Delete branch dev releases
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete dev releases for the deleted branch
+        run: |
+          # Only handle branch deletions, not tags
+          if [ "${{ github.event.ref_type }}" != "branch" ]; then
+            echo "Not a branch deletion, skipping"
+            exit 0
+          fi
+
+          # github.event.ref for delete includes refs/heads/ prefix
+          RAW_REF="${{ github.event.ref }}"
+          BRANCH_NAME="${RAW_REF#refs/heads/}"
+          echo "Deleted branch: ${BRANCH_NAME}"
+
+          # Skip master — it's never deleted
+          if [ "${BRANCH_NAME}" = "master" ]; then
+            echo "Skipping master branch deletion"
+            exit 0
+          fi
+
+          # Sanitize branch name to match tag format from CI
+          SANITIZED=$(echo "${BRANCH_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          # Pattern: v*.*.*-dev.{sanitized}.{timestamp}
+          FILTER_PATTERN='-dev\.'"$SANITIZED"'\.'
+          echo "Filter pattern: ${FILTER_PATTERN}"
+
+          # Find and delete matching releases
+          gh release list --limit 100 --json tagName,isPrerelease | \
+            jq -r --arg pat "$FILTER_PATTERN" '.[] | select(.tagName | test($pat)) | .tagName' | \
+            while read tag; do
+              echo "Deleting release: $tag"
+              gh release delete "$tag" --yes 2>/dev/null || true
+              git push --delete origin "$tag" 2>/dev/null || true
+            done
+
+          echo "Cleanup complete"
+
+      - name: Summary
+        run: |
+          echo "### Branch Release Cleanup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Deleted branch | \`${{ github.event.ref }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | \`${{ github.event.ref_type }}\` |" >> $GITHUB_STEP_SUMMARY
