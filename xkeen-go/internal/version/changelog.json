@@ -1,5 +1,11 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "fix",
+      "text": "«Балансировка по скорости»: логирование теперь включено по умолчанию; значение (true/false) всегда записывается в xkeen.json",
+      "important": false
+    }
+  ],
   "releases": [
     {
       "version": "0.13.2",

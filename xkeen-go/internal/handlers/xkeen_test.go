@@ -142,8 +142,8 @@ func TestSpeedBalancer_ReadDefaults(t *testing.T) {
 	if settings.OutboundsFile != defaultOutboundsFile {
 		t.Errorf("OutboundsFile = %q, want %q", settings.OutboundsFile, defaultOutboundsFile)
 	}
-	if settings.Log {
-		t.Error("expected Log=false by default")
+	if !settings.Log {
+		t.Error("expected Log=true by default")
 	}
 }
 
@@ -363,7 +363,7 @@ func TestSpeedBalancer_DefaultFilesNotWritten(t *testing.T) {
 
 	settings := defaultSpeedBalancerSettings()
 	settings.Enabled = true
-	// RoutingFile and OutboundsFile are default, Log is false
+	// RoutingFile and OutboundsFile are default, log is always written
 
 	if err := h.writeSettings(settings); err != nil {
 		t.Fatalf("writeSettings error: %v", err)
@@ -382,8 +382,9 @@ func TestSpeedBalancer_DefaultFilesNotWritten(t *testing.T) {
 	if _, exists := sb["outbounds_file"]; exists {
 		t.Error("outbounds_file should NOT be written when equal to default")
 	}
-	if _, exists := sb["log"]; exists {
-		t.Error("log should NOT be written when false (default)")
+	// log is always written (true or false)
+	if sb["log"] != true {
+		t.Errorf("log = %v, want true (default)", sb["log"])
 	}
 }
 
@@ -429,9 +430,10 @@ func TestSpeedBalancer_ResetToRemoveKey(t *testing.T) {
 
 	h := NewSpeedBalancerHandler(configPath, "xkeen")
 
-	// Save with defaults: log=false, routing_file=default
+	// Save with log=false, routing_file=default
 	settings := defaultSpeedBalancerSettings()
 	settings.Enabled = true
+	settings.Log = false // explicitly disable logging
 	if err := h.writeSettings(settings); err != nil {
 		t.Fatalf("writeSettings error: %v", err)
 	}
@@ -442,8 +444,9 @@ func TestSpeedBalancer_ResetToRemoveKey(t *testing.T) {
 
 	sb := raw["xkeen"].(map[string]interface{})["speed_balancer"].(map[string]interface{})
 
-	if _, exists := sb["log"]; exists {
-		t.Error("log key should be removed when reset to false")
+	// log is always written — when false, the key stays as false (not removed)
+	if sb["log"] != false {
+		t.Errorf("log = %v, want false (key should exist, not be removed)", sb["log"])
 	}
 	if _, exists := sb["routing_file"]; exists {
 		t.Error("routing_file key should be removed when reset to default")

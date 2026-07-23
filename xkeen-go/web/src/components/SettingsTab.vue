@@ -29,7 +29,7 @@ const observatoryConcurrency = ref(false);
 const autoUpdate = ref(true);
 const changelogData = ref(null);
 const sbAvailable = ref(false);
-const sbSettings = ref({ enabled: false, interval: 15, hysteresis: 25, balancer: 'default-balancer', max_time: 8, test_url: '', routing_file: '05_routing.json', outbounds_file: '04_outbounds.json', log: false });
+const sbSettings = ref({ enabled: false, interval: 15, hysteresis: 25, balancer: 'default-balancer', max_time: 8, test_url: '', routing_file: '05_routing.json', outbounds_file: '04_outbounds.json', log: true });
 const sbSaving = ref(false);
 const sbStatusLoading = ref(false);
 

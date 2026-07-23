@@ -163,7 +163,7 @@ func defaultSpeedBalancerSettings() SpeedBalancerSettings {
 		TestURL:       "https://speed.cloudflare.com/__down?bytes=50000000",
 		RoutingFile:   defaultRoutingFile,
 		OutboundsFile: defaultOutboundsFile,
-		Log:           false,
+		Log:           true,
 	}
 }
 
@@ -282,10 +282,8 @@ func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSetting
 	if settings.OutboundsFile != "" && settings.OutboundsFile != defaultOutboundsFile {
 		sb["outbounds_file"] = settings.OutboundsFile
 	}
-	// Only write log if true (default is false)
-	if settings.Log {
-		sb["log"] = settings.Log
-	}
+	// Always write log (true/false), default is true
+	sb["log"] = settings.Log
 
 	xkeen["speed_balancer"] = sb
 	raw["xkeen"] = xkeen
