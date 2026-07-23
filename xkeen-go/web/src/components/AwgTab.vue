@@ -428,12 +428,6 @@ function currentObfDescription(name) {
   return '';
 }
 
-function currentObfWarning(name) {
-  const o = obfuscation[name];
-  if (!o || o.loading) return '';
-  const p = (o.presets || []).find(x => x.id === o.current);
-  return p?.warning || '';
-}
 
 async function loadObfuscation(name) {
   obfuscation[name] = { current: '', presets: [], loading: true, applying: false };

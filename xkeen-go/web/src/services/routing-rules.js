@@ -130,6 +130,9 @@ export function parseEntry(raw) {
 	if (/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(raw)) {
 		return { type: 'cidr', value: raw, raw };
 	}
+	if (/^[0-9a-fA-F:]+\/\d+$/.test(raw)) {
+		return { type: 'cidr', value: raw, raw };
+	}
 	// Plain domain/IP
 	return { type: 'plain', value: raw, raw };
 }
@@ -269,7 +272,7 @@ export const COMMON_GEOIP = [
 
 export function serializeRule(rule) {
 	const obj = { ...rule.raw }; // preserve unknown fields from original (protocol, routeOnly, etc.)
-	delete obj.type; // UI-only field, not part of Xray wire format
+	obj.type = 'field'; // required by Xray for field routing rules
 	obj.domain = rule.domains.map(d => d.raw);
 	delete obj.ip;
 	delete obj.network;

@@ -6,7 +6,6 @@
 // Usage: import { log, warn, error } from '../utils/logger.js';
 //        error('[sub] failed:', e);
 
-/* global import */
 const isDev = typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'development';
 
 const noop = () => {};

@@ -27,7 +27,7 @@ export class InteractiveSession {
             try {
                 const msg = JSON.parse(event.data);
                 this.handleMessage(msg);
-            } catch (e) {
+            } catch {
                 warn('Failed to parse WebSocket message:', event.data);
             }
         };

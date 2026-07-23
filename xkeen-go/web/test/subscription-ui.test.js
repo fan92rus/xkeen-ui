@@ -83,7 +83,7 @@ async function login() {
 
 // Navigate to subscriptions via sidebar nav buttons
 async function goToSubscriptions() {
-    // Nav buttons: 0=editor, 1=subs, 2=routing, 3=logs, 4=settings, 5=commands, 6=metrics
+    // Nav buttons: 0=editor, 1=routing, 2=subs, 3=logs, 4=settings, 5=commands, 6=metrics
     await page.evaluate(() => {
         const btns = document.querySelectorAll('.nav-btn');
         if (btns[1]) btns[1].click();
@@ -385,7 +385,7 @@ async function main() {
 
     // Logs tab — WebSocket test (catches WS endpoint changes, message format breaks)
     await test('Logs: WebSocket connects and shows log lines', async () => {
-        await goToTab(3); // logs (index: 0=editor, 1=subs, 2=routing, 3=logs)
+        await goToTab(3); // logs (index: 0=editor, 1=routing, 2=subs, 3=logs)
         await wait(2000);
         const hasLines = await page.evaluate(() => {
             // Logs render as .log-line or plain text in #logs container
@@ -402,7 +402,7 @@ async function main() {
 
     // Settings tab
     await test('Settings: all sections render', async () => {
-        await goToTab(4); // settings (index: 0=editor, 1=subs, 2=routing, 3=logs, 4=settings)
+        await goToTab(4); // settings (index: 0=editor, 1=routing, 2=subs, 3=logs, 4=settings)
         await wait(1000);
         const sections = await page.evaluate(() =>
             document.querySelectorAll('.s-section').length
@@ -412,7 +412,7 @@ async function main() {
 
     // Commands tab
     await test('Commands: palette loads', async () => {
-        await goToTab(5); // commands (index: 0=editor, 1=subs, 2=routing, 3=logs, 4=settings, 5=commands)
+        await goToTab(5); // commands (index: 0=editor, 1=routing, 2=subs, 3=logs, 4=settings, 5=commands)
         await wait(1500);
         const state = await page.evaluate(() => {
             // Commands may show loading, error, empty, or command items.
@@ -430,7 +430,7 @@ async function main() {
 
     // Metrics tab — WebSocket + Chart.js
     await test('Metrics: tab mounts without errors', async () => {
-        await goToTab(6); // metrics (index: 0=editor, 1=subs, 2=routing, 3=logs, 4=settings, 5=commands, 6=metrics)
+        await goToTab(6); // metrics (index: 0=editor, 1=routing, 2=subs, 3=logs, 4=settings, 5=commands, 6=metrics)
         await wait(2000);
         const mounted = await page.evaluate(() => {
             // Metrics tab has .metrics-wrapper as main container.
@@ -456,7 +456,7 @@ async function main() {
     });
 
     // Back to subscriptions for the existing CRUD tests
-    await goToTab(1);
+    await goToTab(2);
     await wait(500);
 
     // ── Subscription CRUD tests ──

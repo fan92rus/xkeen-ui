@@ -129,8 +129,6 @@ export const useAppStore = defineStore('app', () => {
 	const inputValue = ref('');
 	const commandComplete = ref(false);
 	const confirm = reactive({ show: false, command: '', description: '', onConfirm: null });
-	const backupsModal = reactive({ show: false, fileName: '', backups: [], selectedBackup: null, diffContent: '' });
-	const diffModal = reactive({ show: false, diffContent: '' });
 
 	function closeModal() {
 		modal.show = false; modal.output = ''; modal.command = ''; modal.error = '';

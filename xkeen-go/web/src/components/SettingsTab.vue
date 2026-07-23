@@ -241,7 +241,7 @@ async function checkAWG() {
     const s = await installApi.getAWGStatus();
     awg.value.installed = s.installed;
     awg.value.interfaces = s.interfaces || '';
-  } catch (e) { /* not available */ }
+  } catch { /* not available */ }
 }
 
 async function installAWG() {

@@ -30,10 +30,10 @@ export function createLogStream(onMessage, onError, onStatus) {
             }
         },
         onError: () => {
-            try { onError?.(); } catch (_) { /* ignore */ }
+            try { onError?.(); } catch { /* ignore */ }
         },
         onStatus: (s) => {
-            try { onStatus?.(s); } catch (_) { /* ignore */ }
+            try { onStatus?.(s); } catch { /* ignore */ }
         },
     });
 

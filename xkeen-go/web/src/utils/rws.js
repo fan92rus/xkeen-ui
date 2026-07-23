@@ -84,7 +84,7 @@ export class ReconnectingWebSocket {
         if (this.ws) {
             // Remove listeners so our own close() doesn't trigger a reconnect.
             this.ws.onclose = null;
-            try { this.ws.close(); } catch (_) { /* already closed */ }
+            try { this.ws.close(); } catch { /* already closed */ }
             this.ws = null;
         }
     }

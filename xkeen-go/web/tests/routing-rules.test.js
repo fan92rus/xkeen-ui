@@ -290,6 +290,20 @@ describe('parseEntry', () => {
 		});
 	});
 
+	it('parses IPv6 CIDR 2001:db8::/32', () => {
+		const result = parseEntry('2001:db8::/32');
+		expect(result).toEqual({
+			type: 'cidr',
+			value: '2001:db8::/32',
+			raw: '2001:db8::/32',
+		});
+	});
+
+	it('parses IPv6 CIDR fe80::1/128', () => {
+		const result = parseEntry('fe80::1/128');
+		expect(result.type).toBe('cidr');
+	});
+
 	it('parses plain domain google.com', () => {
 		const result = parseEntry('google.com');
 		expect(result).toEqual({
@@ -450,7 +464,7 @@ describe('serializeRule', () => {
 		expect(result.outboundTag).toBeUndefined();
 	});
 
-	it('preserves extra fields from raw, removes type', () => {
+	it('preserves extra fields from raw, sets type to field', () => {
 		const rule = {
 			id: 'rule-0',
 			name: 'Test',
@@ -467,7 +481,7 @@ describe('serializeRule', () => {
 		expect(result.userLevel).toBe(0);
 		expect(result.routeOnly).toBe(true);
 		expect(result.outboundTag).toBe('direct');
-		expect(result.type).toBeUndefined();
+		expect(result.type).toBe('field');
 	});
 
 	it('omits empty arrays/port', () => {
@@ -503,6 +517,22 @@ describe('serializeRule', () => {
 		};
 		const result = serializeRule(rule);
 		expect(result.inboundTag).toEqual(['socks-in', 'http-in']);
+	});
+
+	it('always sets type to field even if missing from raw', () => {
+		const rule = {
+			id: 'rule-0',
+			name: 'Test',
+			domains: [parseEntry('x.com')],
+			ips: [],
+			networks: [],
+			port: '',
+			inbound: [],
+			action: { kind: 'outbound', tag: 'direct' },
+			raw: {}, // no type field
+		};
+		const result = serializeRule(rule);
+		expect(result.type).toBe('field');
 	});
 });
 

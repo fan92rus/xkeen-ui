@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { getProxyNames } from '../services/metrics.js';
 import { computeTagRates, computeChartData, totalOutboundRates } from '../utils/metrics-rates.js';
-import { fmtBytes, fmtRate, fmtRateShort, fmtDelay, fmtTime, fmtTimeShort, fmtDuration, percentile } from '../utils/metrics-format.js';
+import { fmtBytes, fmtRate, fmtDelay, fmtTime, fmtTimeShort, fmtDuration, percentile } from '../utils/metrics-format.js';
 import { useMetricsWS } from '../composables/useMetricsWS.js';
 import { useMetricsChart } from '../composables/useMetricsChart.js';
 import { useI18nStore } from '../stores/i18n.js';

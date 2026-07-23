@@ -32,13 +32,13 @@ onMounted(async () => {
     try {
         const status = await getAWGStatus();
         awgInstalled.value = status.installed;
-    } catch (e) {
+    } catch {
         awgInstalled.value = false;
     }
     try {
         const m = await getMetricsPort();
         metricsEnabled.value = m.enabled;
-    } catch (e) {
+    } catch {
         metricsEnabled.value = true; // assume enabled on error to avoid hiding
     }
     redirectInvalidTab();
@@ -70,8 +70,8 @@ async function reloadMetricsState() {
 const tabs = computed(() => {
 		const list = [
 			{ id: 'editor', label: i18n.t('nav.editor') },
+			{ id: 'routing', label: i18n.t('nav.routing') },
 			{ id: 'subscriptions', label: i18n.t('nav.subscriptions') },
-		{ id: 'routing', label: i18n.t('nav.routing') },
 			{ id: 'logs', label: i18n.t('nav.logs') },
 			{ id: 'settings', label: i18n.t('nav.settings') },
 			{ id: 'commands', label: i18n.t('nav.commands') },
@@ -80,7 +80,7 @@ const tabs = computed(() => {
 			list.push({ id: 'metrics', label: i18n.t('nav.metrics') });
 		}
 		if (awgInstalled.value) {
-			list.splice(2, 0, { id: 'awg', label: 'AWG' });
+			list.splice(3, 0, { id: 'awg', label: 'AWG' });
 		}
 		return list;
 	});
@@ -241,8 +241,10 @@ onUnmounted(() => {
           <button class="modal-close" @click="app.closeModal()">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- eslint-disable vue/no-v-html -- content is escaped via renderAnsi() + escapeHtml() -->
           <pre v-show="app.modal.error" class="modal-error" v-html="safeModalError" />
           <pre id="modal-output" class="modal-output" v-html="safeModalOutput" />
+          <!-- eslint-enable vue/no-v-html -->
         </div>
         <div v-show="app.canSendInput()" class="modal-input">
           <input
@@ -299,7 +301,7 @@ onUnmounted(() => {
           </div>
           <div v-show="app.backupsModal.selectedBackup && app.backupsModal.diffContent" class="backup-diff">
             <h4>{{ i18n.t('app.diff_title') }}</h4>
-            <pre class="diff-content" v-html="app.backupsModal.diffContent" />
+            <pre class="diff-content" v-html="app.backupsModal.diffContent" /> <!-- eslint-disable-line vue/no-v-html -- content escaped via diff.js escapeHtml() -->
           </div>
         </div>
         <div class="modal-footer">
@@ -316,7 +318,7 @@ onUnmounted(() => {
           <button class="modal-close" @click="app.closeDiffModal()">&times;</button>
         </div>
         <div class="modal-body">
-          <pre class="diff-content" v-html="app.diffModal.diffContent" />
+          <pre class="diff-content" v-html="app.diffModal.diffContent" /> <!-- eslint-disable-line vue/no-v-html -- content escaped via diff.js escapeHtml() -->
         </div>
         <div class="modal-footer">
           <button class="btn btn-primary" @click="app.closeDiffModal()">{{ i18n.t('app.unsaved_close') }}</button>
@@ -328,6 +330,5 @@ onUnmounted(() => {
     <div v-show="app.toast.show" :class="'toast ' + (app.toast.type || '')">
       {{ app.toast.message }}
     </div>
-
   </div>
 </template>

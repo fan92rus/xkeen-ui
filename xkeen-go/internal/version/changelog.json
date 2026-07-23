@@ -59,6 +59,26 @@
       "type": "fix",
       "text": "Routing UI: восстановлены поля сервера (xkeenInfoHandler, speedBalancerHandler), потерянные при ребейзе ветки",
       "important": false
+    },
+    {
+      "type": "feat",
+      "text": "Routing: визуальный редактор правил маршрутизации с drag-and-drop, шаблонами, автодополнением категорий из .dat файлов",
+      "important": true
+    },
+    {
+      "type": "fix",
+      "text": "Routing: сохранение type:field в правилах Xray (без него Xray игнорирует правила), поддержка IPv6 CIDR, кеш путей инвалидируется после сохранения",
+      "important": true
+    },
+    {
+      "type": "tweak",
+      "text": "Вкладка «Маршрутизация» перенесена на вторую позицию (сразу после «Редактор»)",
+      "important": false
+    },
+    {
+      "type": "tweak",
+      "text": "ESLint: устранены все 242 warning'а (форматирование, неиспользуемые импорты, мёртвый код)",
+      "important": false
     }
   ],
   "releases": [
