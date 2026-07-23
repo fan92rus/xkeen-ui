@@ -1,4 +1,5 @@
-// Command debug decodes a happ://crypt5/ URL and prints the decrypted subscription URL.
+// Command debug decodes a happ://cryptX/ URL and prints the decrypted
+// subscription URL. Supports crypt, crypt2-5.
 package main
 
 import (
@@ -10,7 +11,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: happ-debug <happ://crypt5/...>")
+		fmt.Fprintln(os.Stderr, "usage: happ-debug <happ://cryptX/...>")
 		os.Exit(1)
 	}
 

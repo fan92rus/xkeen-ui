@@ -1,9 +1,15 @@
-// Package happ decrypts happ://crypt5/ deep links and converts sing-box
+// Package happ decrypts happ://cryptX/ deep links and converts sing-box
 // subscription responses to xkeen ProxyEntry values.
 //
 // Algorithm reference: github.com/LeeeeT/happ-decryptor.
-// crypt5 uses RSA-4096 (PKCS#1 v1.5) → swapAdjacent → base64 → XOR with
-// salt → ChaCha20-Poly1305 to protect the subscription URL.
+//
+// Supported versions:
+//   crypt (v1) — RSA-1024 PKCS#1 v1.5, direct
+//   crypt2    — RSA-4096 PKCS#1 v1.5, direct
+//   crypt3    — RSA-4096 PKCS#1 v1.5, direct
+//   crypt4    — RSA-4096 PKCS#1 v1.5, direct
+//   crypt5    — RSA-4096 PKCS#1 v1.5 + swapBlockHalves + swapAdjacent +
+//               XOR with salt + ChaCha20-Poly1305
 package happ
 
 import (
@@ -21,11 +27,16 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// embeddedKeys holds the 36 RSA-4096 private keys indexed by 8-char marker.
-// The keys are embedded at compile time so the binary is self-contained.
+// embeddedKeys holds the 36 RSA-4096 private keys for crypt5, indexed by
+// 8-char marker. Embedded at compile time so the binary is self-contained.
 //
 //go:embed assets/crypt5-keys.json
 var embeddedKeys []byte
+
+// embeddedCrypt1to4Keys holds the 4 PKCS#1 RSA private keys for crypt1–4.
+//
+//go:embed assets/crypt-keys.json
+var embeddedCrypt1to4Keys []byte
 
 // swapBlockHalves swaps the two halves of each 4-byte block: ABCD → CDAB.
 // This operation is its own inverse.
@@ -132,6 +143,105 @@ func (d *Decryptor) getKey(marker string) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
+// ---------- crypt1-4 (direct RSA PKCS#1 v1.5, no ChaCha20) ----------
+
+var (
+	crypt1to4Mu     sync.Mutex
+	crypt1to4Loaded bool
+	crypt1to4Keys   map[string]*rsa.PrivateKey
+)
+
+// parsePKCS1Key parses a PKCS#1 base64-encoded RSA private key.
+func parsePKCS1Key(b64 string) (*rsa.PrivateKey, error) {
+	// Rebuild PEM with 64-char lines.
+	var buf strings.Builder
+	buf.WriteString("-----BEGIN RSA PRIVATE KEY-----\n")
+	for i := 0; i < len(b64); i += 64 {
+		end := i + 64
+		if end > len(b64) {
+			end = len(b64)
+		}
+		buf.WriteString(b64[i:end])
+		buf.WriteByte('\n')
+	}
+	buf.WriteString("-----END RSA PRIVATE KEY-----\n")
+
+	block, _ := pem.Decode([]byte(buf.String()))
+	if block == nil {
+		return nil, fmt.Errorf("happ: failed to decode PKCS#1 PEM")
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("happ: parsing PKCS#1 key: %w", err)
+	}
+	return key, nil
+}
+
+// loadCrypt1to4Keys loads and parses the 4 PKCS#1 RSA keys for crypt1-4.
+func loadCrypt1to4Keys() error {
+	crypt1to4Mu.Lock()
+	defer crypt1to4Mu.Unlock()
+
+	if crypt1to4Loaded {
+		return nil
+	}
+
+	var rawKeys map[string]string
+	if err := json.Unmarshal(embeddedCrypt1to4Keys, &rawKeys); err != nil {
+		return fmt.Errorf("happ: parsing crypt1-4 keys: %w", err)
+	}
+
+	crypt1to4Keys = make(map[string]*rsa.PrivateKey, len(rawKeys))
+	for name, b64 := range rawKeys {
+		key, err := parsePKCS1Key(b64)
+		if err != nil {
+			return fmt.Errorf("happ: loading key %q: %w", name, err)
+		}
+		crypt1to4Keys[name] = key
+	}
+
+	crypt1to4Loaded = true
+	return nil
+}
+
+// DecryptCrypt1to4 decrypts a crypt1-4 payload using direct RSA PKCS#1 v1.5.
+// The payload is URL-safe base64 encoded RSA ciphertext, split into
+// key-size chunks (128 bytes for RSA-1024, 512 bytes for RSA-4096).
+func DecryptCrypt1to4(keyName, payload string) (string, error) {
+	if err := loadCrypt1to4Keys(); err != nil {
+		return "", err
+	}
+
+	crypt1to4Mu.Lock()
+	privateKey := crypt1to4Keys[keyName]
+	crypt1to4Mu.Unlock()
+
+	if privateKey == nil {
+		return "", fmt.Errorf("happ: unknown key %q", keyName)
+	}
+
+	cipherBytes, err := b64Decode(payload)
+	if err != nil {
+		return "", fmt.Errorf("happ: decoding payload: %w", err)
+	}
+
+	keySize := privateKey.Size() // 128 for RSA-1024, 512 for RSA-4096
+	if len(cipherBytes) == 0 || len(cipherBytes)%keySize != 0 {
+		return "", fmt.Errorf("happ: invalid payload length %d (key size %d)", len(cipherBytes), keySize)
+	}
+
+	var result []byte
+	for i := 0; i < len(cipherBytes); i += keySize {
+		chunk, err := rsa.DecryptPKCS1v15(nil, privateKey, cipherBytes[i:i+keySize])
+		if err != nil {
+			return "", fmt.Errorf("happ: RSA decrypt %q: %w", keyName, err)
+		}
+		result = append(result, chunk...)
+	}
+
+	return string(result), nil
+}
+
 // DecryptCrypt5 decrypts a raw crypt5 payload (everything after
 // "crypt5/") and returns the plaintext subscription URL.
 func (d *Decryptor) DecryptCrypt5(payload string) (string, error) {
@@ -152,16 +262,34 @@ func (d *Decryptor) DecryptCrypt5(payload string) (string, error) {
 	return d.decryptBody(body, key)
 }
 
-// Decrypt decrypts a full happ://crypt5/ deep link and returns the
+// Decrypt decrypts a full happ://cryptX/ deep link and returns the
 // cleartext subscription URL.
 func (d *Decryptor) Decrypt(link string) (string, error) {
-	payload := link
-	if idx := strings.Index(link, "crypt5/"); idx >= 0 {
-		payload = link[idx+7:]
-	} else if strings.HasPrefix(link, "crypt5/") {
-		payload = link[7:]
+	// Strip optional happ:// scheme prefix (happ://crypt5/... → crypt5/...).
+	payload := strings.TrimPrefix(link, "happ://")
+
+	// Extract version prefix (crypt5/...).
+	const prefix = "crypt"
+	slash := strings.IndexByte(payload, '/')
+	if slash < 0 || !strings.HasPrefix(payload, prefix) {
+		// Bare payload without cryptX/ prefix — try crypt5 for backward compat.
+		return d.DecryptCrypt5(payload)
 	}
-	return d.DecryptCrypt5(payload)
+
+	version := payload[len(prefix):slash]
+	rest := payload[slash+1:]
+
+	switch version {
+	case "5":
+		return d.DecryptCrypt5(rest)
+	case "", "2", "3", "4":
+		// crypt (v1, no number) and crypt2-4 use RSA PKCS#1 direct decrypt.
+		// The key name is "crypt" + version (or just "crypt" for v1).
+		keyName := prefix + version
+		return DecryptCrypt1to4(keyName, rest)
+	default:
+		return "", fmt.Errorf("happ: unsupported crypt version %q (supported: crypt, crypt2-5)", version)
+	}
 }
 
 func (d *Decryptor) decryptBody(body []byte, key *rsa.PrivateKey) (string, error) {
