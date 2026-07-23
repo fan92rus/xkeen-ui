@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, inject } from 'vue';
+import { ref, computed, onMounted, inject } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { useI18nStore } from '../stores/i18n.js';
 import * as sub from '../services/subscription.js';
@@ -221,7 +221,9 @@ async function toggleProxyEntware() {
   }
 }
 
-const sections = [
+// Static section metadata — defines icon, label, and nav order.
+// Conditionally-visible sections (speed-balancer) are filtered at render time.
+const sectionDefs = [
   { id: 'mode', icon: '⚡', label: i18n.t('settings.mode_section') },
   { id: 'logging', icon: '📋', label: i18n.t('settings.logs_section') },
   { id: 'updates', icon: '🔄', label: i18n.t('settings.update_section') },
@@ -229,13 +231,19 @@ const sections = [
   { id: 'autoapply', icon: '📅', label: i18n.t('settings.subs_section') },
   { id: 'network', icon: '🔍', label: i18n.t('settings.net_section') },
   { id: 'routing', icon: '🔀', label: i18n.t('settings.routing_section') },
+  { id: 'speed-balancer', icon: '⚡', label: i18n.t('settings.sb_title') },
   { id: 'metrics', icon: '📊', label: i18n.t('settings.metrics_section') },
   { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
   { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
 ];
 
 // Lookup map for O(1) access by ID — eliminates fragile array index references
-const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+const secMap = Object.fromEntries(sectionDefs.map(s => [s.id, s]));
+
+// Sections shown in the left nav — speed-balancer only when sbAvailable is true
+const sections = computed(() =>
+  sectionDefs.filter(s => s.id !== 'speed-balancer' || sbAvailable.value)
+);
 
 const awg = ref({ installed: false, interfaces: '', installing: false, uninstalling: false, error: '', progress: '' });
 
@@ -556,8 +564,8 @@ onMounted(() => {
         </section>
 
         <!-- Speed Balancer (conditional on XKeen version) -->
-        <section v-if="sbAvailable" id="speed-balancer" class="s-section">
-          <h2 class="s-title">⚡ {{ i18n.t('settings.sb_title') }}</h2>
+        <section v-if="sbAvailable" :id="secMap['speed-balancer'].id" class="s-section">
+          <h2 class="s-title">{{ secMap['speed-balancer'].icon }} {{ secMap['speed-balancer'].label }}</h2>
           <div class="s-block">
             <div class="s-row">
               <div class="s-row-main">
