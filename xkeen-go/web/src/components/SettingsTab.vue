@@ -425,15 +425,17 @@ onMounted(() => {
                 <div class="s-row-label">{{ i18n.t('settings.branch') }}</div>
                 <div class="s-row-desc">{{ i18n.t('settings.branch_desc') }}</div>
               </div>
-              <select v-model="app.selectedBranch" class="s-select" @change="app.checkUpdate()">
-                <option v-if="!app.availableBranches.length" value="" disabled>{{ i18n.t('settings.loading') }}</option>
-                <option v-for="b in app.availableBranches" :key="b.name" :value="b.name">
-                  {{ b.name }} ({{ b.latest_version }})
-                </option>
-              </select>
-              <span v-if="app.currentBranch && app.selectedBranch !== app.currentBranch" class="s-hint">
-                {{ i18n.t('settings.branch_differs') }}
-              </span>
+              <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+                <select v-model="app.selectedBranch" class="s-select" @change="app.checkUpdate()">
+                  <option v-if="!app.availableBranches.length" value="" disabled>{{ i18n.t('settings.loading') }}</option>
+                  <option v-for="b in app.availableBranches" :key="b.name" :value="b.name">
+                    {{ b.name }} ({{ b.latest_version }})
+                  </option>
+                </select>
+                <span v-if="app.currentBranch && app.selectedBranch !== app.currentBranch" class="s-hint">
+                  {{ i18n.t('settings.branch_differs') }}
+                </span>
+              </div>
             </div>
             <div class="s-row s-row-actions">
               <button :disabled="app.updateChecking || app.updating" class="btn" @click="app.checkUpdate()">
@@ -1105,10 +1107,9 @@ onMounted(() => {
 
 /* ── Cron hint ── */
 .s-hint {
-  font-size: 12px;
-  color: var(--text-gray, #999);
-  margin-left: 8px;
-  white-space: nowrap;
+  font-size: 11px;
+  color: var(--status-caution-text, #e8a735);
+  line-height: 1.3;
 }
 
 .s-cron-hint code {
