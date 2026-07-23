@@ -613,7 +613,7 @@ async function save() {
 
 <style scoped>
 .routing-container {
-	max-width: 900px;
+	max-width: 780px;
 	margin: 0 auto;
 	padding: 12px;
 }
@@ -681,11 +681,17 @@ async function save() {
 .rt-tpl-desc { color: var(--text-muted); font-size: 11px; }
 
 /* Rule cards */
-.rt-rules { display: flex; flex-direction: column; gap: 6px; }
+.rt-rules {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
 .rt-card {
 	background: var(--card-bg, rgba(255,255,255,0.04));
 	border: 1px solid var(--border, #2a2a3e);
 	border-radius: 8px;
+	width: 100%;
+	box-sizing: border-box;
 	transition: border-color 0.15s, opacity 0.15s;
 }
 .rt-card.dragging { opacity: 0.4; }
