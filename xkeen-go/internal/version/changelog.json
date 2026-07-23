@@ -1,12 +1,17 @@
 {
-  "unreleased": [
-    {
-      "type": "fix",
-      "text": "Routing: сериализация больше не добавляет пустой массив domain: [] в правила без доменов (чистый round-trip normalize → serialize)",
-      "important": false
-    }
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "0.13.1",
+      "date": "2026-07-23",
+      "changes": [
+        {
+          "type": "fix",
+          "text": "Routing: сериализация больше не добавляет пустой массив domain: [] в правила без доменов (чистый round-trip normalize → serialize)",
+          "important": false
+        }
+      ]
+    },
     {
       "version": "0.13.0",
       "date": "2026-07-23",
