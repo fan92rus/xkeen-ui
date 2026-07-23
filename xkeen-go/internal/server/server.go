@@ -41,6 +41,7 @@ type Server struct {
 	settingsHandler     *handlers.SettingsHandler
 	commandsHandler     *handlers.CommandsHandler
 	updateHandler       *handlers.UpdateHandler
+	updateChecker       *handlers.UpdateChecker
 	interactiveHandler  *handlers.InteractiveHandler
 	subscriptionHandler *handlers.SubscriptionHandler
 	metricsHandler      *handlers.MetricsHandler
@@ -50,7 +51,9 @@ type Server struct {
 	metricsPort        atomic.Int64
 	commandRegistry    *handlers.CommandRegistry
 	installHandler     *handlers.InstallHandler
-	awgHandler                *handlers.AWGHandler
+	xkeenInfoHandler   *handlers.XkeenInfoHandler
+	speedBalancerHandler     *handlers.SpeedBalancerHandler
+	awgHandler               *handlers.AWGHandler
 	diagnosticsHandler        *handlers.DiagnosticsHandler
 	routingCategoriesHandler  *handlers.RoutingCategoriesHandler
 
@@ -93,8 +96,14 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	}
 
 	// Initialize handlers from handlers package
-	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, configPath, cfg.Mode)
+	s.configHandler = handlers.NewConfigHandler(cfg.AllowedRoots, backupDir, cfg.XrayConfigDir, cfg.XkeenConfigDir, cfg.MihomoConfigDir, cfg.AWGConfigDir, configPath, cfg.Mode)
 	s.serviceHandler = handlers.NewServiceHandler()
+	if cfg.XkeenVersionFile != "" {
+		s.xkeenInfoHandler = handlers.NewXkeenInfoHandlerWithFile(cfg.XkeenVersionFile)
+	} else {
+		s.xkeenInfoHandler = handlers.NewXkeenInfoHandler()
+	}
+	s.speedBalancerHandler = handlers.NewSpeedBalancerHandler(filepath.Join(cfg.XkeenConfigDir, "xkeen.json"), cfg.XkeenBinary)
 	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
 		func(port int) {
 			// Option E: enabling/disabling metrics is a data update, not a
@@ -126,8 +135,8 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		AllowedRoots:   cfg.AllowedRoots,
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 		LogFiles: []string{
-			"/opt/var/log/xray/access.log",
-			"/opt/var/log/xray/error.log",
+			filepath.Join(cfg.XrayLogDir, "access.log"),
+			filepath.Join(cfg.XrayLogDir, "error.log"),
 		},
 	})
 	s.commandRegistry = handlers.NewCommandRegistry(handlers.DefaultXKeenPath)
@@ -136,6 +145,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	}
 	s.commandsHandler = handlers.NewCommandsHandler(s.commandRegistry)
 	s.updateHandler = handlers.NewUpdateHandler()
+	s.updateChecker = handlers.NewUpdateChecker(s.updateHandler)
 	s.interactiveHandler = handlers.NewInteractiveHandler(&handlers.InteractiveConfig{
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	}, s.commandRegistry)
@@ -192,7 +202,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 	// Diagnostics handler (network exit-IP check via fetcher cascade)
 	s.diagnosticsHandler = handlers.NewDiagnosticsHandler(subFetcher)
 
-	// Routing categories handler (geosite/geoip .dat file parsing)
+	// Routing categories — parses geosite/geoip .dat files for autocomplete
 	s.routingCategoriesHandler = handlers.NewRoutingCategoriesHandler(cfg.XrayConfigDir)
 
 	// Helper: build tag→remarks from current proxy cache
@@ -262,6 +272,21 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		s.subscriptionHandler.SetObservatoryConcurrency(enabled)
 		subScheduler.SetObservatoryConcurrency(enabled)
 	})
+
+	// Wire auto-update toggle: start/stop the background UpdateChecker.
+	if s.updateChecker != nil {
+		s.settingsHandler.SetAutoUpdateChange(func(enabled bool) {
+			if enabled {
+				s.updateChecker.Start()
+			} else {
+				s.updateChecker.Stop()
+			}
+		})
+		// Start the checker immediately if auto-update is enabled in config.
+		if cfg.AutoUpdate {
+			s.updateChecker.Start()
+		}
+	}
 
 	// Wire scheduler OnUpdate: push proxy names after each fetch
 	subScheduler.OnUpdate = func() {
@@ -444,6 +469,12 @@ func (s *Server) Stop() error {
 
 	if err := s.http.Shutdown(ctx); err != nil {
 		return fmt.Errorf("server shutdown error: %w", err)
+	}
+
+	// Stop auto-update checker AFTER HTTP shutdown so no in-flight toggle
+	// request can Start() a new goroutine while we're tearing down.
+	if s.updateChecker != nil {
+		s.updateChecker.Stop()
 	}
 
 	log.Println("Server stopped")

@@ -54,6 +54,11 @@
       "type": "fix",
       "text": "Branch selector теперь всегда виден; включение Dev-канала загружает список веток",
       "important": false
+    },
+    {
+      "type": "fix",
+      "text": "Routing UI: восстановлены поля сервера (xkeenInfoHandler, speedBalancerHandler), потерянные при ребейзе ветки",
+      "important": false
     }
   ],
   "releases": [
