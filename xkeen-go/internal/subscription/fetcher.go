@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -384,7 +385,6 @@ func (f *Fetcher) fetchHAPP(ctx context.Context, subURL string) (*FetchResult, e
 	}
 
 	req.Header.Set("User-Agent", "happ")
-	req.Header.Set("Accept", "*/*")
 	if f.HAPPHWID != "" {
 		req.Header.Set("X-HWID", f.HAPPHWID)
 	}
@@ -405,14 +405,49 @@ func (f *Fetcher) fetchHAPP(ctx context.Context, subURL string) (*FetchResult, e
 		return nil, fmt.Errorf("happ: reading response: %w", err)
 	}
 
-	// HAPP server returns a standard subscription format (base64-encoded
-	// share URIs), not sing-box JSON. Use the normal parsing pipeline.
+	// Try sing-box JSON first (reference format). Each server has multiple
+	// outbound protocols (vless + hysteria2), so JSON gives more entries.
+	if entries, err := f.parseHAPPJSON(data); err == nil {
+		return &FetchResult{Entries: entries, Source: SourceDirect}, nil
+	}
+
+	// Fall back to standard base64 URI format.
 	entries, err := ParseSubscriptionContent(data)
 	if err != nil {
 		return nil, fmt.Errorf("happ: parsing subscription: %w", err)
 	}
 
 	return &FetchResult{Entries: entries, Source: SourceDirect}, nil
+}
+
+// parseHAPPJSON tries to parse data as sing-box JSON (array of happ.Server)
+// and convert each server's outbounds to ProxyEntry values.
+func (f *Fetcher) parseHAPPJSON(data []byte) ([]*ProxyEntry, error) {
+	var servers []happ.Server
+	if err := json.Unmarshal(data, &servers); err != nil {
+		return nil, err
+	}
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("empty server list")
+	}
+
+	happEntries := happ.ConvertAllServers(servers)
+	entries := make([]*ProxyEntry, 0, len(happEntries))
+	for _, he := range happEntries {
+		entries = append(entries, &ProxyEntry{
+			Protocol:    he.Protocol,
+			Fingerprint: he.Fingerprint,
+			TLSSecurity: he.TLSSecurity,
+			Network:     he.Network,
+			Outbound:    he.Outbound,
+			RawURI:      he.Tag,
+			Remarks:     he.Remarks,
+			Country:     he.Country,
+		})
+	}
+
+	GenerateTags(entries)
+	return entries, nil
 }
 
 // dialDNSServers tries multiple DNS servers with per-server timeouts.
