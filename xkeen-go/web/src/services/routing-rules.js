@@ -12,6 +12,11 @@ const BUILTIN_TAGS = ['direct', 'block'];
 // Cache the resolved paths to avoid duplicate listFiles calls.
 const _pathCache = {};
 
+/** Clear the path resolution cache. Call after save to force re-resolution. */
+export function clearPathCache() {
+	Object.keys(_pathCache).forEach(k => delete _pathCache[k]);
+}
+
 async function resolvePath(name) {
 	if (_pathCache[name]) return _pathCache[name];
 	const files = await listFiles('xray');
@@ -32,7 +37,10 @@ export async function getRouting() {
 export async function saveRouting(routing) {
 	const fullPath = await resolvePath(ROUTING_FILE);
 	const content = JSON.stringify({ routing }, null, 2);
-	return saveFile(fullPath, content);
+	const result = await saveFile(fullPath, content);
+	// Invalidate cache so next resolvePath re-lists the directory
+	clearPathCache();
+	return result;
 }
 
 // ── Available outbound/balancer tag discovery ──

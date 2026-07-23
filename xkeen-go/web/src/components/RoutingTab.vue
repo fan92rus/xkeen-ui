@@ -231,7 +231,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { useI18nStore } from '../stores/i18n.js';
 import {
 	getRouting, saveRouting, normalizeRule, parseEntry,
@@ -354,7 +354,11 @@ onMounted(async () => {
 		loading.value = false;
 	}
 	// Fetch categories async (non-blocking)
-	fetchCategories().then(d => apiCategories.value = d).catch(() => {});
+	fetchCategories().then(d => apiCategories.value = d).catch(e => console.warn('[routing] fetch categories:', e));
+});
+
+onUnmounted(() => {
+	clearTimeout(deleteTimer);
 });
 
 function markDirty() { dirty.value = true; }

@@ -1,14 +1,229 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
 	parseEntry,
 	normalizeRule,
 	entryLabel,
 	entryIcon,
 	serializeRule,
+	validateAction,
+	clearPathCache,
 	COMMON_GEOSITE,
 	COMMON_GEOIP,
 } from '../src/services/routing-rules.js';
+
+// ── Mock config.js for getAvailableTags tests ──
+vi.mock('../src/services/config.js', () => ({
+	listFiles: vi.fn(),
+	getFile: vi.fn(),
+	saveFile: vi.fn(),
+}));
+
+import { listFiles, getFile, saveFile } from '../src/services/config.js';
+
+const mockOutbounds = {
+	outbounds: [
+		{ tag: 'proxy', protocol: 'vmess' },
+		{ tag: 'warp', protocol: 'wireguard' },
+		{ tag: '', protocol: 'direct' }, // empty tag should be filtered
+	],
+};
+
+const mockRouting = {
+	routing: {
+		rules: [],
+		balancers: [{ tag: 'default' }, { tag: 'cdn' }],
+	},
+};
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	clearPathCache();
+	listFiles.mockResolvedValue([
+		{ name: '04_outbounds.json', path: '/cfg/04_outbounds.json' },
+		{ name: '05_routing.json', path: '/cfg/05_routing.json' },
+	]);
+});
+
+// ── validateAction ──
+
+describe('validateAction', () => {
+	it('returns null for built-in direct tag', () => {
+		expect(validateAction({ tag: 'direct' }, ['proxy'])).toBeNull();
+	});
+
+	it('returns null for built-in block tag', () => {
+		expect(validateAction({ tag: 'block' }, [])).toBeNull();
+	});
+
+	it('returns null for known outbound tag', () => {
+		expect(validateAction({ tag: 'proxy' }, ['proxy', 'warp'])).toBeNull();
+	});
+
+	it('returns null for known balancer tag', () => {
+		expect(validateAction({ tag: 'cdn' }, ['cdn'])).toBeNull();
+	});
+
+	it('returns error for null action', () => {
+		expect(validateAction(null, [])).toBe('Action missing tag');
+	});
+
+	it('returns error for action without tag', () => {
+		expect(validateAction({}, ['proxy'])).toBe('Action missing tag');
+	});
+
+	it('returns error for action with empty tag', () => {
+		expect(validateAction({ tag: '' }, ['proxy'])).toBe('Action missing tag');
+	});
+
+	it('returns error for unknown tag', () => {
+		const err = validateAction({ tag: 'nonexistent' }, ['proxy', 'warp']);
+		expect(err).toContain('nonexistent');
+		expect(err).toContain('not found');
+	});
+
+	it('returns error for tag not in available set', () => {
+		expect(validateAction({ tag: 'proxy' }, [])).toContain('not found');
+		expect(validateAction({ tag: 'proxy' }, ['other'])).toContain('not found');
+	});
+
+	it('built-in tags take priority even when in available set', () => {
+		expect(validateAction({ tag: 'direct' }, [])).toBeNull();
+		expect(validateAction({ tag: 'block' }, [])).toBeNull();
+	});
+});
+
+// ── getAvailableTags ──
+
+import { getAvailableTags } from '../src/services/routing-rules.js';
+
+describe('getAvailableTags', () => {
+	it('returns outbound + balancer + built-in tags', async () => {
+		getFile.mockImplementation(async (path) => {
+			if (path.includes('04_outbounds')) return { content: JSON.stringify(mockOutbounds) };
+			if (path.includes('05_routing')) return { content: JSON.stringify(mockRouting) };
+			throw new Error('unexpected path');
+		});
+
+		const result = await getAvailableTags();
+
+		expect(result.outboundTags).toEqual(['proxy', 'warp']);
+		expect(result.balancerTags).toEqual(['default', 'cdn']);
+		expect(result.allTags).toEqual(['direct', 'block', 'proxy', 'warp', 'default', 'cdn']);
+	});
+
+	it('deduplicates tags across categories', async () => {
+		const outbounds = { outbounds: [{ tag: 'proxy' }] };
+		const routing = { routing: { rules: [], balancers: [{ tag: 'proxy' }] } };
+
+		getFile.mockImplementation(async (path) => {
+			if (path.includes('04_outbounds')) return { content: JSON.stringify(outbounds) };
+			if (path.includes('05_routing')) return { content: JSON.stringify(routing) };
+			throw new Error('unexpected path');
+		});
+
+		const result = await getAvailableTags();
+		expect(result.allTags.filter(t => t === 'proxy')).toHaveLength(1);
+	});
+
+	it('returns empty arrays on missing outbounds file', async () => {
+		getFile.mockImplementation(async (path) => {
+			if (path.includes('04_outbounds')) throw new Error('not found');
+			if (path.includes('05_routing')) return { content: JSON.stringify(mockRouting) };
+			throw new Error('unexpected path');
+		});
+
+		const result = await getAvailableTags();
+		expect(result.outboundTags).toEqual([]);
+		expect(result.balancerTags).toEqual(['default', 'cdn']);
+		expect(result.allTags).toContain('direct');
+	});
+
+	it('returns empty arrays on missing routing file', async () => {
+		getFile.mockImplementation(async (path) => {
+			if (path.includes('04_outbounds')) return { content: JSON.stringify(mockOutbounds) };
+			if (path.includes('05_routing')) throw new Error('not found');
+			throw new Error('unexpected path');
+		});
+
+		const result = await getAvailableTags();
+		expect(result.outboundTags).toEqual(['proxy', 'warp']);
+		expect(result.balancerTags).toEqual([]);
+	});
+
+	it('handles outbounds without outbounds key', async () => {
+		getFile.mockImplementation(async (path) => {
+			if (path.includes('04_outbounds')) return { content: '{}' };
+			if (path.includes('05_routing')) return { content: JSON.stringify(mockRouting) };
+			throw new Error('unexpected path');
+		});
+
+		const result = await getAvailableTags();
+		expect(result.outboundTags).toEqual([]);
+	});
+
+	it('includes built-in direct and block in allTags', async () => {
+		getFile.mockImplementation(async (path) => {
+			if (path.includes('04_outbounds')) return { content: JSON.stringify({ outbounds: [] }) };
+			if (path.includes('05_routing')) return { content: JSON.stringify({ routing: { rules: [] } }) };
+			throw new Error('unexpected path');
+		});
+
+		const result = await getAvailableTags();
+		expect(result.allTags).toContain('direct');
+		expect(result.allTags).toContain('block');
+	});
+
+	it('calls listFiles once per unique path, then caches', async () => {
+		getFile.mockResolvedValue({ content: '{}' });
+
+		await getAvailableTags(); // 2 listFiles calls (04 + 05, both cold)
+		await getAvailableTags(); // 0 (both cached)
+		await getAvailableTags(); // 0
+
+		expect(listFiles).toHaveBeenCalledTimes(2);
+	});
+});
+
+// ── clearPathCache ──
+
+describe('clearPathCache', () => {
+	it('forces listFiles to be called on next getAvailableTags', async () => {
+		getFile.mockResolvedValue({ content: '{}' });
+
+		await getAvailableTags();
+		// 2 listFiles calls so far
+		clearPathCache();
+		await getAvailableTags();
+
+		expect(listFiles).toHaveBeenCalledTimes(4); // 2 + 2 after cache clear
+	});
+});
+
+// ── saveRouting invalidates cache ──
+
+describe('saveRouting invalidates cache', () => {
+	it('re-resolves paths on next getRouting after save', async () => {
+		getFile.mockResolvedValue({ content: '{}' });
+		saveFile.mockResolvedValue({});
+
+		// First call: populate cache — 2 listFiles (04 + 05)
+		await getAvailableTags();
+		expect(listFiles).toHaveBeenCalledTimes(2);
+
+		// Save routing — uses cached path internally, then calls clearPathCache
+		const { saveRouting } = await import('../src/services/routing-rules.js');
+		await saveRouting({ rules: [] });
+		// saveRouting calls resolvePath(05) which is cached → 0 listFiles
+		expect(listFiles).toHaveBeenCalledTimes(2);
+
+		// Next getAvailableTags — cache cleared, re-lists 04 + 05
+		await getAvailableTags();
+		expect(listFiles).toHaveBeenCalledTimes(4); // 2 + 2
+	});
+});
+
+// ── Existing tests (unchanged) ──
 
 describe('parseEntry', () => {
 	it('parses ext:geosite_v2fly.dat:category-ru', () => {
