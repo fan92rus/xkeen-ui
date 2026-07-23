@@ -1,6 +1,7 @@
 package happ
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -11,12 +12,12 @@ func TestSwapBlockHalves_Roundtrip(t *testing.T) {
 	// Every 4-byte block: [A,B,C,D] → [C,D,A,B]
 	// "ABCD" → "CDAB", "abcd" → "cdab", "1234" → "3412"
 	expected := []byte("CDABcdab3412")
-	if string(swapped) != string(expected) {
+	if !bytes.Equal(swapped, expected) {
 		t.Errorf("swapBlockHalves(%q) = %q, want %q", original, swapped, expected)
 	}
 	// Must be self-inverse
 	twice := swapBlockHalves(swapped)
-	if string(twice) != string(original) {
+	if !bytes.Equal(twice, original) {
 		t.Errorf("swapBlockHalves(self-inverse) = %q, want %q", twice, original)
 	}
 }
@@ -40,7 +41,7 @@ func TestSwapAdjacent_Roundtrip(t *testing.T) {
 	}
 	// Self-inverse
 	twice := swapAdjacent(swapped)
-	if string(twice) != string(in) {
+	if !bytes.Equal(twice, in) {
 		t.Errorf("swapAdjacent(self-inverse) = %q, want %q", twice, in)
 	}
 }

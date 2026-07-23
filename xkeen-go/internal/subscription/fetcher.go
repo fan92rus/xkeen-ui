@@ -371,7 +371,7 @@ func (f *Fetcher) Fetch(ctx context.Context, subURL string) ([]*ProxyEntry, erro
 func (f *Fetcher) fetchHAPP(ctx context.Context, subURL string) (*FetchResult, error) {
 	d, err := happ.NewDecryptorEmbedded()
 	if err != nil {
-		return nil, fmt.Errorf("happ: initialising decryptor: %w", err)
+		return nil, fmt.Errorf("happ: initializing decryptor: %w", err)
 	}
 
 	realURL, err := d.Decrypt(subURL)

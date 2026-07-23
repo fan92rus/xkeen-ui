@@ -172,7 +172,7 @@ func (d *Decryptor) decryptBody(body []byte, key *rsa.PrivateKey) (string, error
 	nonce := body[:12]
 
 	// Heuristic: if byte 12 is NOT an ASCII digit, treat as salted layout.
-	salted := len(body) > 12 && !(body[12] >= '0' && body[12] <= '9')
+	salted := len(body) > 12 && (body[12] < '0' || body[12] > '9')
 
 	var firstErr error
 	for _, trySalted := range []bool{salted, !salted} {

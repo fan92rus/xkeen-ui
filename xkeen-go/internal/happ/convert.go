@@ -5,9 +5,9 @@ import (
 	"fmt"
 )
 
-// HAPPProxyEntry is a parsed proxy entry from a HAPP subscription response.
+// ProxyEntry is a parsed proxy entry from a HAPP subscription response.
 // The caller (subscription package) converts this to its own ProxyEntry type.
-type HAPPProxyEntry struct {
+type ProxyEntry struct {
 	Protocol    string          // "vless", "hysteria2"
 	Fingerprint string          // TLS fingerprint
 	TLSSecurity string          // "none", "tls", "reality"
@@ -69,9 +69,9 @@ type hysteriaSettings struct {
 	Port    int    `json:"port"`
 }
 
-// ConvertServer parses one sing-box Server and returns recognised outbounds
-// as HAPPProxyEntry values.
-func ConvertServer(srv *Server) []*HAPPProxyEntry {
+// ConvertServer parses one sing-box Server and returns recognized outbounds
+// as ProxyEntry values.
+func ConvertServer(srv *Server) []*ProxyEntry {
 	if srv == nil || len(srv.Outbounds) == 0 {
 		return nil
 	}
@@ -81,7 +81,7 @@ func ConvertServer(srv *Server) []*HAPPProxyEntry {
 		return nil
 	}
 
-	var entries []*HAPPProxyEntry
+	entries := make([]*ProxyEntry, 0, len(outbounds))
 	for _, obRaw := range outbounds {
 		var ob singBoxOutbound
 		if err := json.Unmarshal(obRaw, &ob); err != nil {
@@ -97,17 +97,17 @@ func ConvertServer(srv *Server) []*HAPPProxyEntry {
 	return entries
 }
 
-// ConvertAllServers converts all servers and flattens recognised outbounds
+// ConvertAllServers converts all servers and flattens recognized outbounds
 // into a single list.
-func ConvertAllServers(servers []Server) []*HAPPProxyEntry {
-	var all []*HAPPProxyEntry
+func ConvertAllServers(servers []Server) []*ProxyEntry {
+	var all []*ProxyEntry
 	for i := range servers {
 		all = append(all, ConvertServer(&servers[i])...)
 	}
 	return all
 }
 
-func toProxyEntry(ob *singBoxOutbound, remarks string) (*HAPPProxyEntry, error) {
+func toProxyEntry(ob *singBoxOutbound, remarks string) (*ProxyEntry, error) {
 	switch ob.Protocol {
 	case "vless":
 		return vlessToEntry(ob, remarks)
@@ -139,7 +139,7 @@ func parseSS(ob *singBoxOutbound) (network, sec, fp string) {
 	return
 }
 
-func vlessToEntry(ob *singBoxOutbound, remarks string) (*HAPPProxyEntry, error) {
+func vlessToEntry(ob *singBoxOutbound, remarks string) (*ProxyEntry, error) {
 	var s vlessSettings
 	if err := json.Unmarshal(ob.Settings, &s); err != nil || len(s.Vnext) == 0 {
 		return nil, fmt.Errorf("happ: invalid vless settings")
@@ -155,7 +155,7 @@ func vlessToEntry(ob *singBoxOutbound, remarks string) (*HAPPProxyEntry, error) 
 		tag = fmt.Sprintf("%s (%s)", remarks, tag)
 	}
 
-	return &HAPPProxyEntry{
+	return &ProxyEntry{
 		Protocol:    "vless",
 		Fingerprint: fp,
 		TLSSecurity: sec,
@@ -167,7 +167,7 @@ func vlessToEntry(ob *singBoxOutbound, remarks string) (*HAPPProxyEntry, error) 
 	}, nil
 }
 
-func hysteriaToEntry(ob *singBoxOutbound, remarks string) (*HAPPProxyEntry, error) {
+func hysteriaToEntry(ob *singBoxOutbound, remarks string) (*ProxyEntry, error) {
 	var s hysteriaSettings
 	if err := json.Unmarshal(ob.Settings, &s); err != nil || s.Address == "" {
 		return nil, fmt.Errorf("happ: invalid hysteria settings")
@@ -188,7 +188,7 @@ func hysteriaToEntry(ob *singBoxOutbound, remarks string) (*HAPPProxyEntry, erro
 		tag = fmt.Sprintf("%s (%s)", remarks, tag)
 	}
 
-	return &HAPPProxyEntry{
+	return &ProxyEntry{
 		Protocol:    "hysteria2",
 		Fingerprint: fp,
 		TLSSecurity: sec,
@@ -235,7 +235,7 @@ func extractCountry(remarks string) string {
 	runes := []rune(remarks)
 	for i := 0; i < len(runes)-1; i++ {
 		if isRI(runes[i]) && isRI(runes[i+1]) {
-			return string(rune(runes[i]-0x1F1E6+'A')) + string(rune(runes[i+1]-0x1F1E6+'A'))
+			return string(runes[i]-0x1F1E6+'A') + string(runes[i+1]-0x1F1E6+'A')
 		}
 	}
 	return ""
