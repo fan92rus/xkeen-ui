@@ -1,3 +1,4 @@
+// Command debug decodes a happ://crypt5/ URL and prints the decrypted subscription URL.
 package main
 
 import (
