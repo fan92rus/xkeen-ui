@@ -420,7 +420,7 @@ onMounted(() => {
                 <span class="toggle-slider" />
               </label>
             </div>
-            <div v-if="app.currentBranch !== 'master' || app.checkDevUpdates" class="s-row">
+            <div class="s-row">
               <div class="s-row-main">
                 <div class="s-row-label">{{ i18n.t('settings.branch') }}</div>
                 <div class="s-row-desc">{{ i18n.t('settings.branch_desc') }}</div>
