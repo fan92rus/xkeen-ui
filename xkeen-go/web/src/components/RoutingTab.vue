@@ -237,6 +237,7 @@ import {
 	getRouting, saveRouting, normalizeRule, parseEntry,
 	entryLabel, entryIcon, COMMON_GEOSITE, COMMON_GEOIP,
 	serializeRule, fetchCategories,
+	getAvailableTags, validateAction,
 } from '../services/routing-rules.js';
 
 const i18n = useI18nStore();
