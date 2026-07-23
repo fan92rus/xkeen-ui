@@ -2,12 +2,13 @@ package subscription
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -657,7 +658,8 @@ func (s *Store) SetGeneratedAt(t time.Time) error {
 
 // ---------- HAPP HWID ----------
 
-// ensureHAPPHWID generates a random base64 HWID if none is set.
+// ensureHAPPHWID generates a random HWID (XXXXX-XXXXX-XXXXX-XXXXX-XXXXX)
+// if none is set. Matches Windows ProductId format for compatibility.
 func (s *Store) ensureHAPPHWID() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -666,11 +668,20 @@ func (s *Store) ensureHAPPHWID() error {
 		return nil
 	}
 
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Errorf("generating HWID: %w", err)
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	groups := make([]string, 5)
+	for i := range groups {
+		g := make([]byte, 5)
+		for j := range g {
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+			if err != nil {
+				return fmt.Errorf("generating HWID: %w", err)
+			}
+			g[j] = chars[n.Int64()]
+		}
+		groups[i] = string(g)
 	}
-	s.config.HAPPHWID = base64.StdEncoding.EncodeToString(b)
+	s.config.HAPPHWID = strings.Join(groups, "-")
 
 	if err := s.saveConfig(s.config); err != nil {
 		return fmt.Errorf("saving HWID: %w", err)
