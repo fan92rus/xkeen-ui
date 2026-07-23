@@ -6,6 +6,11 @@
       "important": true
     },
     {
+      "type": "tweak",
+      "text": "Авто-генерация постоянного HAPP HWID для happ://crypt5/ подписок",
+      "important": false
+    },
+    {
       "type": "fix",
       "text": "Жёсткий лимит размера тела запроса (5MB) для защиты от DoS",
       "important": true

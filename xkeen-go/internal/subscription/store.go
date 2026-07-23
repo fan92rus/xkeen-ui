@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -53,6 +54,11 @@ func NewStore(path string) (*Store, error) {
 
 	// Ensure built-in subscriptions exist
 	s.initBuiltinSubscriptions()
+
+	// Generate HAPP HWID on first load
+	if err := s.ensureHAPPHWID(); err != nil {
+		log.Printf("Warning: failed to ensure HAPP HWID: %v", err)
+	}
 
 	return s, nil
 }
@@ -647,6 +653,31 @@ func (s *Store) SetGeneratedAt(t time.Time) error {
 
 	s.config.GeneratedAt = t
 	return s.saveConfig(s.config)
+}
+
+// ---------- HAPP HWID ----------
+
+// ensureHAPPHWID generates a random base64 HWID if none is set.
+func (s *Store) ensureHAPPHWID() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.config.HAPPHWID != "" {
+		return nil
+	}
+
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Errorf("generating HWID: %w", err)
+	}
+	s.config.HAPPHWID = base64.StdEncoding.EncodeToString(b)
+
+	if err := s.saveConfig(s.config); err != nil {
+		return fmt.Errorf("saving HWID: %w", err)
+	}
+
+	log.Printf("Generated HAPP HWID: %s", s.config.HAPPHWID)
+	return nil
 }
 
 // ---------- Helpers ----------
