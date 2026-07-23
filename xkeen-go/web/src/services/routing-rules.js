@@ -3,30 +3,91 @@ import { getFile, saveFile, listFiles } from './config.js';
 import { get } from './api.js';
 
 const ROUTING_FILE = '05_routing.json';
+const OUTBOUND_FILE = '04_outbounds.json';
 
-// Resolve the full path of the routing config file via the files API.
-// Cache the resolved path to avoid duplicate listFiles calls.
-let _routingPath = null;
+// Built-in Xray tags that always exist
+const BUILTIN_TAGS = ['direct', 'block'];
 
-async function resolveRoutingPath() {
-	if (_routingPath) return _routingPath;
+// Resolve the full path of a config file via the files API.
+// Cache the resolved paths to avoid duplicate listFiles calls.
+const _pathCache = {};
+
+async function resolvePath(name) {
+	if (_pathCache[name]) return _pathCache[name];
 	const files = await listFiles('xray');
-	const found = files.find(f => f.name === ROUTING_FILE);
-	if (!found) throw new Error(`${ROUTING_FILE} not found in config directory`);
-	_routingPath = found.path;
-	return _routingPath;
+	const found = files.find(f => f.name === name);
+	if (!found) throw new Error(`${name} not found in config directory`);
+	_pathCache[name] = found.path;
+	return _pathCache[name];
 }
 
+// ── Read/write routing config ──
+
 export async function getRouting() {
-	const fullPath = await resolveRoutingPath();
+	const fullPath = await resolvePath(ROUTING_FILE);
 	const resp = await getFile(fullPath);
 	return JSON.parse(resp.content);
 }
 
 export async function saveRouting(routing) {
-	const fullPath = await resolveRoutingPath();
+	const fullPath = await resolvePath(ROUTING_FILE);
 	const content = JSON.stringify({ routing }, null, 2);
 	return saveFile(fullPath, content);
+}
+
+// ── Available outbound/balancer tag discovery ──
+
+/** Parse outbound tags from 04_outbounds.json */
+async function getOutboundTags() {
+	try {
+		const fullPath = await resolvePath(OUTBOUND_FILE);
+		const resp = await getFile(fullPath);
+		const data = JSON.parse(resp.content);
+		const outbounds = data.outbounds || [];
+		return outbounds.map(o => o.tag).filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+/** Parse balancer tags from the routing config itself */
+async function getBalancerTags() {
+	try {
+		const data = await getRouting();
+		const r = data.routing || data;
+		return (r.balancers || []).map(b => b.tag).filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Fetch all valid tags: built-in + outbound tags + balancer tags.
+ * Returns { outboundTags: string[], balancerTags: string[], allTags: string[] }
+ */
+export async function getAvailableTags() {
+	const [outboundTags, balancerTags] = await Promise.all([
+		getOutboundTags(),
+		getBalancerTags(),
+	]);
+	const all = [...BUILTIN_TAGS, ...outboundTags, ...balancerTags];
+	return { outboundTags, balancerTags, allTags: [...new Set(all)] };
+}
+
+/**
+ * Validate a single rule's action against available tags.
+ * Returns null if valid, or an error string.
+ */
+export function validateAction(action, availableTags) {
+	if (!action || !action.tag) return 'Action missing tag';
+	const tag = action.tag;
+	// Built-in tags are always valid
+	if (BUILTIN_TAGS.includes(tag)) return null;
+	// Check against known tags
+	if (!availableTags.includes(tag)) {
+		return `Outlet «${tag}» not found in config`;
+	}
+	return null;
 }
 
 // ── Domain/IP entry parsing ──

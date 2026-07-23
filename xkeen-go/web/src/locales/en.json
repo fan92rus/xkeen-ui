@@ -445,6 +445,8 @@
     "domain_placeholder": "domain.com or geosite:google or regexp:...",
     "ip_placeholder": "1.2.3.0/24 or geoip:ru",
     "port_placeholder": "* or 443 or 19200-19400",
-    "name_placeholder": "e.g. RU Direct"
+    "name_placeholder": "e.g. RU Direct",
+    "action_errors": "Some rules reference missing outbound/balancer tags",
+    "save_action_error": "Fix action errors before saving"
   }
 }

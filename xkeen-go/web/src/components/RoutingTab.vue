@@ -17,7 +17,7 @@
 				<button class="btn btn-sm" @click="showTemplates = !showTemplates">{{ i18n.t('routing.templates') }}</button>
 				<button v-if="dirty" class="btn btn-sm" @click="undo">{{ i18n.t('routing.cancel') }}</button>
 				<button class="btn btn-sm btn-primary" @click="addRule">{{ i18n.t('routing.add_rule') }}</button>
-				<button v-if="dirty" class="btn btn-sm btn-success" @click="save">{{ i18n.t('routing.save') }}</button>
+				<button v-if="dirty" :disabled="hasInvalidActions" class="btn btn-sm btn-success" :title="hasInvalidActions ? i18n.t('routing.save_action_error') : ''" @click="save">{{ i18n.t('routing.save') }}</button>
 			</div>
 		</div>
 
@@ -74,8 +74,9 @@
 						<span v-if="rule.port" class="rt-badge rt-badge-port">:{{ rule.port }}</span>
 						<span v-if="rule.networks.length && rule.networks.length < 2" class="rt-badge">{{ rule.networks.join(',') }}</span>
 					</span>
-					<span class="rt-card-action" :class="actionClass(rule.action)">
+					<span class="rt-card-action" :class="actionClass(rule.action)" :title="getRuleError(rule) || ''">
 						{{ actionLabel(rule.action) }}
+						<span v-if="getRuleError(rule)" style="color:#e74c3c;font-size:11px;margin-left:4px">⚠️</span>
 					</span>
 					<span class="rt-card-actions" @click.stop>
 						<button class="rt-icon-btn" @click="duplicateRule(idx)" title="Copy">📋</button>
@@ -218,6 +219,11 @@
 			</div>
 		</div>
 
+		<!-- Action validation errors -->
+		<div v-if="hasInvalidActions" class="rt-error" style="margin-bottom:8px">
+			⚠️ {{ i18n.t('routing.action_errors') }}
+		</div>
+
 		<!-- Loading / error -->
 		<div v-if="loading" class="rt-loading">{{ i18n.t('routing.loading') }}</div>
 		<div v-if="error" class="rt-error">⚠️ {{ error }}</div>
@@ -316,10 +322,26 @@ function validateRegex(val) {
 	try { new RegExp(val); return ''; } catch (e) { return e.message; }
 }
 
+// ── Action validation ──
+
+const availableTags = ref({ outboundTags: [], balancerTags: [], allTags: [] });
+
+function getRuleError(rule) {
+	if (!rule || !rule.action) return null;
+	return validateAction(rule.action, availableTags.value.allTags);
+}
+
+const hasInvalidActions = computed(() =>
+	rawRules.value.some(r => getRuleError(r) !== null));
+
 // ── Lifecycle ──
 onMounted(async () => {
 	try {
-		const data = await getRouting();
+		const [data, tags] = await Promise.all([
+			getRouting(),
+			getAvailableTags(),
+		]);
+		availableTags.value = tags;
 		const r = data.routing || data;
 		localRouting.domainStrategy = r.domainStrategy || 'AsIs';
 		rawBalancers.value = r.balancers || [];
@@ -548,6 +570,10 @@ function applyTemplate(name) {
 
 // ── Save ──
 async function save() {
+	if (hasInvalidActions.value) {
+		error.value = i18n.t('routing.save_action_error');
+		return;
+	}
 	loading.value = true;
 	error.value = '';
 	try {
