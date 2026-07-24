@@ -207,11 +207,28 @@ func (h *SpeedBalancerHandler) readSettings() (SpeedBalancerSettings, error) {
 		return defaults, err
 	}
 
-	var raw map[string]interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return defaults, fmt.Errorf("invalid xkeen.json: %w", err)
+	doc, parseErr := jsonc.Parse(string(data))
+	if parseErr != nil {
+		// Not valid JSONC — try legacy plain JSON
+		var raw map[string]interface{}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return defaults, fmt.Errorf("invalid xkeen.json: %w", parseErr)
+		}
+		return readSettingsLegacy(raw, defaults), nil
 	}
 
+	root := doc.Root()
+	if root == nil {
+		return defaults, nil
+	}
+
+	settings := defaults
+	_ = root.UnmarshalPath("xkeen.speed_balancer", &settings)
+	return settings, nil
+}
+
+// readSettingsLegacy extracts SpeedBalancerSettings from a raw JSON map.
+func readSettingsLegacy(raw map[string]interface{}, defaults SpeedBalancerSettings) SpeedBalancerSettings {
 	xkeen, _ := raw["xkeen"].(map[string]interface{})
 	sb, _ := xkeen["speed_balancer"].(map[string]interface{})
 
@@ -237,7 +254,7 @@ func (h *SpeedBalancerHandler) readSettings() (SpeedBalancerSettings, error) {
 	if v, ok := sb["log"].(bool); ok {
 		settings.Log = v
 	}
-	return settings, nil
+	return settings
 }
 
 func (h *SpeedBalancerHandler) writeSettings(settings SpeedBalancerSettings) error {
@@ -255,14 +272,8 @@ func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSetting
 	// Try CST — replace entire speed_balancer, preserve everything else
 	doc, parseErr := jsonc.Parse(string(data))
 	if parseErr == nil && doc != nil {
-		obj := doc.FirstChild()
-		if obj != nil && obj.Kind == jsonc.KindObject {
-			xkeenNode := obj.Get("xkeen")
-			if xkeenNode == nil || xkeenNode.Kind != jsonc.KindObject {
-				xkeenNode = jsonc.Object()
-				obj.Set("xkeen", xkeenNode)
-			}
-
+		root := doc.Root()
+		if root != nil && root.Kind == jsonc.KindObject {
 			// Build fresh speed_balancer node
 			sb := jsonc.Object("enabled", settings.Enabled)
 			condSet(sb, "interval", settings.Interval, settings.Interval > 0)
@@ -274,8 +285,10 @@ func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSetting
 			condSet(sb, "outbounds_file", settings.OutboundsFile, settings.OutboundsFile != "" && settings.OutboundsFile != defaultOutboundsFile)
 			sb.Set("log", settings.Log)
 
-			xkeenNode.Set("speed_balancer", sb)
-			out := jsonc.Serialize(doc)
+			// Set via path — replaces or creates xkeen.speed_balancer
+			root.SetPath("xkeen.speed_balancer", sb)
+
+			out := jsonc.Format(doc, nil)
 			return os.WriteFile(h.configPath, []byte(out), 0o600)
 		}
 	}

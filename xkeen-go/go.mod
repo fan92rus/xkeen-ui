@@ -14,7 +14,7 @@ require (
 )
 
 require (
-	github.com/fan92rus/go-jsonc v0.1.0
+	github.com/fan92rus/go-jsonc v0.2.1
 	golang.org/x/net v0.56.0
 	google.golang.org/protobuf v1.36.11
 )
