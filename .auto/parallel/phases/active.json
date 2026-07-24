@@ -1,0 +1,16 @@
+{
+  "id": "phase-1784879149954",
+  "name": "Fix all review findings",
+  "rationale": "",
+  "phaseBase": "ef9918b",
+  "baselineMetric": 35,
+  "bestCheckpointSha": null,
+  "bestCheckpointMetric": null,
+  "stepsTaken": 0,
+  "maxSteps": 10,
+  "maxRegressionPct": 25,
+  "hardFloorPct": 95,
+  "budgetMs": 600000,
+  "startedAt": 1784879149954,
+  "stepLog": []
+}
