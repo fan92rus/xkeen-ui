@@ -471,8 +471,7 @@ function toggleExpand(id) {
 	expandedId.value = expandedId.value === id ? null : id;
 	if (expandedId.value) {
 		nextTick(() => {
-			cardRefs[id]?.$el?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
-				|| cardRefs[id]?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+			cardRefs[id]?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
 		});
 	}
 }
@@ -705,7 +704,7 @@ function applyTemplate(name) {
 			ips: [],
 			networks: [],
 			port: '',
-			action: { kind: 'balancer', tag: balancerTags.value[0] || 'default-balancer' },
+			action: { kind: 'balancer', tag: balancerTags.value[0] },
 		},
 	};
 	const tpl = templates[name];
@@ -752,12 +751,15 @@ async function save() {
 			balancers: rawBalancers.value,
 			rules: rulesJson,
 		});
-		// Persist disabled rules separately so they survive a reload. We store
-		// the raw Xray shape (the normalized rule's `raw`) plus the user name,
-		// which is enough for normalizeRule to rebuild the rule on next load.
+		// Persist disabled rules separately so they survive a reload. We
+		// serialize the CURRENT state (not r.raw, which may be stale after
+		// edits) so domain/IP changes survive the disable→save→reload cycle.
 		const disabled = rawRules.value
 			.filter(r => r.disabled)
-			.map(r => ({ ...r.raw, name: r.name, disabled: true }));
+			.map(r => {
+				const ser = serializeRule({ ...r, disabled: false });
+				return { ...ser, name: r.name, disabled: true };
+			});
 		saveDisabledRules(routingFilePath.value, disabled);
 		dirty.value = false;
 		storeOriginal();
