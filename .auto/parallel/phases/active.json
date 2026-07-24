@@ -1,0 +1,16 @@
+{
+  "id": "phase-1784879915179",
+  "name": "Architectural split of parser.go into separate files",
+  "rationale": "",
+  "phaseBase": "49fdccd",
+  "baselineMetric": 35,
+  "bestCheckpointSha": null,
+  "bestCheckpointMetric": null,
+  "stepsTaken": 0,
+  "maxSteps": 3,
+  "maxRegressionPct": 25,
+  "hardFloorPct": 95,
+  "budgetMs": 300000,
+  "startedAt": 1784879915179,
+  "stepLog": []
+}
