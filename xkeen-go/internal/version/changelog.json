@@ -1,12 +1,17 @@
 {
-  "unreleased": [
-    {
-      "type": "tweak",
-      "text": "xkeen.json: комментарии и форматирование сохраняются при редактировании через веб-интерфейс (go-jsonc CST)",
-      "important": false
-    }
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "0.13.4",
+      "date": "2026-07-24",
+      "changes": [
+        {
+          "type": "tweak",
+          "text": "xkeen.json: комментарии и форматирование сохраняются при редактировании через веб-интерфейс (go-jsonc CST)",
+          "important": false
+        }
+      ]
+    },
     {
       "version": "0.13.3",
       "date": "2026-07-23",
