@@ -8,6 +8,8 @@ import {
 	serializeRule,
 	validateAction,
 	clearPathCache,
+	loadDisabledRules,
+	saveDisabledRules,
 	COMMON_GEOSITE,
 	COMMON_GEOIP,
 } from '../src/services/routing-rules.js';
@@ -436,6 +438,18 @@ describe('normalizeRule', () => {
 		expect(result.name).not.toBe('');
 		expect(typeof result.name).toBe('string');
 	});
+
+	it('reads a disabled flag so rules can be toggled off in the UI', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'], disabled: true };
+		const result = normalizeRule(rule, 0);
+		expect(result.disabled).toBe(true);
+	});
+
+	it('defaults disabled to false when the flag is absent', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'] };
+		const result = normalizeRule(rule, 0);
+		expect(result.disabled).toBe(false);
+	});
 });
 
 describe('serializeRule', () => {
@@ -491,6 +505,22 @@ describe('serializeRule', () => {
 		};
 		const result = serializeRule(rule);
 		expect(result.name).toBe('My renamed rule');
+	});
+
+	it('returns null for a disabled rule so save can filter it out', () => {
+		const rule = {
+			id: 'rule-0',
+			name: 'Off rule',
+			disabled: true,
+			domains: [parseEntry('google.com')],
+			ips: [],
+			networks: [],
+			port: '',
+			inbound: [],
+			action: { kind: 'outbound', tag: 'direct' },
+			raw: { outboundTag: 'direct' },
+		};
+		expect(serializeRule(rule)).toBeNull();
 	});
 
 	it('preserves extra fields from raw, sets type to field', () => {
@@ -725,5 +755,39 @@ describe('round-trip: normalize → serialize', () => {
 
 		expect(secondPass).toEqual(firstPass);
 		expect(firstPass).toEqual(raw);
+	});
+});
+
+describe('disabled-rule persistence (localStorage)', () => {
+	const KEY = '/path/to/05_routing.json';
+
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it('saveDisabledRules then loadDisabledRules round-trips the rules', () => {
+		const rules = [
+			{ outboundTag: 'proxy', domain: ['ads.com'], name: 'Ads off', disabled: true },
+		];
+		saveDisabledRules(KEY, rules);
+		expect(loadDisabledRules(KEY)).toEqual(rules);
+	});
+
+	it('loadDisabledRules returns [] when nothing stored', () => {
+		expect(loadDisabledRules(KEY)).toEqual([]);
+	});
+
+	it('loadDisabledRules returns [] on malformed JSON', () => {
+		localStorage.setItem(`xkeen-routing-disabled:${KEY}`, '{not json');
+		expect(loadDisabledRules(KEY)).toEqual([]);
+	});
+
+	it('keys disabled rules per routing-file path', () => {
+		saveDisabledRules('/a.json', [{ outboundTag: 'direct', disabled: true }]);
+		saveDisabledRules('/b.json', [{ outboundTag: 'proxy', disabled: true }]);
+		expect(loadDisabledRules('/a.json')).toHaveLength(1);
+		expect(loadDisabledRules('/b.json')).toHaveLength(1);
+		expect(loadDisabledRules('/a.json')[0].outboundTag).toBe('direct');
+		expect(loadDisabledRules('/b.json')[0].outboundTag).toBe('proxy');
 	});
 });

@@ -31,7 +31,13 @@ async function resolvePath(name) {
 export async function getRouting() {
 	const fullPath = await resolvePath(ROUTING_FILE);
 	const resp = await getFile(fullPath);
-	return JSON.parse(resp.content);
+	const parsed = JSON.parse(resp.content);
+	// Attach the resolved path so the UI can use it as a stable key for
+	// browser-side persistence (e.g. disabled rules in localStorage).
+	if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+		parsed.__path = fullPath;
+	}
+	return parsed;
 }
 
 export async function saveRouting(routing) {
@@ -41,6 +47,35 @@ export async function saveRouting(routing) {
 	// Invalidate cache so next resolvePath re-lists the directory
 	clearPathCache();
 	return result;
+}
+
+// ── Disabled-rule persistence (browser localStorage) ──
+// Disabled rules are dropped from the Xray config (serializeRule → null) but
+// kept in the UI so the user can toggle them back on. They are persisted to
+// localStorage keyed by the routing-file path, keeping Xray's 05_routing.json
+// clean and free of non-standard fields.
+
+function disabledStorageKey(fullPath) {
+	return `xkeen-routing-disabled:${fullPath}`;
+}
+
+/** Read previously-disabled rules for the given routing file path. */
+export function loadDisabledRules(fullPath) {
+	try {
+		const raw = localStorage.getItem(disabledStorageKey(fullPath));
+		return raw ? JSON.parse(raw) : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Persist disabled rules (normalized shape) for the given routing file path. */
+export function saveDisabledRules(fullPath, rules) {
+	try {
+		localStorage.setItem(disabledStorageKey(fullPath), JSON.stringify(rules));
+	} catch {
+		// localStorage may be unavailable (private mode, quota) — non-fatal.
+	}
 }
 
 // ── Available outbound/balancer tag discovery ──
@@ -177,6 +212,7 @@ export function normalizeRule(rule, index) {
 	return {
 		id: `rule-${index}`,
 		name: rule.name || guessRuleName(domains, ips, action),
+		disabled: rule.disabled === true,
 		domains,
 		ips,
 		networks,
@@ -271,6 +307,10 @@ export const COMMON_GEOIP = [
 // ── Serialization (UI rule → Xray wire format) ──
 
 export function serializeRule(rule) {
+	// Disabled rules are dropped from the Xray config entirely. The UI keeps
+	// them around (toggled off) and persists them separately so a reload does
+	// not silently lose them; see save() in RoutingTab.vue.
+	if (rule.disabled) return null;
 	const obj = { ...rule.raw }; // preserve unknown fields from original (protocol, routeOnly, etc.)
 	obj.type = 'field'; // required by Xray for field routing rules
 	delete obj.domain;

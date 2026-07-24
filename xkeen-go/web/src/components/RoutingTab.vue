@@ -55,6 +55,7 @@
           dragging: dragIdx === idx,
           'drag-over': dragOverIdx === idx,
           expanded: expandedId === rule.id,
+          disabled: rule.disabled,
         }"
         :draggable="expandedId !== rule.id"
         @dragstart="onDragStart($event, idx)"
@@ -80,6 +81,7 @@
             <span v-if="getRuleError(rule)" style="color:#e74c3c;font-size:11px;margin-left:4px">⚠️</span>
           </span>
           <span class="rt-card-actions" @click.stop>
+            <button class="rt-icon-btn rt-toggle" :class="{ off: rule.disabled }" :title="rule.disabled ? 'Enable' : 'Disable'" @click="toggleDisabled(rule)">{{ rule.disabled ? '⏻' : '⏻' }}</button>
             <button class="rt-icon-btn" title="Copy" @click="duplicateRule(idx)">📋</button>
             <button class="rt-icon-btn" :title="expandedId === rule.id ? 'Collapse' : 'Edit'" @click="toggleExpand(rule.id)">{{ expandedId === rule.id ? '▲' : '✏️' }}</button>
             <button class="rt-icon-btn" :class="{ 'rt-icon-danger': deleteConfirm !== idx, 'rt-icon-confirm': deleteConfirm === idx }" :title="deleteConfirm === idx ? 'Confirm' : 'Delete'" @click="deleteRule(idx)">{{ deleteConfirm === idx ? i18n.t('routing.delete_confirm') : '🗑️' }}</button>
@@ -247,6 +249,7 @@ import {
 	entryLabel, entryIcon, COMMON_GEOSITE, COMMON_GEOIP,
 	serializeRule, fetchCategories,
 	getAvailableTags, validateAction,
+	loadDisabledRules, saveDisabledRules,
 } from '../services/routing-rules.js';
 
 const i18n = useI18nStore();
@@ -260,6 +263,7 @@ const showTemplates = ref(false);
 const localRouting = reactive({ domainStrategy: 'AsIs' });
 const rawRules = ref([]);
 const rawBalancers = ref([]);
+const routingFilePath = ref('');
 
 const rules = computed(() => rawRules.value);
 
@@ -351,11 +355,24 @@ onMounted(async () => {
 			getRouting(),
 			getAvailableTags(),
 		]);
+		routingFilePath.value = data.__path || '05_routing.json';
 		availableTags.value = tags;
 		const r = data.routing || data;
 		localRouting.domainStrategy = r.domainStrategy || 'AsIs';
 		rawBalancers.value = r.balancers || [];
 		rawRules.value = (r.rules || []).map((rule, i) => normalizeRule(rule, i));
+		// Restore rules the user toggled off in a previous session: they were
+		// dropped from the Xray config on save, so we re-attach them from
+		// localStorage and mark them disabled so serializeRule skips them.
+		const stored = loadDisabledRules(routingFilePath.value);
+		if (stored.length) {
+			const base = rawRules.value.length;
+			stored.forEach((rule, i) => {
+				const nr = normalizeRule(rule, base + i);
+				nr.disabled = true;
+				rawRules.value.push(nr);
+			});
+		}
 		storeOriginal();
 	} catch (e) {
 		error.value = e.message || 'Failed to load routing config';
@@ -517,6 +534,11 @@ function toggleNetwork(rule, net) {
 	markDirty();
 }
 
+function toggleDisabled(rule) {
+	rule.disabled = !rule.disabled;
+	markDirty();
+}
+
 // ── Helpers ──
 function ruleIcon(rule) {
 	if (rule.domains.length) return entryIcon(rule.domains[0]);
@@ -598,13 +620,24 @@ async function save() {
 	loading.value = true;
 	error.value = '';
 	try {
-		const rulesJson = rawRules.value.map(r => serializeRule(r));
+		// serializeRule returns null for disabled rules — they are dropped from
+		// the Xray config but kept in the UI (persisted via saveDisabledRules).
+		const rulesJson = rawRules.value
+			.map(r => serializeRule(r))
+			.filter(r => r !== null);
 
 		await saveRouting({
 			domainStrategy: localRouting.domainStrategy,
 			balancers: rawBalancers.value,
 			rules: rulesJson,
 		});
+		// Persist disabled rules separately so they survive a reload. We store
+		// the raw Xray shape (the normalized rule's `raw`) plus the user name,
+		// which is enough for normalizeRule to rebuild the rule on next load.
+		const disabled = rawRules.value
+			.filter(r => r.disabled)
+			.map(r => ({ ...r.raw, name: r.name, disabled: true }));
+		saveDisabledRules(routingFilePath.value, disabled);
 		dirty.value = false;
 		storeOriginal();
 	} catch (e) {
@@ -704,6 +737,8 @@ async function save() {
 .rt-card.dragging { opacity: 0.4; }
 .rt-card.drag-over { border-color: var(--accent, #4a9eff); border-style: dashed; }
 .rt-card.expanded { border-color: var(--accent, #4a9eff); }
+.rt-card.disabled { opacity: 0.5; }
+.rt-card.disabled .rt-card-name { text-decoration: line-through; }
 
 .rt-card-header {
 	display: flex;
@@ -781,6 +816,8 @@ async function save() {
 	transition: background 0.15s;
 }
 .rt-icon-btn:hover { background: rgba(255,255,255,0.1); }
+.rt-toggle { color: #27ae60; font-size: 15px; }
+.rt-toggle.off { color: var(--text-muted); opacity: 0.6; }
 .rt-icon-danger:hover { color: #e74c3c; }
 .rt-icon-confirm {
 	color: #e74c3c;
