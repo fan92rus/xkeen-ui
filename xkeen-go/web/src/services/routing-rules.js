@@ -42,9 +42,18 @@ export async function getRouting() {
 
 export async function saveRouting(routing) {
 	const fullPath = await resolvePath(ROUTING_FILE);
-	const content = JSON.stringify({ routing }, null, 2);
+	// Read the existing file so we can update only the `routing` key while
+	// preserving any sibling top-level fields (e.g. `comment`, `version`).
+	let existing = {};
+	try {
+		const resp = await getFile(fullPath);
+		existing = JSON.parse(resp.content) || {};
+	} catch {
+		// File may not exist yet on first save — start from an empty object.
+	}
+	const merged = { ...existing, routing };
+	const content = JSON.stringify(merged, null, 2);
 	const result = await saveFile(fullPath, content);
-	// Invalidate cache so next resolvePath re-lists the directory
 	clearPathCache();
 	return result;
 }
@@ -194,6 +203,83 @@ export function entryIcon(e) {
 		case 'cidr': return '🔢';
 		default: return '🌐';
 	}
+}
+
+// ── Rule ID generation (collision-safe under rapid clicks) ──
+
+let _ruleIdCounter = 0;
+export function generateRuleId() {
+	_ruleIdCounter++;
+	return `rule-${Date.now()}-${_ruleIdCounter}`;
+}
+
+// ── Port validation ──
+
+/**
+ * Validate an Xray port specification: a single port (1-65535), a range
+ * ("8080-8090"), or a comma-separated list of either. Returns an error
+ * string when invalid, or null when valid. Empty string is valid (optional).
+ */
+export function validatePort(input) {
+	const val = (input || '').trim();
+	if (!val) return null;
+	const parts = val.split(',');
+	for (const part of parts) {
+		const range = part.trim().split('-');
+		for (const p of range) {
+			const n = Number(p.trim());
+			if (!Number.isInteger(n) || n < 1 || n > 65535) {
+				return `Invalid port: ${p.trim()}`;
+			}
+		}
+		if (range.length === 2 && Number(range[0]) > Number(range[1])) {
+			return `Port range start > end: ${part.trim()}`;
+		}
+	}
+	return null;
+}
+
+// ── CIDR / IP validation ──
+
+/**
+ * Validate an IPv4/IPv6 address, optionally with CIDR prefix. Returns an
+ * error string when invalid, or null when valid. Empty = valid (optional).
+ */
+export function validateCidr(input) {
+	const val = (input || '').trim();
+	if (!val) return null;
+
+	// Split address and optional prefix length
+	const slash = val.lastIndexOf('/');
+	const addr = slash >= 0 ? val.slice(0, slash) : val;
+	const prefix = slash >= 0 ? Number(val.slice(slash + 1)) : null;
+
+	if (!addr) return 'Empty address';
+
+	// Try IPv4
+	const v4 = addr.split('.');
+	if (v4.length === 4) {
+		for (const octet of v4) {
+			const n = Number(octet);
+			if (!Number.isInteger(n) || n < 0 || n > 255) {
+				return `Invalid IPv4 octet: ${octet}`;
+			}
+		}
+		if (prefix !== null && (prefix < 0 || prefix > 32)) {
+			return `Invalid prefix length: ${prefix}`;
+		}
+		return null;
+	}
+
+	// Try IPv6 — accept if it contains ':' and is non-empty
+	if (addr.includes(':')) {
+		if (prefix !== null && (prefix < 0 || prefix > 128)) {
+			return `Invalid prefix length: ${prefix}`;
+		}
+		return null;
+	}
+
+	return `Invalid address: ${addr}`;
 }
 
 // ── Rule normalization ──

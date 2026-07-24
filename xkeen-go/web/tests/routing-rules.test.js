@@ -11,6 +11,9 @@ import {
 	loadDisabledRules,
 	saveDisabledRules,
 	filterRules,
+	generateRuleId,
+	validatePort,
+	validateCidr,
 	COMMON_GEOSITE,
 	COMMON_GEOIP,
 } from '../src/services/routing-rules.js';
@@ -835,5 +838,92 @@ describe('filterRules', () => {
 	it('returns rules unchanged (same references) when query is empty', () => {
 		const r = filterRules(rules, '');
 		expect(r[0]).toBe(rules[0]);
+	});
+});
+
+describe('generateRuleId', () => {
+	it('returns unique IDs on rapid successive calls', () => {
+		const a = generateRuleId();
+		const b = generateRuleId();
+		const c = generateRuleId();
+		expect(a).not.toBe(b);
+		expect(b).not.toBe(c);
+		expect(a).not.toBe(c);
+	});
+
+	it('produces string IDs starting with "rule-"', () => {
+		expect(generateRuleId()).toMatch(/^rule-/);
+	});
+});
+
+describe('validatePort', () => {
+	it('accepts a single valid port', () => {
+		expect(validatePort('443')).toBeNull();
+		expect(validatePort('80')).toBeNull();
+	});
+	it('accepts a port range with dash', () => {
+		expect(validatePort('8080-8090')).toBeNull();
+	});
+	it('accepts comma-separated ports', () => {
+		expect(validatePort('80,443,8080')).toBeNull();
+	});
+	it('rejects port > 65535', () => {
+		expect(validatePort('70000')).not.toBeNull();
+	});
+	it('rejects port < 1', () => {
+		expect(validatePort('0')).not.toBeNull();
+	});
+	it('rejects non-numeric garbage', () => {
+		expect(validatePort('abc')).not.toBeNull();
+	});
+	it('accepts empty string (field not required)', () => {
+		expect(validatePort('')).toBeNull();
+	});
+});
+
+describe('validateCidr', () => {
+	it('accepts a valid IPv4 CIDR', () => {
+		expect(validateCidr('192.168.1.0/24')).toBeNull();
+	});
+	it('accepts a plain IPv4 address', () => {
+		expect(validateCidr('10.0.0.1')).toBeNull();
+	});
+	it('accepts a valid IPv6 address', () => {
+		expect(validateCidr('::1')).toBeNull();
+		expect(validateCidr('2001:db8::1/128')).toBeNull();
+	});
+	it('rejects octet > 255', () => {
+		expect(validateCidr('192.168.999.1')).not.toBeNull();
+	});
+	it('rejects prefix length > 32 for IPv4', () => {
+		expect(validateCidr('10.0.0.0/33')).not.toBeNull();
+	});
+	it('accepts empty string (field not required)', () => {
+		expect(validateCidr('')).toBeNull();
+	});
+});
+
+describe('saveRouting preserves top-level fields', () => {
+	it('keeps fields outside the routing object intact', async () => {
+		// Simulate an existing 05_routing.json with extra top-level keys
+		const existing = {
+			routing: { domainStrategy: 'AsIs', rules: [] },
+			comment: 'do not touch',
+			version: 42,
+		};
+		getFile.mockResolvedValue({ content: JSON.stringify(existing) });
+		saveFile.mockResolvedValue({});
+		listFiles.mockResolvedValue([{ name: '05_routing.json', path: '/xray/05_routing.json' }]);
+
+		const { saveRouting } = await import('../src/services/routing-rules.js');
+		await saveRouting({ domainStrategy: 'IPIfNonMatch', rules: [{ type: 'field', outboundTag: 'direct' }] });
+
+		expect(saveFile).toHaveBeenCalledTimes(1);
+		const written = JSON.parse(saveFile.mock.calls[0][1]);
+		// routing should be updated
+		expect(written.routing.domainStrategy).toBe('IPIfNonMatch');
+		// other top-level fields must survive
+		expect(written.comment).toBe('do not touch');
+		expect(written.version).toBe(42);
 	});
 });

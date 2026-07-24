@@ -155,6 +155,7 @@
                 @keydown.enter.prevent="addIp(rule)"
                 @input="showIpSuggest(rule, $event.target.value)"
               >
+              <div v-if="uiState(rule.id).ipWarn" class="rt-regex-warn">⚠️ {{ uiState(rule.id).ipWarn }}</div>
               <div v-if="uiState(rule.id).ipSuggest?.length" class="rt-suggest">
                 <div
                   v-for="s in uiState(rule.id).ipSuggest"
@@ -180,7 +181,8 @@
             </div>
             <div class="rt-field">
               <label class="rt-field-label">{{ i18n.t('routing.port_label') }}</label>
-              <input v-model="rule.port" class="rt-input" :placeholder="i18n.t('routing.port_placeholder')" @input="markDirty">
+              <input v-model="rule.port" class="rt-input" :class="{ 'rt-input-error': validatePort(rule.port) }" :placeholder="i18n.t('routing.port_placeholder')" @input="markDirty">
+              <span v-if="validatePort(rule.port)" class="rt-field-error">{{ validatePort(rule.port) }}</span>
             </div>
           </div>
 
@@ -259,6 +261,7 @@ import {
 	getAvailableTags, validateAction,
 	loadDisabledRules, saveDisabledRules,
 	filterRules,
+	generateRuleId, validatePort, validateCidr,
 } from '../services/routing-rules.js';
 
 const i18n = useI18nStore();
@@ -311,7 +314,7 @@ function uiState(id) {
 		_uiState[id] = {
 			domainInput: '', ipInput: '',
 			domainSuggest: [], ipSuggest: [],
-			regexWarn: '',
+			regexWarn: '', ipWarn: '',
 		};
 	}
 	return _uiState[id];
@@ -501,7 +504,7 @@ function addRule() {
 		type: 'field',
 		domain: [],
 		outboundTag: 'direct',
-	}, Date.now());
+	}, generateRuleId());
 	newRule.name = i18n.t('routing.new_rule');
 	rawRules.value.push(newRule);
 	expandedId.value = newRule.id;
@@ -526,7 +529,7 @@ function duplicateRule(rule) {
 	const idx = rawRules.value.findIndex(r => r.id === rule.id);
 	if (idx < 0) return;
 	const clone = JSON.parse(JSON.stringify(rule));
-	clone.id = 'rule-' + Date.now();
+	clone.id = generateRuleId();
 	clone.name = (clone.name || '') + ' (copy)';
 	rawRules.value.splice(idx + 1, 0, clone);
 	expandedId.value = clone.id;
@@ -573,6 +576,13 @@ function addIp(rule) {
 	const st = uiState(rule.id);
 	const val = (st.ipInput || '').trim();
 	if (!val) return;
+	// Validate plain IPs and CIDRs before adding (geoip:/ext: entries skip)
+	const clean = val.replace(/^geoip:|^ext:.*:/, '');
+	if (!val.startsWith('geoip:') && !val.startsWith('ext:') && validateCidr(clean)) {
+		st.ipWarn = validateCidr(clean);
+		return;
+	}
+	st.ipWarn = '';
 	rule.ips.push(parseEntry(val));
 	st.ipInput = '';
 	st.ipSuggest = [];
@@ -667,12 +677,21 @@ function applyTemplate(name) {
 	};
 	const tpl = templates[name];
 	if (!tpl) return;
+	// Guard: the streaming template needs a balancer tag. If none exist,
+	// warn the user instead of creating a rule with an invalid tag.
+	if (tpl.action.kind === 'balancer' && !balancerTags.value.length) {
+		error.value = i18n.lang === 'ru'
+			? 'Нет настроенных балансировщиков. Шаблон требует balancer.'
+			: 'No balancers configured. This template requires a balancer.';
+		showTemplates.value = false;
+		return;
+	}
 	const newRule = normalizeRule({
 		type: 'field',
 		domain: tpl.domains.map(d => d.raw),
 		outboundTag: tpl.action.kind === 'outbound' ? tpl.action.tag : undefined,
 		balancerTag: tpl.action.kind === 'balancer' ? tpl.action.tag : undefined,
-	}, Date.now());
+	}, generateRuleId());
 	newRule.name = tpl.name;
 	rawRules.value.push(newRule);
 	expandedId.value = newRule.id;
@@ -945,6 +964,8 @@ async function save() {
 	font-size: 11px;
 	margin-top: 4px;
 }
+.rt-input-error { border-color: #e74c3c !important; }
+.rt-field-error { color: #e74c3c; font-size: 11px; display: block; margin-top: 2px; }
 
 /* Tag list */
 .rt-tag-list {
