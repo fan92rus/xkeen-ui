@@ -176,7 +176,7 @@ export function normalizeRule(rule, index) {
 
 	return {
 		id: `rule-${index}`,
-		name: guessRuleName(domains, ips, action),
+		name: rule.name || guessRuleName(domains, ips, action),
 		domains,
 		ips,
 		networks,
@@ -287,6 +287,11 @@ export function serializeRule(rule) {
 	if (rule.inbound.length) obj.inboundTag = rule.inbound;
 	if (rule.action.kind === 'balancer') obj.balancerTag = rule.action.tag;
 	else obj.outboundTag = rule.action.tag;
+	// Persist a user-chosen name; drop the auto-guessed one so the JSON stays
+	// clean and existing round-trip equality is preserved.
+	const guessed = guessRuleName(rule.domains, rule.ips, rule.action);
+	if (rule.name && rule.name !== guessed) obj.name = rule.name;
+	else delete obj.name;
 	return obj;
 }
 

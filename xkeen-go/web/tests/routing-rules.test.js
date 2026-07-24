@@ -423,6 +423,19 @@ describe('normalizeRule', () => {
 		expect(normalizeRule(rule, 3).id).toBe('rule-3');
 		expect(normalizeRule(rule, 99).id).toBe('rule-99');
 	});
+
+	it('preserves a user-provided name instead of guessing', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'], name: 'My custom label' };
+		const result = normalizeRule(rule, 0);
+		expect(result.name).toBe('My custom label');
+	});
+
+	it('falls back to a guessed name when no user name is present', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'] };
+		const result = normalizeRule(rule, 0);
+		expect(result.name).not.toBe('');
+		expect(typeof result.name).toBe('string');
+	});
 });
 
 describe('serializeRule', () => {
@@ -462,6 +475,22 @@ describe('serializeRule', () => {
 		expect(result.port).toBe('443');
 		expect(result.balancerTag).toBe('my-balancer');
 		expect(result.outboundTag).toBeUndefined();
+	});
+
+	it('writes the user-edited name into the serialized output', () => {
+		const rule = {
+			id: 'rule-0',
+			name: 'My renamed rule',
+			domains: [parseEntry('google.com')],
+			ips: [],
+			networks: [],
+			port: '',
+			inbound: [],
+			action: { kind: 'outbound', tag: 'proxy' },
+			raw: { outboundTag: 'proxy' }, // raw has no name — emulates user rename
+		};
+		const result = serializeRule(rule);
+		expect(result.name).toBe('My renamed rule');
 	});
 
 	it('preserves extra fields from raw, sets type to field', () => {
