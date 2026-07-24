@@ -366,7 +366,35 @@ const hasInvalidActions = computed(() =>
 	rawRules.value.some(r => getRuleError(r) !== null));
 
 // ── Lifecycle ──
+// ── Guard unsaved changes: warn before tab close / reload ──
+function onBeforeUnload(e) {
+	if (!dirty.value) return;
+	// Standard cross-browser: any returnValue triggers the native prompt.
+	e.preventDefault();
+	e.returnValue = '';
+}
+
+// ── Click-outside / Esc to close open suggestion dropdowns ──
+function clearOpenSuggestions() {
+	for (const id of Object.keys(_uiState)) {
+		const st = _uiState[id];
+		if (st) { st.domainSuggest = []; st.ipSuggest = []; }
+	}
+}
+function onDocClick(e) {
+	// Close any open suggestion list when the click did not land inside a tag input wrap.
+	if (!e.target || !e.target.closest || !e.target.closest('.rt-tag-input-wrap')) {
+		clearOpenSuggestions();
+	}
+}
+function onDocKeydown(e) {
+	if (e.key === 'Escape') clearOpenSuggestions();
+}
+
 onMounted(async () => {
+	window.addEventListener('beforeunload', onBeforeUnload);
+	document.addEventListener('click', onDocClick);
+	document.addEventListener('keydown', onDocKeydown);
 	try {
 		const [data, tags] = await Promise.all([
 			getRouting(),
@@ -402,6 +430,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
 	clearTimeout(deleteTimer);
+	window.removeEventListener('beforeunload', onBeforeUnload);
+	document.removeEventListener('click', onDocClick);
+	document.removeEventListener('keydown', onDocKeydown);
 });
 
 function markDirty() { dirty.value = true; }
