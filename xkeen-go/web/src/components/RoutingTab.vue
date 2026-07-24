@@ -108,19 +108,19 @@
             </div>
             <div class="rt-tag-input-wrap">
               <input
-                v-model="domainInput[idx]"
+                v-model="uiState(rule.id).domainInput"
                 class="rt-input rt-tag-input"
                 :placeholder="i18n.t('routing.domain_placeholder')"
                 @keydown.enter.prevent="addDomain(idx)"
                 @input="showDomainSuggest(idx, $event.target.value)"
               >
-              <div v-if="regexWarnings[idx]" class="rt-regex-warn">⚠️ {{ regexWarnings[idx] }}</div>
-              <div v-if="domainSuggestions[idx]?.length" class="rt-suggest">
+              <div v-if="uiState(rule.id).regexWarn" class="rt-regex-warn">⚠️ {{ uiState(rule.id).regexWarn }}</div>
+              <div v-if="uiState(rule.id).domainSuggest?.length" class="rt-suggest">
                 <div
-                  v-for="s in domainSuggestions[idx]"
+                  v-for="s in uiState(rule.id).domainSuggest"
                   :key="s.value + (s.db || '')"
                   class="rt-suggest-item"
-                  @click="addDomainEntry(idx, s); domainInput[idx] = ''; domainSuggestions[idx] = []"
+                  @click="addDomainEntry(idx, s); uiState(rule.id).domainInput = ''; uiState(rule.id).domainSuggest = []"
                 >
                   <span>{{ s.flag || '📁' }} {{ s.db ? `ext:${s.db}:${s.value}` : `geosite:${s.value}` }}</span>
                   <span class="rt-suggest-label">{{ s.label }}</span>
@@ -141,18 +141,18 @@
             </div>
             <div class="rt-tag-input-wrap">
               <input
-                v-model="ipInput[idx]"
+                v-model="uiState(rule.id).ipInput"
                 class="rt-input rt-tag-input"
                 :placeholder="i18n.t('routing.ip_placeholder')"
                 @keydown.enter.prevent="addIp(idx)"
                 @input="showIpSuggest(idx, $event.target.value)"
               >
-              <div v-if="ipSuggestions[idx]?.length" class="rt-suggest">
+              <div v-if="uiState(rule.id).ipSuggest?.length" class="rt-suggest">
                 <div
-                  v-for="s in ipSuggestions[idx]"
+                  v-for="s in uiState(rule.id).ipSuggest"
                   :key="s.value + (s.db || '')"
                   class="rt-suggest-item"
-                  @click="addIpEntry(idx, s); ipInput[idx] = ''; ipSuggestions[idx] = []"
+                  @click="addIpEntry(idx, s); uiState(rule.id).ipInput = ''; uiState(rule.id).ipSuggest = []"
                 >
                   <span>{{ s.flag || '🌍' }} {{ s.db ? `ext:${s.db}:${s.value}` : `geoip:${s.value}` }}</span>
                   <span class="rt-suggest-label">{{ s.label }}</span>
@@ -292,11 +292,20 @@ function undo() {
 const dragIdx = ref(null);
 const dragOverIdx = ref(null);
 
-// ── Tag input state ──
-const domainInput = reactive({});
-const domainSuggestions = reactive({});
-const ipInput = reactive({});
-const ipSuggestions = reactive({});
+// ── Tag input state (keyed by rule.id, NOT array index) ──
+// Indexing by id keeps transient input text/suggestions attached to the
+// correct rule even after deletes or reorders shift array positions.
+const _uiState = reactive({});
+function uiState(id) {
+	if (!_uiState[id]) {
+		_uiState[id] = {
+			domainInput: '', ipInput: '',
+			domainSuggest: [], ipSuggest: [],
+			regexWarn: '',
+		};
+	}
+	return _uiState[id];
+}
 
 // ── API categories ──
 const apiCategories = ref(null);
@@ -330,8 +339,6 @@ const deleteConfirm = ref(null);
 let deleteTimer = null;
 
 // ── Regex validation ──
-const regexWarnings = reactive({});
-
 function validateRegex(val) {
 	try { new RegExp(val); return ''; } catch (e) { return e.message; }
 }
@@ -471,58 +478,66 @@ function duplicateRule(idx) {
 
 // ── Domain/IP tag input ──
 function addDomain(idx) {
-	const val = (domainInput[idx] || '').trim();
+	const rule = rawRules.value[idx];
+	const st = uiState(rule.id);
+	const val = (st.domainInput || '').trim();
 	if (!val) return;
 	const entry = parseEntry(val);
 	if (entry.type === 'regexp') {
 		const err = validateRegex(entry.value);
-		if (err) { regexWarnings[idx] = err; return; }
+		if (err) { st.regexWarn = err; return; }
 	}
-	regexWarnings[idx] = '';
-	rawRules.value[idx].domains.push(entry);
-	domainInput[idx] = '';
-	domainSuggestions[idx] = [];
+	st.regexWarn = '';
+	rule.domains.push(entry);
+	st.domainInput = '';
+	st.domainSuggest = [];
 	markDirty();
 }
 
 function addDomainEntry(idx, suggestion) {
+	const rule = rawRules.value[idx];
 	const raw = suggestion.db
 		? `ext:${suggestion.db}:${suggestion.value}`
 		: `geosite:${suggestion.value}`;
-	rawRules.value[idx].domains.push(parseEntry(raw));
-	regexWarnings[idx] = '';
+	rule.domains.push(parseEntry(raw));
+	uiState(rule.id).regexWarn = '';
 	markDirty();
 }
 
 function showDomainSuggest(idx, val) {
-	if (!val || val.length < 2) { domainSuggestions[idx] = []; return; }
+	const st = uiState(rawRules.value[idx].id);
+	if (!val || val.length < 2) { st.domainSuggest = []; return; }
 	const q = val.replace(/^geosite:|^ext:.*:/, '').toLowerCase();
-	domainSuggestions[idx] = mergedGeoSite.value
+	st.domainSuggest = mergedGeoSite.value
 		.filter(s => s.value.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
 		.slice(0, 8);
 }
 
 function addIp(idx) {
-	const val = (ipInput[idx] || '').trim();
+	const rule = rawRules.value[idx];
+	const st = uiState(rule.id);
+	const val = (st.ipInput || '').trim();
 	if (!val) return;
-	rawRules.value[idx].ips.push(parseEntry(val));
-	ipInput[idx] = '';
-	ipSuggestions[idx] = [];
+	rule.ips.push(parseEntry(val));
+	st.ipInput = '';
+	st.ipSuggest = [];
 	markDirty();
 }
 
 function addIpEntry(idx, suggestion) {
+	const rule = rawRules.value[idx];
 	const raw = suggestion.db
 		? `ext:${suggestion.db}:${suggestion.value}`
 		: `geoip:${suggestion.value}`;
-	rawRules.value[idx].ips.push(parseEntry(raw));
+	rule.ips.push(parseEntry(raw));
 	markDirty();
 }
 
 function showIpSuggest(idx, val) {
-	if (!val || val.length < 2) { ipSuggestions[idx] = []; return; }
+	const st = uiState(rawRules.value[idx].id);
+	if (!val || val.length < 2) { st.ipSuggest = []; return; }
 	const q = val.replace(/^geoip:|^ext:.*:/, '').toLowerCase();
-	ipSuggestions[idx] = mergedGeoIP.value
+	st.ipSuggest = mergedGeoIP.value
 		.filter(s => s.value.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
 		.slice(0, 8);
 }
