@@ -453,6 +453,57 @@ func TestSpeedBalancer_ResetToRemoveKey(t *testing.T) {
 	}
 }
 
+func TestSpeedBalancer_PreservesComments(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "xkeen.json")
+
+	// Start with a JSONC file containing comments
+	input := `{
+  // User comment: this section controls speed tests
+  "xkeen": {
+    "retries_download": 3, /* download retries */
+    "speed_balancer": {
+      "enabled": false,
+      "interval": 20
+    }
+  }
+}`
+	os.WriteFile(configPath, []byte(input), 0o644)
+
+	h := NewSpeedBalancerHandler(configPath, "xkeen")
+
+	// Write new settings
+	settings := defaultSpeedBalancerSettings()
+	settings.Enabled = true
+	settings.Interval = 10
+	if err := h.writeSettings(settings); err != nil {
+		t.Fatalf("writeSettings error: %v", err)
+	}
+
+	// Read back raw text — comments outside speed_balancer are preserved
+	data, _ := os.ReadFile(configPath)
+	output := string(data)
+
+	// Comments outside speed_balancer are preserved
+	if !strings.Contains(output, "// User comment: this section controls speed tests") {
+		t.Error("line comment at object level not preserved")
+	}
+	if !strings.Contains(output, "/* download retries */") {
+		t.Error("block comment at object level not preserved")
+	}
+	// Non-xkeen keys preserved
+	if !strings.Contains(output, "retries_download") {
+		t.Error("retries_download key not preserved")
+	}
+	// Updated values take effect
+	if !strings.Contains(output, `"enabled": true`) {
+		t.Errorf("enabled should be true, got: %s", output)
+	}
+	if !strings.Contains(output, `"interval": 10`) {
+		t.Errorf("interval should be 10, got: %s", output)
+	}
+}
+
 func TestSpeedBalancer_StatusEndpoint(t *testing.T) {
 	h := NewSpeedBalancerHandler("/dev/null", "nonexistent-binary")
 

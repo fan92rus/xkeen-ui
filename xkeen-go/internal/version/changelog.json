@@ -1,5 +1,11 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "tweak",
+      "text": "xkeen.json: комментарии и форматирование сохраняются при редактировании через веб-интерфейс (go-jsonc CST)",
+      "important": false
+    }
+  ],
   "releases": [
     {
       "version": "0.13.3",

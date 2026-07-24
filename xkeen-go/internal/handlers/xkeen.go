@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fan92rus/go-jsonc"
 	"github.com/gorilla/mux"
 )
 
@@ -246,10 +247,55 @@ func (h *SpeedBalancerHandler) writeSettings(settings SpeedBalancerSettings) err
 }
 
 func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSettings) error {
+	data, err := os.ReadFile(h.configPath)
+	if err != nil {
+		return h.writeSettingsJSON(settings, nil)
+	}
 
+	// Try CST — replace entire speed_balancer, preserve everything else
+	doc, parseErr := jsonc.Parse(string(data))
+	if parseErr == nil && doc != nil {
+		obj := doc.FirstChild()
+		xkeenNode := obj.Get("xkeen")
+		if obj != nil && obj.Kind == jsonc.KindObject &&
+			xkeenNode != nil && xkeenNode.Kind == jsonc.KindObject {
+
+			// Build fresh speed_balancer node
+			sb := jsonc.Object("enabled", settings.Enabled)
+			condSet(sb, "interval", settings.Interval, settings.Interval > 0)
+			condSet(sb, "hysteresis", settings.Hysteresis, settings.Hysteresis > 0)
+			condSet(sb, "balancer", settings.Balancer, settings.Balancer != "")
+			condSet(sb, "max_time", settings.MaxTime, settings.MaxTime > 0)
+			condSet(sb, "test_url", settings.TestURL, settings.TestURL != "")
+			condSet(sb, "routing_file", settings.RoutingFile, settings.RoutingFile != "" && settings.RoutingFile != defaultRoutingFile)
+			condSet(sb, "outbounds_file", settings.OutboundsFile, settings.OutboundsFile != "" && settings.OutboundsFile != defaultOutboundsFile)
+			sb.Set("log", settings.Log)
+
+			// Replace on parent node
+			xkeenNode.Set("speed_balancer", sb)
+			out := jsonc.Serialize(doc)
+			return os.WriteFile(h.configPath, []byte(out), 0o600)
+		}
+	}
+
+	return h.writeSettingsJSON(settings, data)
+}
+
+// condSet sets or deletes a key on an Object depending on the condition.
+func condSet(obj *jsonc.Node, key string, value any, cond bool) {
+	if cond {
+		obj.Set(key, value)
+	} else {
+		obj.Delete(key)
+	}
+}
+
+// writeSettingsJSON is the legacy write path using json.Unmarshal/MarshalIndent.
+// If rawInput is nil (new file), it starts from an empty map.
+func (h *SpeedBalancerHandler) writeSettingsJSON(settings SpeedBalancerSettings, rawInput []byte) error {
 	raw := map[string]interface{}{}
-	if data, err := os.ReadFile(h.configPath); err == nil {
-		_ = json.Unmarshal(data, &raw)
+	if rawInput != nil {
+		_ = json.Unmarshal(rawInput, &raw)
 	}
 
 	xkeen, _ := raw["xkeen"].(map[string]interface{})
