@@ -453,6 +453,42 @@ func TestSpeedBalancer_ResetToRemoveKey(t *testing.T) {
 	}
 }
 
+func TestSpeedBalancer_CreatesMissingXkeen(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "xkeen.json")
+
+	// File exists but has no xkeen key at all
+	input := `{
+  "other_config": true
+}`
+	os.WriteFile(configPath, []byte(input), 0o644)
+
+	h := NewSpeedBalancerHandler(configPath, "xkeen")
+	settings := defaultSpeedBalancerSettings()
+	settings.Enabled = true
+	settings.Balancer = "ping"
+	if err := h.writeSettings(settings); err != nil {
+		t.Fatalf("writeSettings error: %v", err)
+	}
+
+	// Read back — xkeen + speed_balancer were created, other keys preserved
+	data, _ := os.ReadFile(configPath)
+	output := string(data)
+
+	if !strings.Contains(output, `"other_config"`) {
+		t.Error("other_config should be preserved")
+	}
+	if !strings.Contains(output, `"xkeen"`) {
+		t.Error("xkeen key should exist")
+	}
+	if !strings.Contains(output, `"enabled": true`) {
+		t.Error("speed_balancer enabled should be true")
+	}
+	if !strings.Contains(output, `"balancer": "ping"`) {
+		t.Error("speed_balancer balancer should be ping")
+	}
+}
+
 func TestSpeedBalancer_PreservesComments(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "xkeen.json")

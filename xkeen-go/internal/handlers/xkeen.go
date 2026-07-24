@@ -256,9 +256,12 @@ func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSetting
 	doc, parseErr := jsonc.Parse(string(data))
 	if parseErr == nil && doc != nil {
 		obj := doc.FirstChild()
-		xkeenNode := obj.Get("xkeen")
-		if obj != nil && obj.Kind == jsonc.KindObject &&
-			xkeenNode != nil && xkeenNode.Kind == jsonc.KindObject {
+		if obj != nil && obj.Kind == jsonc.KindObject {
+			xkeenNode := obj.Get("xkeen")
+			if xkeenNode == nil || xkeenNode.Kind != jsonc.KindObject {
+				xkeenNode = jsonc.Object()
+				obj.Set("xkeen", xkeenNode)
+			}
 
 			// Build fresh speed_balancer node
 			sb := jsonc.Object("enabled", settings.Enabled)
@@ -271,7 +274,6 @@ func (h *SpeedBalancerHandler) writeSettingsLocked(settings SpeedBalancerSetting
 			condSet(sb, "outbounds_file", settings.OutboundsFile, settings.OutboundsFile != "" && settings.OutboundsFile != defaultOutboundsFile)
 			sb.Set("log", settings.Log)
 
-			// Replace on parent node
 			xkeenNode.Set("speed_balancer", sb)
 			out := jsonc.Serialize(doc)
 			return os.WriteFile(h.configPath, []byte(out), 0o600)
