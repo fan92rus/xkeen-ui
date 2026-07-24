@@ -56,6 +56,7 @@
         v-for="(rule, idx) in rules"
         :id="rule.id"
         :key="rule.id"
+        :ref="el => { if (el) cardRefs[rule.id] = el; }"
         class="rt-card"
         :class="{
           dragging: dragIdx === idx,
@@ -192,7 +193,7 @@
             <div class="rt-actions">
               <button
                 class="rt-action-btn"
-                :class="{ active: rule.action.tag === 'direct' && rule.action.kind === 'outbound' }"
+                :class="{ active: isActionMatch(rule.action, 'outbound', 'direct') }"
                 @click="rule.action = { kind: 'outbound', tag: 'direct' }; markDirty()"
               >
                 ⚪ Direct
@@ -200,7 +201,7 @@
               <select
                 v-if="balancerTags.length > 0"
                 class="rt-select rt-balancer-select"
-                :class="{ active: rule.action.kind === 'balancer' }"
+                :class="{ active: isActionMatch(rule.action, 'balancer') }"
                 :value="rule.action.kind === 'balancer' ? rule.action.tag : ''"
                 @change="rule.action = { kind: 'balancer', tag: $event.target.value }; markDirty()"
               >
@@ -210,7 +211,7 @@
               <button
                 v-else
                 class="rt-action-btn"
-                :class="{ active: rule.action.kind === 'balancer' }"
+                :class="{ active: isActionMatch(rule.action, 'balancer') }"
                 title="No balancers configured"
                 @click="rule.action = { kind: 'balancer', tag: 'default-balancer' }; markDirty()"
               >
@@ -218,14 +219,14 @@
               </button>
               <button
                 class="rt-action-btn"
-                :class="{ active: rule.action.tag === 'warp' }"
+                :class="{ active: isActionMatch(rule.action, null, 'warp') }"
                 @click="rule.action = { kind: 'outbound', tag: 'warp' }; markDirty()"
               >
                 🔵 Warp
               </button>
               <button
                 class="rt-action-btn"
-                :class="{ active: rule.action.tag === 'block' }"
+                :class="{ active: isActionMatch(rule.action, null, 'block') }"
                 @click="rule.action = { kind: 'outbound', tag: 'block' }; markDirty()"
               >
                 🔴 Block
@@ -233,10 +234,24 @@
             </div>
           </div>
 
+          <!-- Extra Xray fields preserved via raw (read-only info) -->
+          <div v-if="extraFields(rule).length" class="rt-field rt-extra-fields">
+            <label class="rt-field-label">{{ i18n.lang === 'ru' ? 'Доп. поля' : 'Extra fields' }}</label>
+            <div class="rt-extra-list">
+              <span v-for="f in extraFields(rule)" :key="f.key" class="rt-extra-chip">
+                <strong>{{ f.key }}:</strong> {{ f.value }}
+              </span>
+            </div>
+          </div>
+
           <div class="rt-card-footer">
             <button class="btn btn-sm" @click="expandedId = null">{{ i18n.t('routing.done') }}</button>
           </div>
         </div>
+      </div>
+      <div v-if="rawRules.length === 0" class="rt-empty-state">
+        <span style="font-size:32px">📭</span>
+        <p>{{ i18n.lang === 'ru' ? 'Правил пока нет. Добавьте первое или примените шаблон.' : 'No rules yet. Add one or apply a template.' }}</p>
       </div>
     </div>
 
@@ -270,6 +285,7 @@ const loading = ref(true);
 const error = ref('');
 const dirty = ref(false);
 const expandedId = ref(null);
+const cardRefs = reactive({});
 const showTemplates = ref(false);
 
 const localRouting = reactive({ domainStrategy: 'AsIs' });
@@ -455,7 +471,8 @@ function toggleExpand(id) {
 	expandedId.value = expandedId.value === id ? null : id;
 	if (expandedId.value) {
 		nextTick(() => {
-			document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			cardRefs[id]?.$el?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+				|| cardRefs[id]?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
 		});
 	}
 }
@@ -619,6 +636,15 @@ function toggleDisabled(rule) {
 }
 
 // ── Helpers ──
+/** Extract extra Xray fields preserved via raw that have no dedicated UI. */
+const _EXTRA_KEYS = ['protocol', 'user', 'source', 'email', 'routeOnly'];
+function extraFields(rule) {
+	const raw = rule.raw || {};
+	return _EXTRA_KEYS
+		.filter(k => raw[k] != null && raw[k] !== '' && !(Array.isArray(raw[k]) && raw[k].length === 0))
+		.map(k => ({ key: k, value: Array.isArray(raw[k]) ? raw[k].join(', ') : String(raw[k]) }));
+}
+
 function ruleIcon(rule) {
 	if (rule.domains.length) return entryIcon(rule.domains[0]);
 	if (rule.ips.length) return entryIcon(rule.ips[0]);
@@ -631,6 +657,13 @@ function actionClass(action) {
 	if (action.tag === 'warp') return 'rt-act-warp';
 	if (action.tag === 'block') return 'rt-act-block';
 	return 'rt-act-other';
+}
+
+/** Check whether a rule's action matches the given kind/tag. */
+function isActionMatch(action, kind, tag) {
+	if (kind && action.kind !== kind) return false;
+	if (tag && action.tag !== tag) return false;
+	return true;
 }
 
 function actionLabel(action) {
@@ -814,6 +847,15 @@ async function save() {
 	flex-direction: column;
 	gap: 6px;
 }
+.rt-empty-state {
+	text-align: center;
+	padding: 32px 16px;
+	color: var(--text-muted);
+}
+.rt-empty-state p { margin: 8px 0 0; font-size: 13px; }
+.rt-extra-fields { margin-top: 4px; }
+.rt-extra-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.rt-extra-chip { background: var(--bg-alt, #f0f0f0); border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--text-muted); }
 .rt-card {
 	background: var(--card-bg, rgba(255,255,255,0.04));
 	border: 1px solid var(--border, #2a2a3e);
