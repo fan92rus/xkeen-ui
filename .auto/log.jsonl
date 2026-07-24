@@ -4,3 +4,5 @@
 {"run":2,"metric":35,"status":"explore","description":"Fixed genLineComment to include trailing \\n so line comments don't consume structural tokens. All 35 PBT tests now pass.","segment":0,"phaseStep":1}
 {"run":2,"commit":"1db514d","metric":35,"status":"keep","description":"Phase 1 complete. All 35 PBT tests pass. JSON parser with proper position tracking, comment node support, serialization round-trip. Format is still pass-through.","segment":0,"source":"phase"}
 {"run":3,"metric":35,"status":"explore","description":"Phase 2 step: Implemented proper comment-aware formatter with configurable indent. Formatter handles empty/single-line/multi-line containers, preserves comments, is idempotent.","segment":0,"phaseStep":1}
+{"run":3,"commit":"6b2011a","metric":35,"status":"keep","description":"Phase 2: Comment-aware formatter works. All 35 PBT tests pass. Formatter handles indent, multi-line containers, comment preservation, idempotent output.","segment":0,"source":"phase"}
+{"type":"config","name":"Max-strict linting: fix all golangci-lint issues with 20+ linters","metricName":"lint_issues","metricUnit":"","bestDirection":"lower"}
