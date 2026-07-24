@@ -1,0 +1,23 @@
+{
+  "id": "phase-1784875633012",
+  "name": "Phase 1: JSON parser — fix positions and round-trip",
+  "rationale": "Baseline: 25/35 PBT passing. Remaining failures: position tracking (line/col always 0), RawText reconstruction (serialize doesn't match input), round-trip tests. Fix these systematically.",
+  "phaseBase": "d83fc37",
+  "baselineMetric": 16,
+  "bestCheckpointSha": "d83fc37",
+  "bestCheckpointMetric": 35,
+  "stepsTaken": 1,
+  "maxSteps": 8,
+  "maxRegressionPct": 10,
+  "hardFloorPct": 40,
+  "budgetMs": 600000,
+  "startedAt": 1784875633012,
+  "stepLog": [
+    {
+      "step": 1,
+      "metric": 35,
+      "deltaPct": 118.75,
+      "overFloor": false
+    }
+  ]
+}

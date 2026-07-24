@@ -1,1 +1,4 @@
 {"type":"config","name":"JSONC CST Parser — PBT test passing rate","metricName":"passing_tests","metricUnit":"","bestDirection":"higher"}
+{"run":1,"commit":"d83fc37","metric":16,"metrics":{"failed_tests":19,"total_test_functions":79,"panics":0},"status":"keep","description":"Baseline: 16 passing PBT tests out of 35. Parser stub supports basic JSON values.","timestamp":1784875250254,"segment":0,"confidence":null}
+{"run":2,"metric":25,"status":"explore","description":"Phase1 step2: Rewrote parser with proper lexer/token system, fixed FirstChild to skip trivia, fixed line comment scanner to not eat subsequent tokens","segment":0,"phaseStep":1}
+{"run":2,"metric":35,"status":"explore","description":"Fixed genLineComment to include trailing \\n so line comments don't consume structural tokens. All 35 PBT tests now pass.","segment":0,"phaseStep":1}
