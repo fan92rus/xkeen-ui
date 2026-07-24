@@ -223,6 +223,31 @@ export function normalizeRule(rule, index) {
 	};
 }
 
+// ── Rule filtering (for the search box) ──
+
+/**
+ * Filter normalized rules by a free-text query. Matches case-insensitively
+ * against the rule name, domain/IP entry values and raw text, and the action
+ * tag. Returns the same rule references (no cloning) so the caller's
+ * reactivity is preserved.
+ */
+export function filterRules(rules, query) {
+	const q = (query || '').trim().toLowerCase();
+	if (!q) return rules;
+	return rules.filter(rule => {
+		if ((rule.name || '').toLowerCase().includes(q)) return true;
+		if ((rule.action?.tag || '').toLowerCase().includes(q)) return true;
+		const inDomains = rule.domains?.some(d =>
+			(d.value || '').toLowerCase().includes(q) ||
+			(d.raw || '').toLowerCase().includes(q));
+		if (inDomains) return true;
+		const inIps = rule.ips?.some(ip =>
+			(ip.value || '').toLowerCase().includes(q) ||
+			(ip.raw || '').toLowerCase().includes(q));
+		return inIps;
+	});
+}
+
 function guessRuleName(domains, ips, action) {
 	if (domains.length > 0) {
 		const first = domains[0];

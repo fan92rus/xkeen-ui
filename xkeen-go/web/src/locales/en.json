@@ -447,6 +447,7 @@
     "port_placeholder": "* or 443 or 19200-19400",
     "name_placeholder": "e.g. RU Direct",
     "action_errors": "Some rules reference missing outbound/balancer tags",
-    "save_action_error": "Fix action errors before saving"
+    "save_action_error": "Fix action errors before saving",
+    "search_placeholder": "Search..."
   }
 }

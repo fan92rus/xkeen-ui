@@ -12,6 +12,12 @@
           </select>
         </label>
         <span class="rt-rule-count">{{ rules.length }} {{ pluralize(rules.length) }}</span>
+        <input
+          v-if="rawRules.length > 3"
+          v-model="searchQuery"
+          class="rt-input rt-search"
+          :placeholder="i18n.t('routing.search_placeholder')"
+        >
       </div>
       <div class="rt-header-right">
         <button class="btn btn-sm" @click="showTemplates = !showTemplates">{{ i18n.t('routing.templates') }}</button>
@@ -57,7 +63,7 @@
           expanded: expandedId === rule.id,
           disabled: rule.disabled,
         }"
-        :draggable="expandedId !== rule.id"
+        :draggable="expandedId !== rule.id && !searchQuery"
         @dragstart="onDragStart($event, idx)"
         @dragover.prevent="onDragOver(idx)"
         @dragleave="onDragLeave"
@@ -81,10 +87,12 @@
             <span v-if="getRuleError(rule)" style="color:#e74c3c;font-size:11px;margin-left:4px">⚠️</span>
           </span>
           <span class="rt-card-actions" @click.stop>
+            <button class="rt-icon-btn rt-move" title="Вверх" :disabled="idx === 0" @click="moveUp(rule)">▲</button>
+            <button class="rt-icon-btn rt-move" title="Вниз" :disabled="idx === rules.length - 1" @click="moveDown(rule)">▼</button>
             <button class="rt-icon-btn rt-toggle" :class="{ off: rule.disabled }" :title="rule.disabled ? 'Enable' : 'Disable'" @click="toggleDisabled(rule)">{{ rule.disabled ? '⏻' : '⏻' }}</button>
-            <button class="rt-icon-btn" title="Copy" @click="duplicateRule(idx)">📋</button>
+            <button class="rt-icon-btn" title="Copy" @click="duplicateRule(rule)">📋</button>
             <button class="rt-icon-btn" :title="expandedId === rule.id ? 'Collapse' : 'Edit'" @click="toggleExpand(rule.id)">{{ expandedId === rule.id ? '▲' : '✏️' }}</button>
-            <button class="rt-icon-btn" :class="{ 'rt-icon-danger': deleteConfirm !== idx, 'rt-icon-confirm': deleteConfirm === idx }" :title="deleteConfirm === idx ? 'Confirm' : 'Delete'" @click="deleteRule(idx)">{{ deleteConfirm === idx ? i18n.t('routing.delete_confirm') : '🗑️' }}</button>
+            <button class="rt-icon-btn" :class="{ 'rt-icon-danger': deleteConfirm !== rule.id, 'rt-icon-confirm': deleteConfirm === rule.id }" :title="deleteConfirm === rule.id ? 'Confirm' : 'Delete'" @click="deleteRule(rule)">{{ deleteConfirm === rule.id ? i18n.t('routing.delete_confirm') : '🗑️' }}</button>
           </span>
         </div>
 
@@ -111,8 +119,8 @@
                 v-model="uiState(rule.id).domainInput"
                 class="rt-input rt-tag-input"
                 :placeholder="i18n.t('routing.domain_placeholder')"
-                @keydown.enter.prevent="addDomain(idx)"
-                @input="showDomainSuggest(idx, $event.target.value)"
+                @keydown.enter.prevent="addDomain(rule)"
+                @input="showDomainSuggest(rule, $event.target.value)"
               >
               <div v-if="uiState(rule.id).regexWarn" class="rt-regex-warn">⚠️ {{ uiState(rule.id).regexWarn }}</div>
               <div v-if="uiState(rule.id).domainSuggest?.length" class="rt-suggest">
@@ -120,7 +128,7 @@
                   v-for="s in uiState(rule.id).domainSuggest"
                   :key="s.value + (s.db || '')"
                   class="rt-suggest-item"
-                  @click="addDomainEntry(idx, s); uiState(rule.id).domainInput = ''; uiState(rule.id).domainSuggest = []"
+                  @click="addDomainEntry(rule, s); uiState(rule.id).domainInput = ''; uiState(rule.id).domainSuggest = []"
                 >
                   <span>{{ s.flag || '📁' }} {{ s.db ? `ext:${s.db}:${s.value}` : `geosite:${s.value}` }}</span>
                   <span class="rt-suggest-label">{{ s.label }}</span>
@@ -144,15 +152,15 @@
                 v-model="uiState(rule.id).ipInput"
                 class="rt-input rt-tag-input"
                 :placeholder="i18n.t('routing.ip_placeholder')"
-                @keydown.enter.prevent="addIp(idx)"
-                @input="showIpSuggest(idx, $event.target.value)"
+                @keydown.enter.prevent="addIp(rule)"
+                @input="showIpSuggest(rule, $event.target.value)"
               >
               <div v-if="uiState(rule.id).ipSuggest?.length" class="rt-suggest">
                 <div
                   v-for="s in uiState(rule.id).ipSuggest"
                   :key="s.value + (s.db || '')"
                   class="rt-suggest-item"
-                  @click="addIpEntry(idx, s); uiState(rule.id).ipInput = ''; uiState(rule.id).ipSuggest = []"
+                  @click="addIpEntry(rule, s); uiState(rule.id).ipInput = ''; uiState(rule.id).ipSuggest = []"
                 >
                   <span>{{ s.flag || '🌍' }} {{ s.db ? `ext:${s.db}:${s.value}` : `geoip:${s.value}` }}</span>
                   <span class="rt-suggest-label">{{ s.label }}</span>
@@ -250,6 +258,7 @@ import {
 	serializeRule, fetchCategories,
 	getAvailableTags, validateAction,
 	loadDisabledRules, saveDisabledRules,
+	filterRules,
 } from '../services/routing-rules.js';
 
 const i18n = useI18nStore();
@@ -264,8 +273,9 @@ const localRouting = reactive({ domainStrategy: 'AsIs' });
 const rawRules = ref([]);
 const rawBalancers = ref([]);
 const routingFilePath = ref('');
+const searchQuery = ref('');
 
-const rules = computed(() => rawRules.value);
+const rules = computed(() => filterRules(rawRules.value, searchQuery.value));
 
 // ── Undo / cancel ──
 const originalState = ref(null);
@@ -416,21 +426,20 @@ function toggleExpand(id) {
 	}
 }
 
-// ── Drag and drop ──
+// ── Drag and drop (disabled while a search filter is active) ──
 function onDragStart(e, idx) {
+	if (searchQuery.value) { e.preventDefault(); return; }
 	dragIdx.value = idx;
 	e.dataTransfer.effectAllowed = 'move';
 	e.dataTransfer.setData('text/plain', String(idx));
 }
-function onDragOver(idx) { dragOverIdx.value = idx; }
+function onDragOver(idx) { if (!searchQuery.value) dragOverIdx.value = idx; }
 function onDragLeave() { dragOverIdx.value = null; }
 function onDrop(targetIdx) {
+	if (searchQuery.value) return;
 	const srcIdx = dragIdx.value;
 	if (srcIdx === null || srcIdx === targetIdx) return;
 	const moved = rawRules.value.splice(srcIdx, 1)[0];
-	// After removing srcIdx, elements after it shift down by 1.
-	// Adjust insertion point so the rule always lands *before* the target,
-	// regardless of drag direction (consistent UX).
 	const insertAt = srcIdx < targetIdx ? targetIdx - 1 : targetIdx;
 	rawRules.value.splice(insertAt, 0, moved);
 	markDirty();
@@ -440,6 +449,20 @@ function onDragEnd() {
 	dragIdx.value = null;
 	dragOverIdx.value = null;
 }
+
+// Move a rule up/down. Works by rule.id so it stays correct under a search
+// filter (where the v-for index differs from the rawRules index).
+function moveRule(ruleId, direction) {
+	const i = rawRules.value.findIndex(r => r.id === ruleId);
+	if (i < 0) return;
+	const j = i + direction;
+	if (j < 0 || j >= rawRules.value.length) return;
+	const [moved] = rawRules.value.splice(i, 1);
+	rawRules.value.splice(j, 0, moved);
+	markDirty();
+}
+function moveUp(rule) { moveRule(rule.id, -1); }
+function moveDown(rule) { moveRule(rule.id, +1); }
 
 // ── Rule operations ──
 function addRule() {
@@ -454,31 +477,34 @@ function addRule() {
 	markDirty();
 }
 
-function deleteRule(idx) {
-	if (deleteConfirm.value !== idx) {
-		deleteConfirm.value = idx;
+function deleteRule(rule) {
+	if (deleteConfirm.value !== rule.id) {
+		deleteConfirm.value = rule.id;
 		clearTimeout(deleteTimer);
 		deleteTimer = setTimeout(() => { deleteConfirm.value = null; }, 3000);
 		return;
 	}
 	clearTimeout(deleteTimer);
 	deleteConfirm.value = null;
-	rawRules.value.splice(idx, 1);
+	const idx = rawRules.value.findIndex(r => r.id === rule.id);
+	if (idx >= 0) rawRules.value.splice(idx, 1);
 	markDirty();
 }
 
-function duplicateRule(idx) {
-	const clone = JSON.parse(JSON.stringify(rawRules.value[idx]));
+function duplicateRule(rule) {
+	const idx = rawRules.value.findIndex(r => r.id === rule.id);
+	if (idx < 0) return;
+	const clone = JSON.parse(JSON.stringify(rule));
 	clone.id = 'rule-' + Date.now();
-	clone.name = clone.name + ' (copy)';
+	clone.name = (clone.name || '') + ' (copy)';
 	rawRules.value.splice(idx + 1, 0, clone);
 	expandedId.value = clone.id;
 	markDirty();
 }
 
-// ── Domain/IP tag input ──
-function addDomain(idx) {
-	const rule = rawRules.value[idx];
+// ── Domain/IP tag input (all take the rule object, not an array index, so
+//    they stay correct when a search filter reorders/trims the v-for) ──
+function addDomain(rule) {
 	const st = uiState(rule.id);
 	const val = (st.domainInput || '').trim();
 	if (!val) return;
@@ -494,8 +520,7 @@ function addDomain(idx) {
 	markDirty();
 }
 
-function addDomainEntry(idx, suggestion) {
-	const rule = rawRules.value[idx];
+function addDomainEntry(rule, suggestion) {
 	const raw = suggestion.db
 		? `ext:${suggestion.db}:${suggestion.value}`
 		: `geosite:${suggestion.value}`;
@@ -504,8 +529,8 @@ function addDomainEntry(idx, suggestion) {
 	markDirty();
 }
 
-function showDomainSuggest(idx, val) {
-	const st = uiState(rawRules.value[idx].id);
+function showDomainSuggest(rule, val) {
+	const st = uiState(rule.id);
 	if (!val || val.length < 2) { st.domainSuggest = []; return; }
 	const q = val.replace(/^geosite:|^ext:.*:/, '').toLowerCase();
 	st.domainSuggest = mergedGeoSite.value
@@ -513,8 +538,7 @@ function showDomainSuggest(idx, val) {
 		.slice(0, 8);
 }
 
-function addIp(idx) {
-	const rule = rawRules.value[idx];
+function addIp(rule) {
 	const st = uiState(rule.id);
 	const val = (st.ipInput || '').trim();
 	if (!val) return;
@@ -524,8 +548,7 @@ function addIp(idx) {
 	markDirty();
 }
 
-function addIpEntry(idx, suggestion) {
-	const rule = rawRules.value[idx];
+function addIpEntry(rule, suggestion) {
 	const raw = suggestion.db
 		? `ext:${suggestion.db}:${suggestion.value}`
 		: `geoip:${suggestion.value}`;
@@ -533,8 +556,8 @@ function addIpEntry(idx, suggestion) {
 	markDirty();
 }
 
-function showIpSuggest(idx, val) {
-	const st = uiState(rawRules.value[idx].id);
+function showIpSuggest(rule, val) {
+	const st = uiState(rule.id);
 	if (!val || val.length < 2) { st.ipSuggest = []; return; }
 	const q = val.replace(/^geoip:|^ext:.*:/, '').toLowerCase();
 	st.ipSuggest = mergedGeoIP.value
@@ -695,6 +718,7 @@ async function save() {
 	font-size: 13px;
 }
 .rt-rule-count { font-size: 12px; color: var(--text-muted); }
+.rt-search { font-size: 12px; padding: 2px 8px; max-width: 160px; }
 
 .rt-info {
 	font-size: 12px;
@@ -833,6 +857,8 @@ async function save() {
 .rt-icon-btn:hover { background: rgba(255,255,255,0.1); }
 .rt-toggle { color: #27ae60; font-size: 15px; }
 .rt-toggle.off { color: var(--text-muted); opacity: 0.6; }
+.rt-move { color: var(--text-muted); font-size: 11px; }
+.rt-move:disabled { opacity: 0.25; cursor: default; }
 .rt-icon-danger:hover { color: #e74c3c; }
 .rt-icon-confirm {
 	color: #e74c3c;

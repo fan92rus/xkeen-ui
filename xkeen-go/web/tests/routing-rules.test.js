@@ -10,6 +10,7 @@ import {
 	clearPathCache,
 	loadDisabledRules,
 	saveDisabledRules,
+	filterRules,
 	COMMON_GEOSITE,
 	COMMON_GEOIP,
 } from '../src/services/routing-rules.js';
@@ -789,5 +790,50 @@ describe('disabled-rule persistence (localStorage)', () => {
 		expect(loadDisabledRules('/b.json')).toHaveLength(1);
 		expect(loadDisabledRules('/a.json')[0].outboundTag).toBe('direct');
 		expect(loadDisabledRules('/b.json')[0].outboundTag).toBe('proxy');
+	});
+});
+
+describe('filterRules', () => {
+	const rules = [
+		normalizeRule({ outboundTag: 'proxy', domain: ['geosite:netflix'], name: 'Netflix' }, 0),
+		normalizeRule({ outboundTag: 'direct', domain: ['geosite:category-ru'], name: 'RU Direct' }, 1),
+		normalizeRule({ outboundTag: 'block', ip: ['geoip:cn'], name: 'Block CN' }, 2),
+	];
+
+	it('returns all rules when the query is empty', () => {
+		expect(filterRules(rules, '')).toHaveLength(3);
+		expect(filterRules(rules, '   ')).toHaveLength(3);
+	});
+
+	it('matches by rule name (case-insensitive)', () => {
+		expect(filterRules(rules, 'netflix')).toHaveLength(1);
+		expect(filterRules(rules, 'NETFLIX')).toHaveLength(1);
+	});
+
+	it('matches by domain entry value', () => {
+		expect(filterRules(rules, 'netflix')).toHaveLength(1);
+	});
+
+	it('matches by domain raw text', () => {
+		expect(filterRules(rules, 'category-ru')).toHaveLength(1);
+	});
+
+	it('matches by IP entry value', () => {
+		expect(filterRules(rules, 'cn')).toHaveLength(1);
+	});
+
+	it('matches by action tag', () => {
+		const r = filterRules(rules, 'block');
+		expect(r).toHaveLength(1);
+		expect(r[0].action.tag).toBe('block');
+	});
+
+	it('returns nothing when no rule matches', () => {
+		expect(filterRules(rules, 'zzz-nope')).toHaveLength(0);
+	});
+
+	it('returns rules unchanged (same references) when query is empty', () => {
+		const r = filterRules(rules, '');
+		expect(r[0]).toBe(rules[0]);
 	});
 });
