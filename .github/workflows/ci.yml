@@ -84,3 +84,28 @@ jobs:
           config: >-
             p/auto
             .semgrep.yml
+
+  changelog:
+    name: Changelog updated
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Require changelog entry when user-facing code changes
+        run: |
+          set -euo pipefail
+          # User-facing code paths (mirror scripts/pre-commit)
+          USER_FACING=$(git diff --name-only origin/master...HEAD | grep -E 'xkeen-go/(internal/(handlers|config|server|subscription)/.*\.go|web/src/(components|services|stores)/.*\.(js|vue))$' | grep -vE '_test\.go$|\.test\.js$' || true)
+          CHANGELOG=$(git diff --name-only origin/master...HEAD | grep 'xkeen-go/internal/version/changelog.json' || true)
+
+          echo "User-facing files:"; echo "$USER_FACING" | sed 's/^/  /'
+          echo "Changelog changed: ${CHANGELOG:-no}"
+
+          if [ -n "$USER_FACING" ] && [ -z "$CHANGELOG" ]; then
+            echo ""
+            echo "❌ Pull request changes user-facing code but does not update"
+            echo "   xkeen-go/internal/version/changelog.json."
+            echo "   Add an entry to the 'unreleased' array, or mark the PR as"
+            echo "   non-user-facing (refactor/test/docs) and remove the matching paths."
+            exit 1
+          fi
+          echo "✓ Changelog requirement satisfied."
