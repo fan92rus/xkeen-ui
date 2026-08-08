@@ -8,6 +8,12 @@ import {
 	serializeRule,
 	validateAction,
 	clearPathCache,
+	loadDisabledRules,
+	saveDisabledRules,
+	filterRules,
+	generateRuleId,
+	validatePort,
+	validateCidr,
 	COMMON_GEOSITE,
 	COMMON_GEOIP,
 } from '../src/services/routing-rules.js';
@@ -423,6 +429,31 @@ describe('normalizeRule', () => {
 		expect(normalizeRule(rule, 3).id).toBe('rule-3');
 		expect(normalizeRule(rule, 99).id).toBe('rule-99');
 	});
+
+	it('preserves a user-provided name instead of guessing', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'], name: 'My custom label' };
+		const result = normalizeRule(rule, 0);
+		expect(result.name).toBe('My custom label');
+	});
+
+	it('falls back to a guessed name when no user name is present', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'] };
+		const result = normalizeRule(rule, 0);
+		expect(result.name).not.toBe('');
+		expect(typeof result.name).toBe('string');
+	});
+
+	it('reads a disabled flag so rules can be toggled off in the UI', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'], disabled: true };
+		const result = normalizeRule(rule, 0);
+		expect(result.disabled).toBe(true);
+	});
+
+	it('defaults disabled to false when the flag is absent', () => {
+		const rule = { outboundTag: 'direct', domain: ['google.com'] };
+		const result = normalizeRule(rule, 0);
+		expect(result.disabled).toBe(false);
+	});
 });
 
 describe('serializeRule', () => {
@@ -462,6 +493,38 @@ describe('serializeRule', () => {
 		expect(result.port).toBe('443');
 		expect(result.balancerTag).toBe('my-balancer');
 		expect(result.outboundTag).toBeUndefined();
+	});
+
+	it('writes the user-edited name into the serialized output', () => {
+		const rule = {
+			id: 'rule-0',
+			name: 'My renamed rule',
+			domains: [parseEntry('google.com')],
+			ips: [],
+			networks: [],
+			port: '',
+			inbound: [],
+			action: { kind: 'outbound', tag: 'proxy' },
+			raw: { outboundTag: 'proxy' }, // raw has no name — emulates user rename
+		};
+		const result = serializeRule(rule);
+		expect(result.name).toBe('My renamed rule');
+	});
+
+	it('returns null for a disabled rule so save can filter it out', () => {
+		const rule = {
+			id: 'rule-0',
+			name: 'Off rule',
+			disabled: true,
+			domains: [parseEntry('google.com')],
+			ips: [],
+			networks: [],
+			port: '',
+			inbound: [],
+			action: { kind: 'outbound', tag: 'direct' },
+			raw: { outboundTag: 'direct' },
+		};
+		expect(serializeRule(rule)).toBeNull();
 	});
 
 	it('preserves extra fields from raw, sets type to field', () => {
@@ -696,5 +759,171 @@ describe('round-trip: normalize → serialize', () => {
 
 		expect(secondPass).toEqual(firstPass);
 		expect(firstPass).toEqual(raw);
+	});
+});
+
+describe('disabled-rule persistence (localStorage)', () => {
+	const KEY = '/path/to/05_routing.json';
+
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it('saveDisabledRules then loadDisabledRules round-trips the rules', () => {
+		const rules = [
+			{ outboundTag: 'proxy', domain: ['ads.com'], name: 'Ads off', disabled: true },
+		];
+		saveDisabledRules(KEY, rules);
+		expect(loadDisabledRules(KEY)).toEqual(rules);
+	});
+
+	it('loadDisabledRules returns [] when nothing stored', () => {
+		expect(loadDisabledRules(KEY)).toEqual([]);
+	});
+
+	it('loadDisabledRules returns [] on malformed JSON', () => {
+		localStorage.setItem(`xkeen-routing-disabled:${KEY}`, '{not json');
+		expect(loadDisabledRules(KEY)).toEqual([]);
+	});
+
+	it('keys disabled rules per routing-file path', () => {
+		saveDisabledRules('/a.json', [{ outboundTag: 'direct', disabled: true }]);
+		saveDisabledRules('/b.json', [{ outboundTag: 'proxy', disabled: true }]);
+		expect(loadDisabledRules('/a.json')).toHaveLength(1);
+		expect(loadDisabledRules('/b.json')).toHaveLength(1);
+		expect(loadDisabledRules('/a.json')[0].outboundTag).toBe('direct');
+		expect(loadDisabledRules('/b.json')[0].outboundTag).toBe('proxy');
+	});
+});
+
+describe('filterRules', () => {
+	const rules = [
+		normalizeRule({ outboundTag: 'proxy', domain: ['geosite:netflix'], name: 'Netflix' }, 0),
+		normalizeRule({ outboundTag: 'direct', domain: ['geosite:category-ru'], name: 'RU Direct' }, 1),
+		normalizeRule({ outboundTag: 'block', ip: ['geoip:cn'], name: 'Block CN' }, 2),
+	];
+
+	it('returns all rules when the query is empty', () => {
+		expect(filterRules(rules, '')).toHaveLength(3);
+		expect(filterRules(rules, '   ')).toHaveLength(3);
+	});
+
+	it('matches by rule name (case-insensitive)', () => {
+		expect(filterRules(rules, 'netflix')).toHaveLength(1);
+		expect(filterRules(rules, 'NETFLIX')).toHaveLength(1);
+	});
+
+	it('matches by domain entry value', () => {
+		expect(filterRules(rules, 'netflix')).toHaveLength(1);
+	});
+
+	it('matches by domain raw text', () => {
+		expect(filterRules(rules, 'category-ru')).toHaveLength(1);
+	});
+
+	it('matches by IP entry value', () => {
+		expect(filterRules(rules, 'cn')).toHaveLength(1);
+	});
+
+	it('matches by action tag', () => {
+		const r = filterRules(rules, 'block');
+		expect(r).toHaveLength(1);
+		expect(r[0].action.tag).toBe('block');
+	});
+
+	it('returns nothing when no rule matches', () => {
+		expect(filterRules(rules, 'zzz-nope')).toHaveLength(0);
+	});
+
+	it('returns rules unchanged (same references) when query is empty', () => {
+		const r = filterRules(rules, '');
+		expect(r[0]).toBe(rules[0]);
+	});
+});
+
+describe('generateRuleId', () => {
+	it('returns unique IDs on rapid successive calls', () => {
+		const a = generateRuleId();
+		const b = generateRuleId();
+		const c = generateRuleId();
+		expect(a).not.toBe(b);
+		expect(b).not.toBe(c);
+		expect(a).not.toBe(c);
+	});
+
+	it('produces string IDs starting with "rule-"', () => {
+		expect(generateRuleId()).toMatch(/^rule-/);
+	});
+});
+
+describe('validatePort', () => {
+	it('accepts a single valid port', () => {
+		expect(validatePort('443')).toBeNull();
+		expect(validatePort('80')).toBeNull();
+	});
+	it('accepts a port range with dash', () => {
+		expect(validatePort('8080-8090')).toBeNull();
+	});
+	it('accepts comma-separated ports', () => {
+		expect(validatePort('80,443,8080')).toBeNull();
+	});
+	it('rejects port > 65535', () => {
+		expect(validatePort('70000')).not.toBeNull();
+	});
+	it('rejects port < 1', () => {
+		expect(validatePort('0')).not.toBeNull();
+	});
+	it('rejects non-numeric garbage', () => {
+		expect(validatePort('abc')).not.toBeNull();
+	});
+	it('accepts empty string (field not required)', () => {
+		expect(validatePort('')).toBeNull();
+	});
+});
+
+describe('validateCidr', () => {
+	it('accepts a valid IPv4 CIDR', () => {
+		expect(validateCidr('192.168.1.0/24')).toBeNull();
+	});
+	it('accepts a plain IPv4 address', () => {
+		expect(validateCidr('10.0.0.1')).toBeNull();
+	});
+	it('accepts a valid IPv6 address', () => {
+		expect(validateCidr('::1')).toBeNull();
+		expect(validateCidr('2001:db8::1/128')).toBeNull();
+	});
+	it('rejects octet > 255', () => {
+		expect(validateCidr('192.168.999.1')).not.toBeNull();
+	});
+	it('rejects prefix length > 32 for IPv4', () => {
+		expect(validateCidr('10.0.0.0/33')).not.toBeNull();
+	});
+	it('accepts empty string (field not required)', () => {
+		expect(validateCidr('')).toBeNull();
+	});
+});
+
+describe('saveRouting preserves top-level fields', () => {
+	it('keeps fields outside the routing object intact', async () => {
+		// Simulate an existing 05_routing.json with extra top-level keys
+		const existing = {
+			routing: { domainStrategy: 'AsIs', rules: [] },
+			comment: 'do not touch',
+			version: 42,
+		};
+		getFile.mockResolvedValue({ content: JSON.stringify(existing) });
+		saveFile.mockResolvedValue({});
+		listFiles.mockResolvedValue([{ name: '05_routing.json', path: '/xray/05_routing.json' }]);
+
+		const { saveRouting } = await import('../src/services/routing-rules.js');
+		await saveRouting({ domainStrategy: 'IPIfNonMatch', rules: [{ type: 'field', outboundTag: 'direct' }] });
+
+		expect(saveFile).toHaveBeenCalledTimes(1);
+		const written = JSON.parse(saveFile.mock.calls[0][1]);
+		// routing should be updated
+		expect(written.routing.domainStrategy).toBe('IPIfNonMatch');
+		// other top-level fields must survive
+		expect(written.comment).toBe('do not touch');
+		expect(written.version).toBe(42);
 	});
 });

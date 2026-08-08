@@ -31,16 +31,60 @@ async function resolvePath(name) {
 export async function getRouting() {
 	const fullPath = await resolvePath(ROUTING_FILE);
 	const resp = await getFile(fullPath);
-	return JSON.parse(resp.content);
+	const parsed = JSON.parse(resp.content);
+	// Attach the resolved path so the UI can use it as a stable key for
+	// browser-side persistence (e.g. disabled rules in localStorage).
+	if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+		parsed.__path = fullPath;
+	}
+	return parsed;
 }
 
 export async function saveRouting(routing) {
 	const fullPath = await resolvePath(ROUTING_FILE);
-	const content = JSON.stringify({ routing }, null, 2);
+	// Read the existing file so we can update only the `routing` key while
+	// preserving any sibling top-level fields (e.g. `comment`, `version`).
+	let existing = {};
+	try {
+		const resp = await getFile(fullPath);
+		existing = JSON.parse(resp.content) || {};
+	} catch {
+		// File may not exist yet on first save — start from an empty object.
+	}
+	const merged = { ...existing, routing };
+	const content = JSON.stringify(merged, null, 2);
 	const result = await saveFile(fullPath, content);
-	// Invalidate cache so next resolvePath re-lists the directory
 	clearPathCache();
 	return result;
+}
+
+// ── Disabled-rule persistence (browser localStorage) ──
+// Disabled rules are dropped from the Xray config (serializeRule → null) but
+// kept in the UI so the user can toggle them back on. They are persisted to
+// localStorage keyed by the routing-file path, keeping Xray's 05_routing.json
+// clean and free of non-standard fields.
+
+function disabledStorageKey(fullPath) {
+	return `xkeen-routing-disabled:${fullPath}`;
+}
+
+/** Read previously-disabled rules for the given routing file path. */
+export function loadDisabledRules(fullPath) {
+	try {
+		const raw = localStorage.getItem(disabledStorageKey(fullPath));
+		return raw ? JSON.parse(raw) : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Persist disabled rules (normalized shape) for the given routing file path. */
+export function saveDisabledRules(fullPath, rules) {
+	try {
+		localStorage.setItem(disabledStorageKey(fullPath), JSON.stringify(rules));
+	} catch {
+		// localStorage may be unavailable (private mode, quota) — non-fatal.
+	}
 }
 
 // ── Available outbound/balancer tag discovery ──
@@ -161,6 +205,83 @@ export function entryIcon(e) {
 	}
 }
 
+// ── Rule ID generation (collision-safe under rapid clicks) ──
+
+let _ruleIdCounter = 0;
+export function generateRuleId() {
+	_ruleIdCounter++;
+	return `rule-${Date.now()}-${_ruleIdCounter}`;
+}
+
+// ── Port validation ──
+
+/**
+ * Validate an Xray port specification: a single port (1-65535), a range
+ * ("8080-8090"), or a comma-separated list of either. Returns an error
+ * string when invalid, or null when valid. Empty string is valid (optional).
+ */
+export function validatePort(input) {
+	const val = (input || '').trim();
+	if (!val) return null;
+	const parts = val.split(',');
+	for (const part of parts) {
+		const range = part.trim().split('-');
+		for (const p of range) {
+			const n = Number(p.trim());
+			if (!Number.isInteger(n) || n < 1 || n > 65535) {
+				return `Invalid port: ${p.trim()}`;
+			}
+		}
+		if (range.length === 2 && Number(range[0]) > Number(range[1])) {
+			return `Port range start > end: ${part.trim()}`;
+		}
+	}
+	return null;
+}
+
+// ── CIDR / IP validation ──
+
+/**
+ * Validate an IPv4/IPv6 address, optionally with CIDR prefix. Returns an
+ * error string when invalid, or null when valid. Empty = valid (optional).
+ */
+export function validateCidr(input) {
+	const val = (input || '').trim();
+	if (!val) return null;
+
+	// Split address and optional prefix length
+	const slash = val.lastIndexOf('/');
+	const addr = slash >= 0 ? val.slice(0, slash) : val;
+	const prefix = slash >= 0 ? Number(val.slice(slash + 1)) : null;
+
+	if (!addr) return 'Empty address';
+
+	// Try IPv4
+	const v4 = addr.split('.');
+	if (v4.length === 4) {
+		for (const octet of v4) {
+			const n = Number(octet);
+			if (!Number.isInteger(n) || n < 0 || n > 255) {
+				return `Invalid IPv4 octet: ${octet}`;
+			}
+		}
+		if (prefix !== null && (prefix < 0 || prefix > 32)) {
+			return `Invalid prefix length: ${prefix}`;
+		}
+		return null;
+	}
+
+	// Try IPv6 — accept if it contains ':' and is non-empty
+	if (addr.includes(':')) {
+		if (prefix !== null && (prefix < 0 || prefix > 128)) {
+			return `Invalid prefix length: ${prefix}`;
+		}
+		return null;
+	}
+
+	return `Invalid address: ${addr}`;
+}
+
 // ── Rule normalization ──
 
 export function normalizeRule(rule, index) {
@@ -176,7 +297,8 @@ export function normalizeRule(rule, index) {
 
 	return {
 		id: `rule-${index}`,
-		name: guessRuleName(domains, ips, action),
+		name: rule.name || guessRuleName(domains, ips, action),
+		disabled: rule.disabled === true,
 		domains,
 		ips,
 		networks,
@@ -185,6 +307,31 @@ export function normalizeRule(rule, index) {
 		action,
 		raw: rule,
 	};
+}
+
+// ── Rule filtering (for the search box) ──
+
+/**
+ * Filter normalized rules by a free-text query. Matches case-insensitively
+ * against the rule name, domain/IP entry values and raw text, and the action
+ * tag. Returns the same rule references (no cloning) so the caller's
+ * reactivity is preserved.
+ */
+export function filterRules(rules, query) {
+	const q = (query || '').trim().toLowerCase();
+	if (!q) return rules;
+	return rules.filter(rule => {
+		if ((rule.name || '').toLowerCase().includes(q)) return true;
+		if ((rule.action?.tag || '').toLowerCase().includes(q)) return true;
+		const inDomains = rule.domains?.some(d =>
+			(d.value || '').toLowerCase().includes(q) ||
+			(d.raw || '').toLowerCase().includes(q));
+		if (inDomains) return true;
+		const inIps = rule.ips?.some(ip =>
+			(ip.value || '').toLowerCase().includes(q) ||
+			(ip.raw || '').toLowerCase().includes(q));
+		return inIps;
+	});
 }
 
 function guessRuleName(domains, ips, action) {
@@ -271,6 +418,10 @@ export const COMMON_GEOIP = [
 // ── Serialization (UI rule → Xray wire format) ──
 
 export function serializeRule(rule) {
+	// Disabled rules are dropped from the Xray config entirely. The UI keeps
+	// them around (toggled off) and persists them separately so a reload does
+	// not silently lose them; see save() in RoutingTab.vue.
+	if (rule.disabled) return null;
 	const obj = { ...rule.raw }; // preserve unknown fields from original (protocol, routeOnly, etc.)
 	obj.type = 'field'; // required by Xray for field routing rules
 	delete obj.domain;
@@ -287,6 +438,11 @@ export function serializeRule(rule) {
 	if (rule.inbound.length) obj.inboundTag = rule.inbound;
 	if (rule.action.kind === 'balancer') obj.balancerTag = rule.action.tag;
 	else obj.outboundTag = rule.action.tag;
+	// Persist a user-chosen name; drop the auto-guessed one so the JSON stays
+	// clean and existing round-trip equality is preserved.
+	const guessed = guessRuleName(rule.domains, rule.ips, rule.action);
+	if (rule.name && rule.name !== guessed) obj.name = rule.name;
+	else delete obj.name;
 	return obj;
 }
 

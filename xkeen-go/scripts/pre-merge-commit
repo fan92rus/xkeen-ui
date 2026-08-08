@@ -1,0 +1,47 @@
+#!/bin/sh
+# Pre-merge-commit hook: enforce changelog when user-facing code merges
+# into master. Runs only for merge commits (git merge --no-ff / conflicts).
+#
+# pre-commit alone is NOT reliable for merges because `git diff --cached`
+# is empty for a clean merge, so a feature branch that skipped the
+# changelog could merge into master unchecked. This hook closes that gap.
+#
+# This hook is auto-installed by: xkeen-go/scripts/setup-hooks.sh
+# Bypass: git merge --no-verify  (or SKIP_CHANGELOG=1)
+
+set -e
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+# Only enforce on master — feature→feature merges stay relaxed.
+[ "$CURRENT_BRANCH" = "master" ] || exit 0
+
+# Respect the same bypass env var as pre-commit.
+[ "$SKIP_CHANGELOG" = "1" ] && exit 0
+
+# During a merge, MERGE_HEAD points at the branch being merged in, and the
+# index holds the merge result. Diff the result against current HEAD to see
+# exactly what this merge introduces.
+#   --diff-filter=ACM  → only added/copied/modified (ignore deletions)
+USER_FACING=$(git diff --cached --name-only --diff-filter=ACM | grep -E 'xkeen-go/(internal/(handlers|config|server|subscription)/.*\.go|web/src/(components|services|stores)/.*\.(js|vue))$' | grep -vE '_test\.go$|\.test\.js$' || true)
+CHANGELOG_CHANGED=$(git diff --cached --name-only | grep 'internal/version/changelog.json' || true)
+
+# git diff --cached can be empty for a clean fast-forward-style merge even
+# under --no-ff on some git versions. Fall back to diffing MERGE_HEAD
+# against HEAD so the incoming branch's changes are still inspected.
+if [ -z "$USER_FACING" ] && [ -n "$MERGE_HEAD" ]; then
+	USER_FACING=$(git diff --name-only --diff-filter=ACM HEAD "$MERGE_HEAD" | grep -E 'xkeen-go/(internal/(handlers|config|server|subscription)/.*\.go|web/src/(components|services|stores)/.*\.(js|vue))$' | grep -vE '_test\.go$|\.test\.js$' || true)
+	CHANGELOG_CHANGED=$(git diff --name-only HEAD "$MERGE_HEAD" | grep 'internal/version/changelog.json' || true)
+fi
+
+if [ -n "$USER_FACING" ] && [ -z "$CHANGELOG_CHANGED" ]; then
+	echo ""
+	echo "  ❌ Merge в master: изменён пользовательский код, но changelog.json не обновлён."
+	echo "     Добавьте запись в xkeen-go/internal/version/changelog.json (секция unreleased)"
+	echo "     на feature-ветке перед merge, либо обойдите: SKIP_CHANGELOG=1 git merge ..."
+	echo ""
+	exit 1
+fi
+
+echo "  ✓ pre-merge: changelog requirement satisfied"
+exit 0

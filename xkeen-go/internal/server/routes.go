@@ -39,6 +39,7 @@ func (s *Server) setupRoutes() {
 	handlers.RegisterServiceRoutes(apiRouter, s.serviceHandler)
 	handlers.RegisterLogsRoutes(apiRouter, s.logsHandler)
 	handlers.RegisterSettingsRoutes(apiRouter, s.settingsHandler)
+	handlers.RegisterProxyPortsRoutes(apiRouter, s.proxyPortsHandler)
 	handlers.RegisterCommandsRoutes(apiRouter, s.commandsHandler)
 	handlers.RegisterUpdateRoutes(apiRouter, s.updateHandler)
 	handlers.RegisterXkeenRoutes(apiRouter, s.xkeenInfoHandler, s.speedBalancerHandler)

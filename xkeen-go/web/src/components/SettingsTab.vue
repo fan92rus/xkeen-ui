@@ -7,6 +7,7 @@ import * as metrics from '../services/metrics.js';
 import * as installApi from '../services/install.js';
 import { checkNetwork } from '../services/diagnostics.js';
 import { getProxyEntware, setProxyEntware } from '../services/routing.js';
+import { getProxyPorts, updateProxyPorts } from '../services/proxy-ports.js';
 import { getAutoUpdate, updateAutoUpdate } from '../services/update.js';
 import { getChangelog } from '../services/changelog.js';
 import { getXkeenVersion, getSpeedBalancer, updateSpeedBalancer, getSpeedBalancerStatus } from '../services/xkeen.js';
@@ -130,6 +131,92 @@ async function loadSpeedBalancerStatus() {
 	}
 }
 
+/* ---- proxy ports (port_proxying.lst) ---- */
+const portsMode = ref('proxying'); // 'proxying' (only these ports) | 'none' (all ports)
+const portsExcludeNotice = ref(false);
+const portsSaving = ref(false);
+const customPorts = ref('');
+const customUdp = ref(false);
+
+const portPresets = ref([
+	{ id: 'web', ports: '80,443', udp: '', enabled: true, locked: true },
+	{ id: 'discord', ports: '443', udp: '50000:51000', enabled: false },
+	{ id: 'steam', ports: '27000:27100', udp: '27000:27100', enabled: false },
+]);
+
+function splitTokens(s) {
+	return s ? s.split(',').map(t => t.trim()).filter(Boolean) : [];
+}
+
+async function loadProxyPorts() {
+	try {
+		const d = await getProxyPorts();
+		if (d.mode === 'exclude') {
+			// The exclude list is active; the editor will convert it to a
+			// proxying list on save (the mode this UI manages).
+			portsExcludeNotice.value = true;
+			portsMode.value = 'proxying';
+		} else {
+			portsExcludeNotice.value = false;
+			portsMode.value = d.mode === 'none' ? 'none' : 'proxying';
+		}
+		const active = splitTokens(d.ports || '');
+		const udp = splitTokens(d.udp_ports || '');
+		// A preset is enabled iff all its ports are present in the active list.
+		for (const p of portPresets.value) {
+			const need = [...splitTokens(p.ports), ...splitTokens(p.udp)];
+			p.enabled = need.every(t => active.includes(t));
+		}
+		// Ports not covered by any enabled preset go to the custom field.
+		const covered = new Set();
+		for (const p of portPresets.value) {
+			if (p.enabled) {
+				splitTokens(p.ports).forEach(t => covered.add(t));
+				splitTokens(p.udp).forEach(t => covered.add(t));
+			}
+		}
+		customPorts.value = active.filter(t => !covered.has(t)).join(',');
+		// Custom ports are flagged for UDP when any of them is in the managed
+		// UDP routing rule.
+		customUdp.value = splitTokens(customPorts.value).some(t => udp.includes(t));
+	} catch { /* non-critical */ }
+}
+
+function computePortLists() {
+	const all = new Set();
+	const udp = new Set();
+	for (const p of portPresets.value) {
+		if (!p.enabled) continue;
+		splitTokens(p.ports).forEach(t => all.add(t));
+		splitTokens(p.udp).forEach(t => { all.add(t); udp.add(t); });
+	}
+	splitTokens(customPorts.value).forEach(t => {
+		all.add(t);
+		if (customUdp.value) udp.add(t);
+	});
+	// xkeen always forces 80,443 in proxying mode.
+	splitTokens('80,443').forEach(t => all.add(t));
+	return { ports: [...all].join(','), udp: [...udp].join(',') };
+}
+
+async function saveProxyPorts() {
+	portsSaving.value = true;
+	try {
+		if (portsMode.value === 'none') {
+			await updateProxyPorts({ mode: 'none', ports: '', udp_ports: '' });
+		} else {
+			const { ports, udp } = computePortLists();
+			await updateProxyPorts({ mode: 'proxying', ports, udp_ports: udp });
+		}
+		portsExcludeNotice.value = false;
+		app.showToast(i18n.t('settings.ports_applied'), 'success');
+	} catch (e) {
+		app.showToast(e.message || i18n.t('settings.save_error'), 'error');
+	} finally {
+		portsSaving.value = false;
+	}
+}
+
 async function saveMetricsPort() {
 	metricsSaving.value = true;
 	try {
@@ -232,6 +319,7 @@ const sectionDefs = [
   { id: 'network', icon: '🔍', label: i18n.t('settings.net_section') },
   { id: 'routing', icon: '🔀', label: i18n.t('settings.routing_section') },
   { id: 'speed-balancer', icon: '⚡', label: i18n.t('settings.sb_title') },
+  { id: 'proxy-ports', icon: '🚦', label: i18n.t('settings.ports_section') },
   { id: 'metrics', icon: '📊', label: i18n.t('settings.metrics_section') },
   { id: 'awg', icon: '🔗', label: 'AmneziaWG' },
   { id: 'lang', icon: '🌐', label: i18n.t('settings.lang_section') },
@@ -323,6 +411,7 @@ onMounted(() => {
 	loadAutoUpdate();
 	loadChangelog();
 	loadSpeedBalancer();
+	loadProxyPorts();
 	app.loadXraySettings();
   checkAWG();
   loadProxyEntware();
@@ -634,6 +723,68 @@ onMounted(() => {
                 {{ sbStatusLoading ? i18n.t('settings.loading') : i18n.t('settings.sb_status') }}
               </button>
             </div>
+          </div>
+        </section>
+
+        <!-- Proxy ports -->
+        <section :id="secMap['proxy-ports'].id" class="s-section">
+          <h2 class="s-title">{{ secMap['proxy-ports'].icon }} {{ secMap['proxy-ports'].label }}</h2>
+          <div class="s-block">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('settings.ports_mode') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.ports_mode_desc') }}</div>
+              </div>
+              <select v-model="portsMode" class="s-input" style="max-width:280px">
+                <option value="proxying">{{ i18n.t('settings.ports_mode_proxying') }}</option>
+                <option value="none">{{ i18n.t('settings.ports_mode_none') }}</option>
+              </select>
+            </div>
+
+            <div v-if="portsExcludeNotice" class="s-row-desc s-warn">{{ i18n.t('settings.ports_exclude_notice') }}</div>
+
+            <template v-if="portsMode === 'proxying'">
+              <div v-for="p in portPresets" :key="p.id" class="s-row">
+                <div class="s-row-main">
+                  <div class="s-row-label">
+                    {{ p.id === 'web' ? i18n.t('settings.ports_preset_web') : p.id === 'discord' ? 'Discord' : 'Steam' }}
+                  </div>
+                  <div class="s-row-desc">
+                    {{ p.id === 'web' ? i18n.t('settings.ports_preset_web_desc') : p.id === 'discord' ? i18n.t('settings.ports_preset_discord_desc') : i18n.t('settings.ports_preset_steam_desc') }}
+                  </div>
+                </div>
+                <label class="toggle">
+                  <input v-model="p.enabled" type="checkbox" :disabled="p.locked">
+                  <span class="toggle-slider" />
+                </label>
+              </div>
+
+              <div class="s-row s-row-col">
+                <div class="s-row-label">{{ i18n.t('settings.ports_custom') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.ports_custom_hint') }}</div>
+                <input v-model="customPorts" type="text" class="s-input" style="width:100%; font-family:var(--font-mono)" placeholder="8443, 50000:51000">
+              </div>
+              <div class="s-row">
+                <div class="s-row-main">
+                  <div class="s-row-label">{{ i18n.t('settings.ports_udp_toggle') }}</div>
+                  <div class="s-row-desc">{{ i18n.t('settings.ports_udp_toggle_desc') }}</div>
+                </div>
+                <label class="toggle">
+                  <input v-model="customUdp" type="checkbox">
+                  <span class="toggle-slider" />
+                </label>
+              </div>
+            </template>
+            <div v-else class="s-row">
+              <div class="s-row-desc">{{ i18n.t('settings.ports_none_desc') }}</div>
+            </div>
+
+            <div class="s-row s-row-actions">
+              <button :disabled="portsSaving" class="btn btn-primary" @click="saveProxyPorts()">
+                {{ portsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
+              </button>
+            </div>
+            <div class="s-row-desc">{{ i18n.t('settings.ports_restart_hint') }}</div>
           </div>
         </section>
 
