@@ -66,9 +66,13 @@ type Server struct {
 // NewServer creates a new HTTP server.
 // Returns an error if the server cannot be initialized with a valid backup directory.
 func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, error) {
-	// Initialize services
+	// Initialize services. Sessions are persisted next to the config file so
+	// browser sessions (and the SSE status pipe) survive xkeen-ui restarts
+	// without forcing the user to log in again.
 	sessionTimeout := time.Duration(cfg.Auth.SessionTimeout) * time.Hour
-	sessions := newSessionStore(sessionTimeout)
+	sessionsFilePath := filepath.Join(filepath.Dir(configPath), "sessions.json")
+	sessions := newPersistentSessionStore(sessionTimeout, sessionsFilePath)
+	log.Printf("Sessions persist to %s", sessionsFilePath)
 	security := newSecurityService()
 
 	// Initialize middleware

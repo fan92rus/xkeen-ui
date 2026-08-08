@@ -563,9 +563,9 @@ func TestAuthStatus_ExpiredSession(t *testing.T) {
 	// Create session manually with short timeout
 	s.sessions.mu.Lock()
 	s.sessions.sessions["expired-token"] = &session{
-		csrfToken: "expired-csrf",
-		createdAt: time.Now().Add(-2 * time.Hour),
-		expiresAt: time.Now().Add(-1 * time.Hour), // expired 1 hour ago
+		CSRFToken: "expired-csrf",
+		CreatedAt: time.Now().Add(-2 * time.Hour),
+		ExpiresAt: time.Now().Add(-1 * time.Hour), // expired 1 hour ago
 	}
 	s.sessions.mu.Unlock()
 
@@ -898,7 +898,7 @@ func TestSession_Expiry(t *testing.T) {
 	// Manually expire the session
 	s.sessions.mu.Lock()
 	if sess, ok := s.sessions.sessions[sessionToken]; ok {
-		sess.expiresAt = time.Now().Add(-1 * time.Second)
+		sess.ExpiresAt = time.Now().Add(-1 * time.Second)
 	}
 	s.sessions.mu.Unlock()
 
