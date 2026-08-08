@@ -2,7 +2,8 @@
   "unreleased": [
     {
       "type": "feat",
-      "description": "Persistent sessions: browser sessions (and the SSE status pipe) now survive xkeen-ui restarts — sessions are stored in sessions.json next to the config and reloaded on startup, so a service restart no longer logs the UI out and drops the status stream"
+      "text": "Persistent sessions: browser sessions (and the SSE status pipe) now survive xkeen-ui restarts — sessions are stored in sessions.json next to the config and reloaded on startup, so a service restart no longer logs the UI out and drops the status stream",
+      "important": true
     },
     {
       "type": "feat",
