@@ -39,6 +39,7 @@ type Server struct {
 	serviceHandler      *handlers.ServiceHandler
 	logsHandler         *handlers.LogsHandler
 	settingsHandler     *handlers.SettingsHandler
+	proxyPortsHandler   *handlers.ProxyPortsHandler
 	commandsHandler     *handlers.CommandsHandler
 	updateHandler       *handlers.UpdateHandler
 	updateChecker       *handlers.UpdateChecker
@@ -104,6 +105,7 @@ func NewServer(cfg *config.Config, configPath string, webFS fs.FS) (*Server, err
 		s.xkeenInfoHandler = handlers.NewXkeenInfoHandler()
 	}
 	s.speedBalancerHandler = handlers.NewSpeedBalancerHandler(filepath.Join(cfg.XkeenConfigDir, "xkeen.json"), cfg.XkeenBinary)
+	s.proxyPortsHandler = handlers.NewProxyPortsHandler(cfg.XkeenConfigDir, cfg.XrayConfigDir, backupDir, nil)
 	s.settingsHandler = handlers.NewSettingsHandler(cfg.AllowedRoots, cfg.XrayConfigDir, backupDir, cfg, configPath,
 		func(port int) {
 			// Option E: enabling/disabling metrics is a data update, not a

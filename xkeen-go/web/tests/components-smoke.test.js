@@ -191,14 +191,14 @@ describe('Component smoke tests', () => {
 
     expect(w.exists()).toBe(true);
 
-    // All 10 sections must render (mode, logging, updates, security,
-    // autoapply, network, metrics, awg, lang).
+    // All 11 sections must render (mode, logging, updates, security,
+    // autoapply, proxy-ports, network, routing, metrics, awg, lang).
     const sections = w.findAll('.s-section');
-    expect(sections.length).toBe(10);
+    expect(sections.length).toBe(11);
 
     // Check each section has a heading (h2).
     const headings = w.findAll('.s-title');
-    expect(headings.length).toBe(10);
+    expect(headings.length).toBe(11);
 
     // Verify key sections exist by content (English, test default).
     expect(w.html()).toContain('Mode');
@@ -206,6 +206,7 @@ describe('Component smoke tests', () => {
     expect(w.html()).toContain('Updates');
     expect(w.html()).toContain('Security');
     expect(w.html()).toContain('Subscriptions');
+    expect(w.html()).toContain('Proxy Ports');
     expect(w.html()).toContain('Network Diagnostics');
     expect(w.html()).toContain('Metrics');
     expect(w.html()).toContain('AmneziaWG');
