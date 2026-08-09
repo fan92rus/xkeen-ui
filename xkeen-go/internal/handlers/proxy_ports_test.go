@@ -545,6 +545,87 @@ func (f *failingExecutor) Execute(_ context.Context, _ string, _ ...string) (str
 	return "boom", context.DeadlineExceeded
 }
 
+// envRecordingExecutor delegates to fakeExecutor but records env passed to
+// ExecuteWithEnv.
+type envRecordingExecutor struct {
+	*fakeExecutor
+	env []string
+}
+
+func (e *envRecordingExecutor) ExecuteWithEnv(_ context.Context, env []string, name string, args ...string) (string, error) {
+	e.env = append(e.env, env...)
+	return e.Execute(context.Background(), name, args...)
+}
+
+// geoFailExecutor fails `xray -test` with a geosite asset error (simulates a
+// bare xray run without XRAY_LOCATION_ASSET).
+type geoFailExecutor struct{}
+
+func (g *geoFailExecutor) Execute(_ context.Context, _ string, _ ...string) (string, error) {
+	return "common/geodata: failed to open geosite_v2fly.dat > stat /opt/sbin/geosite_v2fly.dat: no such file or directory", errors.New("xray failed")
+}
+
+func TestValidateRoutingConfig_UsesAssetEnv(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	// xkeen layout: geo files in <confdir>/../dat.
+	assetDir := filepath.Join(filepath.Dir(xrayDir), "dat")
+	if err := os.MkdirAll(assetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, "geosite_v2fly.dat"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	er := &envRecordingExecutor{fakeExecutor: &fakeExecutor{}}
+	h.executor = er
+
+	if err := h.validateRoutingConfig(); err != nil {
+		t.Fatalf("validateRoutingConfig: %v", err)
+	}
+	found := false
+	for _, kv := range er.env {
+		if kv == "XRAY_LOCATION_ASSET="+assetDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected XRAY_LOCATION_ASSET=%s in env, got %v", assetDir, er.env)
+	}
+	calls := er.calls()
+	if len(calls) != 1 || !strings.HasPrefix(calls[0], "xray -test -confdir") {
+		t.Fatalf("expected a single xray -test call, got %v", calls)
+	}
+}
+
+func TestValidateRoutingConfig_GeoFailureSkipped(t *testing.T) {
+	h, _, _, _ := setupProxyPortsTest(t)
+	h.executor = &geoFailExecutor{}
+	if err := h.validateRoutingConfig(); err != nil {
+		t.Fatalf("geosite failure is environmental and must be skipped, got %v", err)
+	}
+}
+
+func TestXrayAssetDir(t *testing.T) {
+	t.Setenv("XRAY_LOCATION_ASSET", "")
+	dir := t.TempDir()
+	confDir := filepath.Join(dir, "configs")
+	assetDir := filepath.Join(dir, "dat")
+	if err := os.MkdirAll(confDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(assetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, "geosite_v2fly.dat"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := xrayAssetDir(confDir); got != assetDir {
+		t.Fatalf("xrayAssetDir(%q) = %q, want %q", confDir, got, assetDir)
+	}
+	if got := xrayAssetDir(t.TempDir()); got != "" {
+		t.Fatalf("xrayAssetDir with no geo files = %q, want \"\"", got)
+	}
+}
+
 // failXrayExecutor records calls like fakeExecutor but makes `xray -test`
 // fail (as if the merged routing config were rejected).
 type failXrayExecutor struct {

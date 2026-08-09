@@ -305,7 +305,7 @@
     "ports_preset_discord_desc": "TCP 443 + voice UDP 50000-51000",
     "ports_preset_steam_desc": "Steam games: UDP 27000-27100",
     "ports_custom": "Custom ports",
-    "ports_custom_hint": "Ports and ranges, comma-separated: 8443, 50000:51000",
+    "ports_custom_hint": "Ports and ranges, comma-separated. A range is «start:end», e.g.: 8443, 50000:51000",
     "ports_udp_toggle": "Proxy these ports for UDP too",
     "ports_udp_toggle_desc": "For voice, games and QUIC apps (adds a UDP → balancer routing rule).",
     "ports_none_desc": "All ports go through the proxy (port list is not used).",
