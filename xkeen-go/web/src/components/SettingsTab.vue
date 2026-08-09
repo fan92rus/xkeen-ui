@@ -135,17 +135,47 @@ async function loadSpeedBalancerStatus() {
 const portsMode = ref('proxying'); // 'proxying' (only these ports) | 'none' (all ports)
 const portsExcludeNotice = ref(false);
 const portsSaving = ref(false);
-const customPorts = ref('');
-const customUdp = ref(false);
+// Each row: { id, ports, proto, locked } — `ports` is a comma-separated list
+// of ports/ranges (e.g. "8443, 50000:51000") sharing one protocol
+// 'tcp' | 'udp' | 'tcpudp'.
+const portEntries = ref([]);
+let portEntrySeq = 1;
 
-const portPresets = ref([
-	{ id: 'web', ports: '80,443', udp: '', enabled: true, locked: true },
-	{ id: 'discord', ports: '443', udp: '50000:51000', enabled: false },
-	{ id: 'steam', ports: '27000:27100', udp: '27000:27100', enabled: false },
-]);
+// Quick-add presets. Web (80,443 TCP) is always present as a locked row —
+// xkeen forces those ports into the proxying list anyway.
+const quickPresets = [
+	{ id: 'discord', label: 'Discord', rows: [{ ports: '443', proto: 'tcp' }, { ports: '50000:51000', proto: 'udp' }] },
+	{ id: 'steam', label: 'Steam', rows: [{ ports: '27000:27100', proto: 'tcpudp' }] },
+];
+const webRows = () => [{ ports: '80, 443', proto: 'tcp', locked: true }];
 
 function splitTokens(s) {
 	return s ? s.split(',').map(t => t.trim()).filter(Boolean) : [];
+}
+
+function addPortEntry(row) {
+	portEntries.value.push({
+		id: portEntrySeq++,
+		ports: (row && row.ports) || '',
+		proto: (row && row.proto) || 'tcpudp',
+		locked: !!(row && row.locked),
+	});
+}
+
+function removePortEntry(e) {
+	portEntries.value = portEntries.value.filter(x => x.id !== e.id);
+}
+
+function addPresetEntries(p) {
+	for (const r of p.rows) {
+		const rTokens = splitTokens(r.ports);
+		const covered = portEntries.value.some(x => {
+			if (x.locked || x.proto !== r.proto) return false;
+			const xt = splitTokens(x.ports);
+			return rTokens.every(t => xt.includes(t));
+		});
+		if (!covered) addPortEntry(r);
+	}
 }
 
 async function loadProxyPorts() {
@@ -160,43 +190,47 @@ async function loadProxyPorts() {
 			portsExcludeNotice.value = false;
 			portsMode.value = d.mode === 'none' ? 'none' : 'proxying';
 		}
-		const active = splitTokens(d.ports || '');
-		const udp = splitTokens(d.udp_ports || '');
-		// A preset is enabled iff all its ports are present in the active list.
-		for (const p of portPresets.value) {
-			const need = [...splitTokens(p.ports), ...splitTokens(p.udp)];
-			p.enabled = need.every(t => active.includes(t));
+		const active = new Set(splitTokens(d.ports || ''));
+		const udp = new Set(splitTokens(d.udp_ports || ''));
+		const entries = [];
+		// Web (80,443) is always proxied — locked row, always shown.
+		for (const r of webRows()) {
+			entries.push({ id: portEntrySeq++, ...r });
+			splitTokens(r.ports).forEach(t => { active.delete(t); udp.delete(t); });
 		}
-		// Ports not covered by any enabled preset go to the custom field.
-		const covered = new Set();
-		for (const p of portPresets.value) {
-			if (p.enabled) {
-				splitTokens(p.ports).forEach(t => covered.add(t));
-				splitTokens(p.udp).forEach(t => covered.add(t));
+		// Everything else, grouped by protocol (token in both lists = TCP+UDP).
+		const tcpOnly = [];
+		const udpOnly = [];
+		const both = [];
+		for (const t of active) (udp.has(t) ? both : tcpOnly).push(t);
+		for (const t of udp) if (!active.has(t)) udpOnly.push(t);
+		const byStart = list => list.sort((a, b) => portTokenStart(a) - portTokenStart(b));
+		for (const [proto, list] of [['tcpudp', both], ['tcp', tcpOnly], ['udp', udpOnly]]) {
+			if (list.length) {
+				entries.push({ id: portEntrySeq++, ports: byStart(list).join(', '), proto, locked: false });
 			}
 		}
-		customPorts.value = active.filter(t => !covered.has(t)).join(',');
-		// Custom ports are flagged for UDP when any of them is in the managed
-		// UDP routing rule.
-		customUdp.value = splitTokens(customPorts.value).some(t => udp.includes(t));
+		portEntries.value = entries;
 	} catch { /* non-critical */ }
 }
 
+function portTokenStart(tok) {
+	const m = tok.match(/^(\d+)/);
+	return m ? parseInt(m[1], 10) : 0;
+}
+
 function computePortLists() {
-	const all = new Set();
+	const tcp = new Set();
 	const udp = new Set();
-	for (const p of portPresets.value) {
-		if (!p.enabled) continue;
-		splitTokens(p.ports).forEach(t => all.add(t));
-		splitTokens(p.udp).forEach(t => { all.add(t); udp.add(t); });
+	for (const e of portEntries.value) {
+		for (const t of splitTokens(e.ports)) {
+			if (e.proto === 'tcp' || e.proto === 'tcpudp') tcp.add(t);
+			if (e.proto === 'udp' || e.proto === 'tcpudp') udp.add(t);
+		}
 	}
-	splitTokens(customPorts.value).forEach(t => {
-		all.add(t);
-		if (customUdp.value) udp.add(t);
-	});
 	// xkeen always forces 80,443 in proxying mode.
-	splitTokens('80,443').forEach(t => all.add(t));
-	return { ports: [...all].join(','), udp: [...udp].join(',') };
+	splitTokens('80,443').forEach(t => tcp.add(t));
+	return { ports: [...tcp].join(','), udp: [...udp].join(',') };
 }
 
 async function saveProxyPorts() {
@@ -744,35 +778,35 @@ onMounted(() => {
             <div v-if="portsExcludeNotice" class="s-row-desc s-warn">{{ i18n.t('settings.ports_exclude_notice') }}</div>
 
             <template v-if="portsMode === 'proxying'">
-              <div v-for="p in portPresets" :key="p.id" class="s-row">
-                <div class="s-row-main">
-                  <div class="s-row-label">
-                    {{ p.id === 'web' ? i18n.t('settings.ports_preset_web') : p.id === 'discord' ? 'Discord' : 'Steam' }}
-                  </div>
-                  <div class="s-row-desc">
-                    {{ p.id === 'web' ? i18n.t('settings.ports_preset_web_desc') : p.id === 'discord' ? i18n.t('settings.ports_preset_discord_desc') : i18n.t('settings.ports_preset_steam_desc') }}
-                  </div>
-                </div>
-                <label class="toggle">
-                  <input v-model="p.enabled" type="checkbox" :disabled="p.locked">
-                  <span class="toggle-slider" />
-                </label>
-              </div>
-
               <div class="s-row s-row-col">
-                <div class="s-row-label">{{ i18n.t('settings.ports_custom') }}</div>
-                <div class="s-row-desc">{{ i18n.t('settings.ports_custom_hint') }}</div>
-                <input v-model="customPorts" type="text" class="s-input" style="width:100%; font-family:var(--font-mono)" placeholder="8443, 50000:51000">
-              </div>
-              <div class="s-row">
-                <div class="s-row-main">
-                  <div class="s-row-label">{{ i18n.t('settings.ports_udp_toggle') }}</div>
-                  <div class="s-row-desc">{{ i18n.t('settings.ports_udp_toggle_desc') }}</div>
+                <div class="s-row-label">{{ i18n.t('settings.ports_entries') }}</div>
+                <div class="s-row-desc">{{ i18n.t('settings.ports_entries_desc') }}</div>
+                <div v-for="e in portEntries" :key="e.id" class="ports-entry">
+                  <input
+                    v-model="e.ports" type="text" class="s-input ports-entry-input"
+                    :disabled="e.locked"
+                    :placeholder="i18n.t('settings.ports_entry_placeholder')"
+                  >
+                  <select v-model="e.proto" class="s-input ports-entry-proto" :disabled="e.locked">
+                    <option value="tcp">{{ i18n.t('settings.ports_proto_tcp') }}</option>
+                    <option value="udp">{{ i18n.t('settings.ports_proto_udp') }}</option>
+                    <option value="tcpudp">{{ i18n.t('settings.ports_proto_tcpudp') }}</option>
+                  </select>
+                  <button
+                    v-if="!e.locked" class="btn ports-entry-del"
+                    :title="i18n.t('settings.ports_remove')" @click="removePortEntry(e)"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <label class="toggle">
-                  <input v-model="customUdp" type="checkbox">
-                  <span class="toggle-slider" />
-                </label>
+                <div class="ports-entry-actions">
+                  <button class="btn" @click="addPortEntry()">
+                    + {{ i18n.t('settings.ports_add') }}
+                  </button>
+                  <button v-for="p in quickPresets" :key="p.id" class="btn" @click="addPresetEntries(p)">
+                    {{ p.label }}
+                  </button>
+                </div>
               </div>
             </template>
             <div v-else class="s-row">
@@ -784,7 +818,9 @@ onMounted(() => {
                 {{ portsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
               </button>
             </div>
-            <div class="s-row-desc">{{ i18n.t('settings.ports_restart_hint') }}</div>
+            <div class="s-row">
+              <div class="s-row-desc">{{ i18n.t('settings.ports_restart_hint') }}</div>
+            </div>
           </div>
         </section>
 
@@ -1179,6 +1215,35 @@ onMounted(() => {
 .s-input::placeholder { color: var(--help-text); }
 .s-input-mono { font-family: var(--font-mono); max-width: 180px; }
 .s-input-port { max-width: 90px; }
+
+/* ── Proxy ports rows ── */
+.ports-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ports-entry-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.ports-entry-proto {
+  flex-shrink: 0;
+  width: 110px;
+}
+.ports-entry-del {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  line-height: 1.2;
+}
+.ports-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
 
 /* ── Password grid ── */
 .pw-grid {

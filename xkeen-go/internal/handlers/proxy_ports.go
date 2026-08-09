@@ -69,9 +69,9 @@ type ProxyPortsResponse struct {
 
 // UpdateProxyPortsRequest is the payload of PUT /api/settings/proxy-ports.
 type UpdateProxyPortsRequest struct {
-	Mode     string `json:"mode"`      // "proxying" | "exclude" | "none"
-	Ports    string `json:"ports"`     // comma-separated ports/ranges, e.g. "80,443,50000:51000"
-	UDPPorts string `json:"udp_ports"` // subset of ports additionally routed via balancer for UDP
+	Mode     string `json:"mode"`  // "proxying" | "exclude" | "none"
+	Ports    string `json:"ports"` // comma-separated ports/ranges, e.g. "80,443,50000:51000"
+	UDPPorts string `json:"udp_ports"` // ports for UDP; may be independent of ports (TCP)
 }
 
 // portListPath returns the absolute path of a .lst file inside the XKeen dir.
@@ -128,10 +128,9 @@ func (h *ProxyPortsHandler) UpdateProxyPorts(w http.ResponseWriter, r *http.Requ
 
 	switch req.Mode {
 	case "proxying":
-		if udpPorts != "" && !portListSubset(udpPorts, ports) {
-			respondError(w, http.StatusBadRequest, "udp_ports must be a subset of ports in proxying mode")
-			return
-		}
+		// UDP ports may be independent of the TCP list (e.g. proxy TCP 8443
+		// but UDP 50000:51000): port_proxying.lst gates TCP, the managed
+		// routing rule gates UDP.
 	case "exclude":
 		if udpPorts != "" {
 			respondError(w, http.StatusBadRequest, "udp_ports is not applicable in exclude mode (excluded ports bypass Xray entirely)")
@@ -262,19 +261,71 @@ func (h *ProxyPortsHandler) restoreListFiles(timestamp string) {
 
 // validateRoutingConfig runs `xray -test -confdir` against the Xray config
 // directory so a bad routing rule is caught before any restart. It is a no-op
-// (nil) when the xray binary is not available.
+// (nil) when the xray binary is not available. XRAY_LOCATION_ASSET is passed
+// when a geo data directory is found (xkeen stores .dat files in
+// <confdir>/../dat and starts xray with that variable set — without it a bare
+// `xray -test` fails on geosite/geoip lookups for unrelated, pre-existing
+// rules). A failure mentioning geo asset files is treated as an environment
+// problem and also skipped: the managed rule never references geo files, so
+// such an error cannot be caused by it.
 func (h *ProxyPortsHandler) validateRoutingConfig() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	out, err := h.executor.Execute(ctx, "xray", "-test", "-confdir", h.xrayConfigDir)
+
+	var out string
+	var err error
+	if ee, ok := h.executor.(EnvCommandExecutor); ok {
+		var env []string
+		if dir := xrayAssetDir(h.xrayConfigDir); dir != "" {
+			env = append(env, "XRAY_LOCATION_ASSET="+dir)
+		}
+		out, err = ee.ExecuteWithEnv(ctx, env, "xray", "-test", "-confdir", h.xrayConfigDir)
+	} else {
+		out, err = h.executor.Execute(ctx, "xray", "-test", "-confdir", h.xrayConfigDir)
+	}
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			log.Printf("[proxy-ports] xray binary not found, skipping routing pre-flight check")
 			return nil
 		}
+		if strings.Contains(out, "geosite") || strings.Contains(out, "geoip") {
+			log.Printf("[proxy-ports] xray -test failed on geo asset files (missing XRAY_LOCATION_ASSET?), skipping pre-flight check: %s", strings.TrimSpace(out))
+			return nil
+		}
 		return fmt.Errorf("xray -test -confdir: %s", strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// xrayAssetDir returns a candidate XRAY_LOCATION_ASSET directory (a folder
+// containing geoip/geosite .dat files) or "" when none is found.
+func xrayAssetDir(configDir string) string {
+	candidates := []string{
+		os.Getenv("XRAY_LOCATION_ASSET"),
+		filepath.Join(filepath.Dir(configDir), "dat"),
+		filepath.Join(configDir, "dat"),
+	}
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		if fi, err := os.Stat(c); err != nil || !fi.IsDir() {
+			continue
+		}
+		entries, err := os.ReadDir(c)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			n := strings.ToLower(e.Name())
+			if (strings.HasPrefix(n, "geosite") || strings.HasPrefix(n, "geoip")) && strings.HasSuffix(n, ".dat") {
+				return c
+			}
+		}
+	}
+	return ""
 }
 
 // restoreRoutingFile restores 05_routing.json from a backup created right
@@ -580,22 +631,6 @@ func portTokenStart(tok string) int {
 	}
 	lo, _ := strconv.Atoi(strings.SplitN(tok, ":", 2)[0])
 	return lo
-}
-
-// portListSubset reports whether every token of sub is present in full.
-func portListSubset(sub, full string) bool {
-	fullSet := map[string]bool{}
-	for _, t := range strings.Split(full, ",") {
-		if t != "" {
-			fullSet[t] = true
-		}
-	}
-	for _, t := range strings.Split(sub, ",") {
-		if t != "" && !fullSet[t] {
-			return false
-		}
-	}
-	return true
 }
 
 // RegisterProxyPortsRoutes registers the proxy-ports routes.

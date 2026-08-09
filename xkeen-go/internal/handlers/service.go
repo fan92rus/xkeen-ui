@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -34,11 +35,30 @@ type CommandExecutor interface {
 	Execute(ctx context.Context, name string, args ...string) (string, error)
 }
 
+// EnvCommandExecutor is an optional capability for commands that need extra
+// environment variables (e.g. XRAY_LOCATION_ASSET for `xray -test`).
+type EnvCommandExecutor interface {
+	ExecuteWithEnv(ctx context.Context, env []string, name string, args ...string) (string, error)
+}
+
 // realExecutor implements CommandExecutor using actual exec.CommandContext.
 type realExecutor struct{}
 
 func (e *realExecutor) Execute(ctx context.Context, name string, args ...string) (string, error) {
+	return e.execute(ctx, nil, name, args...)
+}
+
+// ExecuteWithEnv runs a command with extra environment variables appended to
+// the current process environment.
+func (e *realExecutor) ExecuteWithEnv(ctx context.Context, env []string, name string, args ...string) (string, error) {
+	return e.execute(ctx, env, name, args...)
+}
+
+func (e *realExecutor) execute(ctx context.Context, env []string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	output, err := cmd.CombinedOutput()
 
 	// Check for context cancellation/timeout first

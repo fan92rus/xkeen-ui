@@ -125,18 +125,6 @@ func TestValidatePortList(t *testing.T) {
 	}
 }
 
-func TestPortListSubset(t *testing.T) {
-	if !portListSubset("50000:51000", "80,443,50000:51000") {
-		t.Fatal("expected subset to hold")
-	}
-	if portListSubset("50000:51000", "80,443") {
-		t.Fatal("expected subset to fail")
-	}
-	if !portListSubset("", "80,443") {
-		t.Fatal("empty subset must hold")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // GET /api/settings/proxy-ports
 // ---------------------------------------------------------------------------
@@ -415,15 +403,54 @@ func TestManagedUDPRulePorts_MissingRule(t *testing.T) {
 	}
 }
 
-func TestUpdateProxyPorts_UDPNotSubset(t *testing.T) {
-	h, _, _, _ := setupProxyPortsTest(t)
+func TestUpdateProxyPorts_IndependentUDP(t *testing.T) {
+	h, exec, _, xrayDir := setupProxyPortsTest(t)
+	writeRouting(t, xrayDir, sampleRules())
+
+	// UDP ports may differ from the TCP list: only TCP 80,443 proxied, but
+	// UDP 50000:51000 (e.g. Discord voice) proxied too.
 	body := `{"mode":"proxying","ports":"80,443","udp_ports":"50000:51000"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	h.UpdateProxyPorts(rr, req)
 
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	// TCP list (port_proxying.lst) must NOT contain the UDP-only ports.
+	data, err := os.ReadFile(filepath.Join(h.xkeenConfigDir, proxyPortsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "80\n443\n" {
+		t.Fatalf("port_proxying.lst = %q, want %q", got, "80\n443\n")
+	}
+
+	// Managed UDP rule must carry the independent UDP range.
+	if ports, ok := h.managedUDPRulePorts(); !ok || ports != "50000:51000" {
+		t.Fatalf("managed UDP rule ports = %q (ok=%v), want %q", ports, ok, "50000:51000")
+	}
+
+	// Round-trip: GET reports the independent lists.
+	get := httptest.NewRequest(http.MethodGet, "/api/settings/proxy-ports", http.NoBody)
+	grr := httptest.NewRecorder()
+	h.GetProxyPorts(grr, get)
+	var resp ProxyPortsResponse
+	if err := json.Unmarshal(grr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Ports != "80,443" || resp.UDPPorts != "50000:51000" {
+		t.Fatalf("GET = ports %q udp %q, want %q / %q", resp.Ports, resp.UDPPorts, "80,443", "50000:51000")
+	}
+	xkeenCalls := []string{}
+	for _, c := range exec.calls() {
+		if strings.HasPrefix(c, "xkeen") {
+			xkeenCalls = append(xkeenCalls, c)
+		}
+	}
+	if len(xkeenCalls) != 1 || xkeenCalls[0] != "xkeen -restart" {
+		t.Fatalf("expected a single xkeen -restart, got %v", exec.calls())
 	}
 }
 
@@ -543,6 +570,87 @@ type failingExecutor struct{}
 
 func (f *failingExecutor) Execute(_ context.Context, _ string, _ ...string) (string, error) {
 	return "boom", context.DeadlineExceeded
+}
+
+// envRecordingExecutor delegates to fakeExecutor but records env passed to
+// ExecuteWithEnv.
+type envRecordingExecutor struct {
+	*fakeExecutor
+	env []string
+}
+
+func (e *envRecordingExecutor) ExecuteWithEnv(_ context.Context, env []string, name string, args ...string) (string, error) {
+	e.env = append(e.env, env...)
+	return e.Execute(context.Background(), name, args...)
+}
+
+// geoFailExecutor fails `xray -test` with a geosite asset error (simulates a
+// bare xray run without XRAY_LOCATION_ASSET).
+type geoFailExecutor struct{}
+
+func (g *geoFailExecutor) Execute(_ context.Context, _ string, _ ...string) (string, error) {
+	return "common/geodata: failed to open geosite_v2fly.dat > stat /opt/sbin/geosite_v2fly.dat: no such file or directory", errors.New("xray failed")
+}
+
+func TestValidateRoutingConfig_UsesAssetEnv(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	// xkeen layout: geo files in <confdir>/../dat.
+	assetDir := filepath.Join(filepath.Dir(xrayDir), "dat")
+	if err := os.MkdirAll(assetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, "geosite_v2fly.dat"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	er := &envRecordingExecutor{fakeExecutor: &fakeExecutor{}}
+	h.executor = er
+
+	if err := h.validateRoutingConfig(); err != nil {
+		t.Fatalf("validateRoutingConfig: %v", err)
+	}
+	found := false
+	for _, kv := range er.env {
+		if kv == "XRAY_LOCATION_ASSET="+assetDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected XRAY_LOCATION_ASSET=%s in env, got %v", assetDir, er.env)
+	}
+	calls := er.calls()
+	if len(calls) != 1 || !strings.HasPrefix(calls[0], "xray -test -confdir") {
+		t.Fatalf("expected a single xray -test call, got %v", calls)
+	}
+}
+
+func TestValidateRoutingConfig_GeoFailureSkipped(t *testing.T) {
+	h, _, _, _ := setupProxyPortsTest(t)
+	h.executor = &geoFailExecutor{}
+	if err := h.validateRoutingConfig(); err != nil {
+		t.Fatalf("geosite failure is environmental and must be skipped, got %v", err)
+	}
+}
+
+func TestXrayAssetDir(t *testing.T) {
+	t.Setenv("XRAY_LOCATION_ASSET", "")
+	dir := t.TempDir()
+	confDir := filepath.Join(dir, "configs")
+	assetDir := filepath.Join(dir, "dat")
+	if err := os.MkdirAll(confDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(assetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, "geosite_v2fly.dat"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := xrayAssetDir(confDir); got != assetDir {
+		t.Fatalf("xrayAssetDir(%q) = %q, want %q", confDir, got, assetDir)
+	}
+	if got := xrayAssetDir(t.TempDir()); got != "" {
+		t.Fatalf("xrayAssetDir with no geo files = %q, want \"\"", got)
+	}
 }
 
 // failXrayExecutor records calls like fakeExecutor but makes `xray -test`
