@@ -69,9 +69,9 @@ type ProxyPortsResponse struct {
 
 // UpdateProxyPortsRequest is the payload of PUT /api/settings/proxy-ports.
 type UpdateProxyPortsRequest struct {
-	Mode     string `json:"mode"`      // "proxying" | "exclude" | "none"
-	Ports    string `json:"ports"`     // comma-separated ports/ranges, e.g. "80,443,50000:51000"
-	UDPPorts string `json:"udp_ports"` // subset of ports additionally routed via balancer for UDP
+	Mode     string `json:"mode"`  // "proxying" | "exclude" | "none"
+	Ports    string `json:"ports"` // comma-separated ports/ranges, e.g. "80,443,50000:51000"
+	UDPPorts string `json:"udp_ports"` // ports for UDP; may be independent of ports (TCP)
 }
 
 // portListPath returns the absolute path of a .lst file inside the XKeen dir.
@@ -128,10 +128,9 @@ func (h *ProxyPortsHandler) UpdateProxyPorts(w http.ResponseWriter, r *http.Requ
 
 	switch req.Mode {
 	case "proxying":
-		if udpPorts != "" && !portListSubset(udpPorts, ports) {
-			respondError(w, http.StatusBadRequest, "udp_ports must be a subset of ports in proxying mode")
-			return
-		}
+		// UDP ports may be independent of the TCP list (e.g. proxy TCP 8443
+		// but UDP 50000:51000): port_proxying.lst gates TCP, the managed
+		// routing rule gates UDP.
 	case "exclude":
 		if udpPorts != "" {
 			respondError(w, http.StatusBadRequest, "udp_ports is not applicable in exclude mode (excluded ports bypass Xray entirely)")
@@ -632,22 +631,6 @@ func portTokenStart(tok string) int {
 	}
 	lo, _ := strconv.Atoi(strings.SplitN(tok, ":", 2)[0])
 	return lo
-}
-
-// portListSubset reports whether every token of sub is present in full.
-func portListSubset(sub, full string) bool {
-	fullSet := map[string]bool{}
-	for _, t := range strings.Split(full, ",") {
-		if t != "" {
-			fullSet[t] = true
-		}
-	}
-	for _, t := range strings.Split(sub, ",") {
-		if t != "" && !fullSet[t] {
-			return false
-		}
-	}
-	return true
 }
 
 // RegisterProxyPortsRoutes registers the proxy-ports routes.

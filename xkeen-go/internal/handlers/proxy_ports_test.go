@@ -125,18 +125,6 @@ func TestValidatePortList(t *testing.T) {
 	}
 }
 
-func TestPortListSubset(t *testing.T) {
-	if !portListSubset("50000:51000", "80,443,50000:51000") {
-		t.Fatal("expected subset to hold")
-	}
-	if portListSubset("50000:51000", "80,443") {
-		t.Fatal("expected subset to fail")
-	}
-	if !portListSubset("", "80,443") {
-		t.Fatal("empty subset must hold")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // GET /api/settings/proxy-ports
 // ---------------------------------------------------------------------------
@@ -415,15 +403,54 @@ func TestManagedUDPRulePorts_MissingRule(t *testing.T) {
 	}
 }
 
-func TestUpdateProxyPorts_UDPNotSubset(t *testing.T) {
-	h, _, _, _ := setupProxyPortsTest(t)
+func TestUpdateProxyPorts_IndependentUDP(t *testing.T) {
+	h, exec, _, xrayDir := setupProxyPortsTest(t)
+	writeRouting(t, xrayDir, sampleRules())
+
+	// UDP ports may differ from the TCP list: only TCP 80,443 proxied, but
+	// UDP 50000:51000 (e.g. Discord voice) proxied too.
 	body := `{"mode":"proxying","ports":"80,443","udp_ports":"50000:51000"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	h.UpdateProxyPorts(rr, req)
 
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	// TCP list (port_proxying.lst) must NOT contain the UDP-only ports.
+	data, err := os.ReadFile(filepath.Join(h.xkeenConfigDir, proxyPortsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "80\n443\n" {
+		t.Fatalf("port_proxying.lst = %q, want %q", got, "80\n443\n")
+	}
+
+	// Managed UDP rule must carry the independent UDP range.
+	if ports, ok := h.managedUDPRulePorts(); !ok || ports != "50000:51000" {
+		t.Fatalf("managed UDP rule ports = %q (ok=%v), want %q", ports, ok, "50000:51000")
+	}
+
+	// Round-trip: GET reports the independent lists.
+	get := httptest.NewRequest(http.MethodGet, "/api/settings/proxy-ports", http.NoBody)
+	grr := httptest.NewRecorder()
+	h.GetProxyPorts(grr, get)
+	var resp ProxyPortsResponse
+	if err := json.Unmarshal(grr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Ports != "80,443" || resp.UDPPorts != "50000:51000" {
+		t.Fatalf("GET = ports %q udp %q, want %q / %q", resp.Ports, resp.UDPPorts, "80,443", "50000:51000")
+	}
+	xkeenCalls := []string{}
+	for _, c := range exec.calls() {
+		if strings.HasPrefix(c, "xkeen") {
+			xkeenCalls = append(xkeenCalls, c)
+		}
+	}
+	if len(xkeenCalls) != 1 || xkeenCalls[0] != "xkeen -restart" {
+		t.Fatalf("expected a single xkeen -restart, got %v", exec.calls())
 	}
 }
 
