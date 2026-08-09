@@ -193,13 +193,10 @@ async function loadProxyPorts() {
 		const active = new Set(splitTokens(d.ports || ''));
 		const udp = new Set(splitTokens(d.udp_ports || ''));
 		const entries = [];
-		// Web (80,443) is always proxied — locked row.
+		// Web (80,443) is always proxied — locked row, always shown.
 		for (const r of webRows()) {
-			const tokens = splitTokens(r.ports);
-			if (tokens.some(t => active.has(t))) {
-				entries.push({ id: portEntrySeq++, ...r });
-				tokens.forEach(t => { active.delete(t); udp.delete(t); });
-			}
+			entries.push({ id: portEntrySeq++, ...r });
+			splitTokens(r.ports).forEach(t => { active.delete(t); udp.delete(t); });
 		}
 		// Everything else, grouped by protocol (token in both lists = TCP+UDP).
 		const tcpOnly = [];
@@ -821,7 +818,9 @@ onMounted(() => {
                 {{ portsSaving ? i18n.t('settings.saving') : i18n.t('settings.save') }}
               </button>
             </div>
-            <div class="s-row-desc">{{ i18n.t('settings.ports_restart_hint') }}</div>
+            <div class="s-row">
+              <div class="s-row-desc">{{ i18n.t('settings.ports_restart_hint') }}</div>
+            </div>
           </div>
         </section>
 
