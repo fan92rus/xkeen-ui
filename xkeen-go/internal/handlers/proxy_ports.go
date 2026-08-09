@@ -2,12 +2,15 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -89,7 +92,13 @@ func (h *ProxyPortsHandler) GetProxyPorts(w http.ResponseWriter, _ *http.Request
 	})
 }
 
-// UpdateProxyPorts validates, writes and applies the proxy port lists.
+// UpdateProxyPorts validates, writes and applies the proxy port lists, and
+// keeps the managed UDP routing rule in 05_routing.json in sync. Lists are
+// written directly in xkeen's .lst format (one port/range per line, ':' range
+// separator — the format xkeen's read_ports_file accepts) and applied with
+// `xkeen -restart`. Before the restart the merged routing config is
+// pre-flight validated with `xray -test -confdir` and rolled back on failure,
+// so a bad rule can never take down a running proxy.
 // PUT /api/settings/proxy-ports
 func (h *ProxyPortsHandler) UpdateProxyPorts(w http.ResponseWriter, r *http.Request) {
 	var req UpdateProxyPortsRequest
@@ -135,16 +144,10 @@ func (h *ProxyPortsHandler) UpdateProxyPorts(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// Backup existing lists before overwriting.
-	timestamp := time.Now().Format("20060102-150405")
-	for _, name := range []string{proxyPortsFile, excludePortsFile} {
-		path := h.portListPath(name)
-		if _, err := createBackupCore(path, h.backupDir, timestamp); err != nil {
-			log.Printf("[proxy-ports] backup failed for %s: %v", path, err)
-		}
-	}
+	// Current list state (mirrors `xkeen -cp` / `xkeen -cpe`).
+	curProxying := readPortListFile(h.portListPath(proxyPortsFile))
+	curExclude := readPortListFile(h.portListPath(excludePortsFile))
 
-	// Write the .lst files. Empty list file == xkeen proxies all ports.
 	proxyingContent, excludeContent := "", ""
 	switch req.Mode {
 	case "proxying":
@@ -152,42 +155,139 @@ func (h *ProxyPortsHandler) UpdateProxyPorts(w http.ResponseWriter, r *http.Requ
 	case "exclude":
 		excludeContent = ports
 	}
-	if err := os.WriteFile(h.portListPath(proxyPortsFile), []byte(proxyingContent), 0o600); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to write "+proxyPortsFile+": "+err.Error())
-		return
-	}
-	if err := os.WriteFile(h.portListPath(excludePortsFile), []byte(excludeContent), 0o600); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to write "+excludePortsFile+": "+err.Error())
-		return
+
+	// Write the .lst files in xkeen's format (one port/range per line).
+	// An empty file == xkeen proxies all ports. Unchanged lists are skipped.
+	timestamp := time.Now().Format("20060102-150405")
+	listsChanged := false
+	for _, l := range []struct {
+		name, content, current string
+	}{
+		{proxyPortsFile, proxyingContent, curProxying},
+		{excludePortsFile, excludeContent, curExclude},
+	} {
+		if l.content == l.current {
+			continue
+		}
+		if _, err := createBackupCore(h.portListPath(l.name), h.backupDir, timestamp); err != nil {
+			log.Printf("[proxy-ports] backup failed for %s: %v", l.name, err)
+		}
+		if err := writePortListFile(h.portListPath(l.name), l.content); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to write "+l.name+": "+err.Error())
+			return
+		}
+		listsChanged = true
 	}
 
-	// Keep the managed UDP routing rule in sync (files are already written;
-	// a routing failure is logged but does not roll back the lists).
-	if err := h.updateRoutingRule(udpPorts); err != nil {
-		log.Printf("[proxy-ports] routing update failed: %v", err)
+	// Keep the managed UDP routing rule in sync BEFORE anything restarts.
+	// updateRoutingRule is idempotent and also repairs the legacy array form;
+	// it returns a non-empty backup path only when the file actually changed.
+	backupPath, err := h.updateRoutingRule(udpPorts)
+	if err != nil {
+		// Routing file missing/unreadable: apply the lists anyway.
+		log.Printf("[proxy-ports] routing update failed (continuing with lists only): %v", err)
+	}
+
+	// Pre-flight: never restart with a routing config Xray rejects (this is
+	// what used to stop the VPN). On failure everything is rolled back.
+	if backupPath != "" {
+		if err := h.validateRoutingConfig(); err != nil {
+			h.restoreRoutingFile(backupPath)
+			h.restoreListFiles(timestamp)
+			log.Printf("[proxy-ports] routing validation failed, %s and lists rolled back: %v", routingFileName, err)
+			respondError(w, http.StatusInternalServerError,
+				"Xray rejected the updated routing config; changes were rolled back: "+err.Error())
+			return
+		}
 	}
 
 	// Apply: `xkeen -restart` re-applies iptables (port lists) and restarts
-	// Xray (routing rule).
-	ctx, cancel := context.WithTimeout(r.Context(), RestartTimeout)
-	defer cancel()
-	if _, err := h.executor.Execute(ctx, "xkeen", "-restart"); err != nil {
-		respondJSON(w, http.StatusInternalServerError, ProxyPortsResponse{
-			Ok:       false,
-			Mode:     req.Mode,
-			Ports:    ports,
-			UDPPorts: udpPorts,
-			Message:  "config saved, but applying (xkeen -restart) failed: " + err.Error(),
-		})
-		return
+	// Xray (routing rule). Skipped when nothing actually changed.
+	if listsChanged || backupPath != "" {
+		ctx, cancel := context.WithTimeout(r.Context(), RestartTimeout)
+		defer cancel()
+		if _, err := h.executor.Execute(ctx, "xkeen", "-restart"); err != nil {
+			respondJSON(w, http.StatusInternalServerError, ProxyPortsResponse{
+				Ok:       false,
+				Mode:     req.Mode,
+				Ports:    ports,
+				UDPPorts: udpPorts,
+				Message:  "config saved, but applying (xkeen -restart) failed: " + err.Error(),
+			})
+			return
+		}
 	}
 
+	// Report the actual applied state.
+	mode, appliedPorts := h.readActivePorts()
+	appliedUDP, _ := h.managedUDPRulePorts()
 	respondJSON(w, http.StatusOK, ProxyPortsResponse{
 		Ok:       true,
-		Mode:     req.Mode,
-		Ports:    ports,
-		UDPPorts: udpPorts,
+		Mode:     mode,
+		Ports:    appliedPorts,
+		UDPPorts: appliedUDP,
 	})
+}
+
+// writePortListFile writes ports (canonical comma-joined ":" form) into a
+// .lst file in xkeen's format: one port or range per line. xkeen's
+// read_ports_file accepts only `^[0-9]+(:[0-9]+)?$` per line, so a
+// comma-joined single line would be dropped entirely. Empty input produces
+// an empty file (xkeen then proxies all ports).
+func writePortListFile(path, ports string) error {
+	var b strings.Builder
+	for _, t := range strings.Split(ports, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			b.WriteString(t)
+			b.WriteByte('\n')
+		}
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o600)
+}
+
+// restoreListFiles restores both .lst files from backups created with the
+// given timestamp (used to roll back a failed apply).
+func (h *ProxyPortsHandler) restoreListFiles(timestamp string) {
+	for _, name := range []string{proxyPortsFile, excludePortsFile} {
+		src := filepath.Join(h.backupDir, name+"."+timestamp+".bak")
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue // no backup was created for this file
+		}
+		if err := os.WriteFile(h.portListPath(name), data, 0o600); err != nil {
+			log.Printf("[proxy-ports] failed to restore %s: %v", name, err)
+		}
+	}
+}
+
+// validateRoutingConfig runs `xray -test -confdir` against the Xray config
+// directory so a bad routing rule is caught before any restart. It is a no-op
+// (nil) when the xray binary is not available.
+func (h *ProxyPortsHandler) validateRoutingConfig() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	out, err := h.executor.Execute(ctx, "xray", "-test", "-confdir", h.xrayConfigDir)
+	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			log.Printf("[proxy-ports] xray binary not found, skipping routing pre-flight check")
+			return nil
+		}
+		return fmt.Errorf("xray -test -confdir: %s", strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// restoreRoutingFile restores 05_routing.json from a backup created right
+// before it was rewritten (used when Xray rejects the updated config).
+func (h *ProxyPortsHandler) restoreRoutingFile(backupPath string) {
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		log.Printf("[proxy-ports] failed to read routing backup %s: %v", backupPath, err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(h.xrayConfigDir, routingFileName), data, 0o600); err != nil {
+		log.Printf("[proxy-ports] failed to restore routing backup: %v", err)
+	}
 }
 
 // readActivePorts returns the mode and cleaned port list of the active .lst.
@@ -226,7 +326,9 @@ func readPortListFile(path string) string {
 	return strings.Join(lines, ",")
 }
 
-// managedUDPRulePorts extracts the port list of the managed UDP routing rule.
+// managedUDPRulePorts extracts the port list of the managed UDP routing rule
+// and normalizes it to the canonical ":"-separated form used by the editor
+// (ValidatePortList also converts Xray's "-" range separator to ":").
 func (h *ProxyPortsHandler) managedUDPRulePorts() (string, bool) {
 	doc, ok := h.readRoutingDoc()
 	if !ok {
@@ -237,15 +339,27 @@ func (h *ProxyPortsHandler) managedUDPRulePorts() (string, bool) {
 		if name != ManagedUDPRuleName {
 			continue
 		}
-		portsRaw, ok := r["port"].([]interface{})
-		if !ok {
+		var list string
+		switch p := r["port"].(type) {
+		case string:
+			list = p
+		case []interface{}:
+			// Tolerate the legacy array form written before the Xray-syntax fix.
+			var out []string
+			for _, v := range p {
+				out = append(out, fmt.Sprintf("%v", v))
+			}
+			list = strings.Join(out, ",")
+		case float64: // plain JSON number, e.g. "port": 443
+			list = strconv.FormatInt(int64(p), 10)
+		default:
 			return "", true
 		}
-		var out []string
-		for _, p := range portsRaw {
-			out = append(out, fmt.Sprintf("%v", p))
+		normalized, err := ValidatePortList(list)
+		if err != nil {
+			return "", true
 		}
-		return strings.Join(out, ","), true
+		return normalized, true
 	}
 	return "", false
 }
@@ -285,13 +399,17 @@ func routingRules(doc map[string]interface{}) []map[string]interface{} {
 // updateRoutingRule upserts the managed UDP rule in 05_routing.json so that
 // proxied UDP ports go through the balancer instead of the "udp -> direct"
 // catch-all. An empty udpPorts removes the managed rule.
-func (h *ProxyPortsHandler) updateRoutingRule(udpPorts string) error {
+//
+// Returns the backup path when the file was actually rewritten (or "" when
+// the content did not change or no backup was created), and an error when the
+// routing file is missing/unreadable and udpPorts is non-empty.
+func (h *ProxyPortsHandler) updateRoutingRule(udpPorts string) (string, error) {
 	doc, ok := h.readRoutingDoc()
 	if !ok {
 		if udpPorts != "" {
-			return fmt.Errorf("routing file %s not found; UDP ports not applied", routingFileName)
+			return "", fmt.Errorf("routing file %s not found; UDP ports not applied", routingFileName)
 		}
-		return nil
+		return "", nil
 	}
 
 	routing, _ := doc["routing"].(map[string]interface{})
@@ -326,20 +444,41 @@ func (h *ProxyPortsHandler) updateRoutingRule(udpPorts string) error {
 
 	routing["rules"] = rules
 
-	routingPath := filepath.Join(h.xrayConfigDir, routingFileName)
-	if _, err := createBackupCore(routingPath, h.backupDir, time.Now().Format("20060102-150405")); err != nil {
-		log.Printf("[proxy-ports] routing backup failed: %v", err)
-	}
-
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal routing: %w", err)
+		return "", fmt.Errorf("failed to marshal routing: %w", err)
 	}
 	out = append(out, '\n')
-	if err := os.WriteFile(routingPath, out, 0o600); err != nil {
-		return fmt.Errorf("failed to write routing: %w", err)
+
+	routingPath := filepath.Join(h.xrayConfigDir, routingFileName)
+	if existing, err := os.ReadFile(routingPath); err == nil && bytes.Equal(existing, out) {
+		return "", nil // no change
 	}
-	return nil
+
+	backupPath, err := createBackupCore(routingPath, h.backupDir, time.Now().Format("20060102-150405"))
+	if err != nil {
+		log.Printf("[proxy-ports] routing backup failed: %v", err)
+	}
+	if err := os.WriteFile(routingPath, out, 0o600); err != nil {
+		return backupPath, fmt.Errorf("failed to write routing: %w", err)
+	}
+	return backupPath, nil
+}
+
+// xrayPortList converts a canonical ":"-separated port list (as produced by
+// ValidatePortList) into the string form Xray expects in routing-rule "port"
+// fields: comma-separated ports and ranges joined with "-" (e.g.
+// "80,443,15000-52500"). Xray's PortList parser only accepts a plain number
+// or such a string — arrays are rejected with "invalid port".
+func xrayPortList(ports string) string {
+	var out []string
+	for _, t := range strings.Split(ports, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			out = append(out, strings.ReplaceAll(t, ":", "-"))
+		}
+	}
+	return strings.Join(out, ",")
 }
 
 // buildUDPRule builds the managed UDP routing rule, reusing the balancer tag
@@ -354,18 +493,11 @@ func buildUDPRule(udpPorts string, rules []interface{}) map[string]interface{} {
 			}
 		}
 	}
-	var portList []interface{}
-	for _, t := range strings.Split(udpPorts, ",") {
-		t = strings.TrimSpace(t)
-		if t != "" {
-			portList = append(portList, t)
-		}
-	}
 	return map[string]interface{}{
 		"type":        "field",
 		"name":        ManagedUDPRuleName,
 		"network":     "udp",
-		"port":        portList,
+		"port":        xrayPortList(udpPorts),
 		"balancerTag": balancerTag,
 	}
 }

@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -221,7 +223,7 @@ func TestGetProxyPorts_CommentsStripped(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUpdateProxyPorts_Proxying(t *testing.T) {
-	h, exec, _, xrayDir := setupProxyPortsTest(t)
+	h, exec, xkeenDir, xrayDir := setupProxyPortsTest(t)
 	writeRouting(t, xrayDir, sampleRules())
 
 	body := `{"mode":"proxying","ports":"80,443,50000:51000","udp_ports":"50000:51000"}`
@@ -241,10 +243,19 @@ func TestUpdateProxyPorts_Proxying(t *testing.T) {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 
-	// .lst file written correctly.
+	// .lst file written correctly, in xkeen's format (one port/range per
+	// line, ':' ranges — a comma-joined single line would be dropped by
+	// xkeen's read_ports_file entirely).
 	mode, ports := h.readActivePorts()
 	if mode != "proxying" || ports != "80,443,50000:51000" {
 		t.Fatalf("list file not written correctly: mode=%q ports=%q", mode, ports)
+	}
+	raw, err := os.ReadFile(filepath.Join(xkeenDir, "port_proxying.lst"))
+	if err != nil {
+		t.Fatalf("read proxying list: %v", err)
+	}
+	if string(raw) != "80\n443\n50000:51000\n" {
+		t.Fatalf("proxying list must be one port per line, got %q", string(raw))
 	}
 
 	// Routing: managed UDP rule inserted before the udp->direct catch-all.
@@ -266,14 +277,141 @@ func TestUpdateProxyPorts_Proxying(t *testing.T) {
 	if bt, _ := managed["balancerTag"].(string); bt != "default-balancer" {
 		t.Fatalf("managed rule balancerTag = %q", bt)
 	}
+	if port, _ := managed["port"].(string); port != "50000-51000" {
+		t.Fatalf("managed rule port must be a string in Xray syntax (\"50000-51000\"), got %#v", managed["port"])
+	}
 	if rules[2]["outboundTag"] != "direct" {
 		t.Fatalf("udp->direct catch-all must follow the managed rule: %+v", rules[2])
 	}
 
-	// Apply triggered via xkeen -restart.
-	calls := exec.calls()
-	if len(calls) != 1 || calls[0] != "xkeen -restart" {
-		t.Fatalf("expected exactly one `xkeen -restart`, got %v", calls)
+	// Apply triggered via xkeen -restart (the xray pre-flight check also
+	// records a call and is filtered out).
+	var xkeenCalls []string
+	for _, c := range exec.calls() {
+		if strings.HasPrefix(c, "xkeen") {
+			xkeenCalls = append(xkeenCalls, c)
+		}
+	}
+	if len(xkeenCalls) != 1 || xkeenCalls[0] != "xkeen -restart" {
+		t.Fatalf("expected exactly one `xkeen -restart`, got %v", exec.calls())
+	}
+}
+
+func TestUpdateProxyPorts_ManagedRuleXrayPortFormat(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	writeRouting(t, xrayDir, sampleRules())
+
+	// Mix of single ports and ranges (":" is the editor's canonical form).
+	body := `{"mode":"proxying","ports":"80,443,50000:51000","udp_ports":"443,50000:51000"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.UpdateProxyPorts(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+
+	doc, _ := h.readRoutingDoc()
+	for _, r := range routingRules(doc) {
+		if name, _ := r["name"].(string); name != ManagedUDPRuleName {
+			continue
+		}
+		port, ok := r["port"].(string)
+		if !ok {
+			t.Fatalf("managed rule port must be a JSON string, got %#v", r["port"])
+		}
+		if port != "443,50000-51000" {
+			t.Fatalf("managed rule port = %q, want \"443,50000-51000\"", port)
+		}
+		return
+	}
+	t.Fatal("managed rule not found")
+}
+
+func TestUpdateProxyPorts_UDPPortsReadBackNormalized(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	writeRouting(t, xrayDir, sampleRules())
+
+	body := `{"mode":"proxying","ports":"80,443,50000:51000","udp_ports":"50000:51000"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.UpdateProxyPorts(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+
+	// GET must report the UDP ports in the canonical ":"-form the editor uses.
+	req = httptest.NewRequest(http.MethodGet, "/api/settings/proxy-ports", http.NoBody)
+	rr = httptest.NewRecorder()
+	h.GetProxyPorts(rr, req)
+	var resp ProxyPortsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.UDPPorts != "50000:51000" {
+		t.Fatalf("UDPPorts = %q, want \"50000:51000\"", resp.UDPPorts)
+	}
+}
+
+func TestManagedUDPRulePorts_StringForm(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	rules := sampleRules()
+	rules = append(rules, map[string]interface{}{
+		"type":        "field",
+		"name":        ManagedUDPRuleName,
+		"network":     "udp",
+		"port":        "50000-51000,443",
+		"balancerTag": "default-balancer",
+	})
+	writeRouting(t, xrayDir, rules)
+
+	ports, ok := h.managedUDPRulePorts()
+	if !ok || ports != "443,50000:51000" {
+		t.Fatalf("string form: got ports=%q ok=%v, want \"443,50000:51000\"", ports, ok)
+	}
+}
+
+func TestManagedUDPRulePorts_LegacyArrayForm(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	rules := sampleRules()
+	rules = append(rules, map[string]interface{}{
+		"type":        "field",
+		"name":        ManagedUDPRuleName,
+		"network":     "udp",
+		"port":        []interface{}{"50000:51000", "443"},
+		"balancerTag": "default-balancer",
+	})
+	writeRouting(t, xrayDir, rules)
+
+	ports, ok := h.managedUDPRulePorts()
+	if !ok || ports != "443,50000:51000" {
+		t.Fatalf("legacy array form: got ports=%q ok=%v, want \"443,50000:51000\"", ports, ok)
+	}
+}
+
+func TestManagedUDPRulePorts_SingleNumber(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	rules := sampleRules()
+	rules = append(rules, map[string]interface{}{
+		"type":        "field",
+		"name":        ManagedUDPRuleName,
+		"network":     "udp",
+		"port":        443,
+		"balancerTag": "default-balancer",
+	})
+	writeRouting(t, xrayDir, rules)
+
+	ports, ok := h.managedUDPRulePorts()
+	if !ok || ports != "443" {
+		t.Fatalf("number form: got ports=%q ok=%v, want \"443\"", ports, ok)
+	}
+}
+
+func TestManagedUDPRulePorts_MissingRule(t *testing.T) {
+	h, _, _, xrayDir := setupProxyPortsTest(t)
+	writeRouting(t, xrayDir, sampleRules())
+
+	if _, ok := h.managedUDPRulePorts(); ok {
+		t.Fatal("expected ok=false when the managed rule is absent")
 	}
 }
 
@@ -405,4 +543,143 @@ type failingExecutor struct{}
 
 func (f *failingExecutor) Execute(_ context.Context, _ string, _ ...string) (string, error) {
 	return "boom", context.DeadlineExceeded
+}
+
+// failXrayExecutor records calls like fakeExecutor but makes `xray -test`
+// fail (as if the merged routing config were rejected).
+type failXrayExecutor struct {
+	*fakeExecutor
+}
+
+func (e *failXrayExecutor) Execute(ctx context.Context, name string, args ...string) (string, error) {
+	if name == "xray" {
+		return "invalid config", errors.New("xray rejected config")
+	}
+	return e.fakeExecutor.Execute(ctx, name, args...)
+}
+
+func TestUpdateProxyPorts_NoOpSkipsRestart(t *testing.T) {
+	h, exec, xkeenDir, xrayDir := setupProxyPortsTest(t)
+	// Routing file already carries the managed rule in the correct string
+	// syntax at the right position, and the .lst already matches the request.
+	rules := sampleRules()
+	managed := map[string]interface{}{
+		"type":        "field",
+		"name":        ManagedUDPRuleName,
+		"network":     "udp",
+		"port":        "50000-51000",
+		"balancerTag": "default-balancer",
+	}
+	rules = append(rules, nil)
+	copy(rules[2:], rules[1:])
+	rules[1] = managed
+	writeRouting(t, xrayDir, rules)
+	if err := writePortListFile(filepath.Join(xkeenDir, "port_proxying.lst"), "80,443,50000:51000"); err != nil {
+		t.Fatalf("write list: %v", err)
+	}
+
+	body := `{"mode":"proxying","ports":"80,443,50000:51000","udp_ports":"50000:51000"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.UpdateProxyPorts(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+
+	if calls := exec.calls(); len(calls) != 0 {
+		t.Fatalf("no-op save must not restart xkeen, got %v", calls)
+	}
+}
+
+func TestUpdateProxyPorts_LegacyRuleRepairedOnSave(t *testing.T) {
+	h, exec, xkeenDir, xrayDir := setupProxyPortsTest(t)
+	// Simulate the pre-fix state: managed rule written with the broken array
+	// form (the bug that stopped the VPN) while the .lst already matches.
+	rules := sampleRules()
+	rules = append(rules, map[string]interface{}{
+		"type":        "field",
+		"name":        ManagedUDPRuleName,
+		"network":     "udp",
+		"port":        []interface{}{"50000:51000"},
+		"balancerTag": "default-balancer",
+	})
+	writeRouting(t, xrayDir, rules)
+	if err := writePortListFile(filepath.Join(xkeenDir, "port_proxying.lst"), "80,443,50000:51000"); err != nil {
+		t.Fatalf("write list: %v", err)
+	}
+
+	body := `{"mode":"proxying","ports":"80,443,50000:51000","udp_ports":"50000:51000"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.UpdateProxyPorts(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+
+	// Legacy array rule rewritten to the Xray string syntax.
+	doc, ok := h.readRoutingDoc()
+	if !ok {
+		t.Fatal("routing file missing")
+	}
+	for _, r := range routingRules(doc) {
+		if name, _ := r["name"].(string); name != ManagedUDPRuleName {
+			continue
+		}
+		port, ok := r["port"].(string)
+		if !ok || port != "50000-51000" {
+			t.Fatalf("legacy rule must be rewritten to string \"50000-51000\", got %#v", r["port"])
+		}
+		// Lists were unchanged, so the repair itself must restart xkeen
+		// (xray pre-flight calls are filtered out).
+		var xkeenCalls []string
+		for _, c := range exec.calls() {
+			if strings.HasPrefix(c, "xkeen") {
+				xkeenCalls = append(xkeenCalls, c)
+			}
+		}
+		if len(xkeenCalls) != 1 || xkeenCalls[0] != "xkeen -restart" {
+			t.Fatalf("expected exactly one `xkeen -restart`, got %v", exec.calls())
+		}
+		return
+	}
+	t.Fatal("managed rule not found")
+}
+
+func TestUpdateProxyPorts_RoutingValidationRollback(t *testing.T) {
+	h, _, xkeenDir, xrayDir := setupProxyPortsTest(t)
+	writeRouting(t, xrayDir, sampleRules())
+	if err := writePortListFile(filepath.Join(xkeenDir, "port_proxying.lst"), "80,443"); err != nil {
+		t.Fatalf("write list: %v", err)
+	}
+	routingBefore, _ := os.ReadFile(filepath.Join(xrayDir, "05_routing.json"))
+
+	fe := &failXrayExecutor{fakeExecutor: &fakeExecutor{}}
+	h.executor = fe
+
+	body := `{"mode":"proxying","ports":"80,443,8443","udp_ports":"8443"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/proxy-ports", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.UpdateProxyPorts(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body = %s)", rr.Code, rr.Body.String())
+	}
+
+	// Routing file restored from the backup taken right before the rewrite.
+	routingAfter, _ := os.ReadFile(filepath.Join(xrayDir, "05_routing.json"))
+	if !bytes.Equal(routingAfter, routingBefore) {
+		t.Fatal("routing file must be rolled back after failed validation")
+	}
+
+	// Lists restored too — the new port must not remain on disk.
+	raw, _ := os.ReadFile(filepath.Join(xkeenDir, "port_proxying.lst"))
+	if string(raw) != "80\n443\n" {
+		t.Fatalf("proxying list must be rolled back, got %q", string(raw))
+	}
+
+	// No xkeen command may run after the rollback (no restart).
+	for _, c := range fe.calls() {
+		if strings.HasPrefix(c, "xkeen") {
+			t.Fatalf("no xkeen command must run after rollback, got %v", fe.calls())
+		}
+	}
 }
