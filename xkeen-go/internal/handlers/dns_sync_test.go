@@ -10,7 +10,7 @@ import (
 func TestDiscoverDNSUpstream(t *testing.T) {
 	orig := dnsSyncNDMCFn
 	defer func() { dnsSyncNDMCFn = orig }()
-	dnsSyncNDMCFn = func(args ...string) ([]byte, error) {
+	dnsSyncNDMCFn = func(_ ...string) ([]byte, error) {
 		return []byte("           server: \n              address: 127.0.0.1\n               domain: \n              address: 192.168.5.10\n               domain: \n              address: 1.1.1.1\n               domain: local\n"), nil
 	}
 	if got := discoverDNSUpstream(); got != "192.168.5.10" {

@@ -15,7 +15,7 @@ import (
 
 var (
 	dnsSyncNDMCFn = func(args ...string) ([]byte, error) {
-		return exec.Command("ndmc", args...).CombinedOutput() //nolint:gosec // args built from validated config values
+		return exec.Command("ndmc", args...).CombinedOutput()
 	}
 	dnsSyncLookPathFn = exec.LookPath
 )
@@ -71,10 +71,7 @@ func SyncDNSForward(cfg *config.Config) (string, error) {
 	// Zones we want; "" means all zones (default server override).
 	want := map[string]bool{}
 	if cfg.AWDNSForward {
-		if cfg.AWDNSForwardAllZones {
-			// The default DNS server already forwards all zones — nothing
-			// zone-scoped to add; stale zone rules are removed below.
-		} else {
+		if !cfg.AWDNSForwardAllZones {
 			for _, z := range cfg.AWDNSZones {
 				z = strings.TrimPrefix(strings.TrimSpace(z), ".")
 				if z != "" && zoneRe.MatchString(z) {
@@ -115,7 +112,7 @@ func SyncDNSForward(cfg *config.Config) (string, error) {
 }
 
 func mapKeys(m map[string]bool) []string {
-	var out []string
+	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
 	}
