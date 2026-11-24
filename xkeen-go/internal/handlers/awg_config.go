@@ -513,7 +513,7 @@ var awgGenKeyFn = generateAWGKeypair
 // ndmcRunFn / ndmcLookPathFn are seams for Keenetic CLI calls (tests override).
 var (
 	ndmcRunFn = func(args ...string) ([]byte, error) {
-		return exec.Command("ndmc", args...).CombinedOutput() //nolint:gosec // args are built from validated values
+		return exec.Command("ndmc", args...).CombinedOutput()
 	}
 	ndmcLookPathFn = exec.LookPath
 )
