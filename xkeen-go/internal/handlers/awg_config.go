@@ -299,7 +299,7 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 	// invocation, re-entering the interface context for each subcommand —
 	// multiline `ndmc -c` is rejected by NDM and a plain pipe needs a tty.
 	ndmsApplied, ndmsErr := applyNDMSInterface(req.Name, subnet)
-	msg := fmt.Sprintf("Server config %q created. Press Start to bring it up.", req.Name)
+	msg := fmt.Sprintf("Server config %q created. NDMS interface registered — reboot the router once for its netdev to appear, then press Start.", req.Name)
 	if !ndmsApplied {
 		msg = fmt.Sprintf("Server config %q created, but NDMS interface could not be created automatically — run the commands below in the Keenetic CLI, then press Start.", req.Name)
 	}
@@ -342,13 +342,34 @@ func applyNDMSInterface(name, subnet string) (applied bool, errMsg string) {
 		"system configuration save",
 	}
 	for _, cmd := range cmds {
-		if out, err := ndmcRunFn("-c", cmd); err != nil {
-			log.Printf("[awg] ndmc %q failed: %v\n%s", cmd, err, string(out))
-			return false, fmt.Sprintf("ndmc %q failed: %v", cmd, err)
+		out, err := ndmcRunFn("-c", cmd)
+		if err == nil {
+			continue
+		}
+		// Keenetic's ndmc sometimes exits non-zero even when the command took
+		// effect. Trust explicit success markers in its output.
+		text := strings.ToLower(string(out))
+		if strings.Contains(text, "created") || strings.Contains(text, "saved") ||
+			strings.Contains(text, "done") || strings.Contains(text, "already") ||
+			strings.Contains(text, "saved.") {
+			log.Printf("[awg] ndmc %q exited %v but output indicates success", cmd, err)
+			continue
+		}
+		log.Printf("[awg] ndmc %q failed: %v\n%s", cmd, err, string(out))
+		return false, fmt.Sprintf("ndmc %q failed: %v", cmd, err)
+	}
+
+	// Keenetic 5.x registers OpkgTun interfaces in the NDMS config immediately
+	// but does NOT materialize the netdev until a full config rebuild/reboot.
+	// Verify the interface is present in the NDMS config (not the netdev) —
+	// this is the stable success signal across firmware versions.
+	if out, err := ndmcRunFn("-c", "show interface "+ndmsName); err == nil || strings.Contains(string(out), ndmsName) {
+		if strings.Contains(string(out), ndmsName) {
+			log.Printf("[awg] NDMS interface %s created in system config (netdev appears after reboot)", ndmsName)
+			return true, ""
 		}
 	}
-	log.Printf("[awg] NDMS interface %s created automatically", ndmsName)
-	return true, ""
+	return false, fmt.Sprintf("interface %s was not found in NDMS config after creation — check the Keenetic CLI", ndmsName)
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -516,4 +537,7 @@ var (
 		return exec.Command("ndmc", args...).CombinedOutput()
 	}
 	ndmcLookPathFn = exec.LookPath
+	ndmcLinkFn     = func(name string) bool {
+		return exec.Command("ip", "link", "show", name).Run() == nil
+	}
 )

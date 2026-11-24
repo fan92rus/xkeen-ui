@@ -151,6 +151,9 @@ func TestCreateServer_NDMSAppliedAutomatically(t *testing.T) {
 	var cmds []string
 	ndmcRunFn = func(args ...string) ([]byte, error) {
 		cmds = append(cmds, strings.Join(args, " "))
+		if strings.Contains(strings.Join(args, " "), "show interface") {
+			return []byte("Interface, name = \"OpkgTun1\"\n  state: up\n"), nil
+		}
 		return nil, nil
 	}
 
