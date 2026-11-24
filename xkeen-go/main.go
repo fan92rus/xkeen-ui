@@ -20,10 +20,10 @@ import (
 
 // Build information (set via ldflags)
 var (
-	appVersion   = "0.1.0"
-	buildDate    = "unknown"
-	gitCommit    = "unknown"
-	buildBranch  = "master"
+	appVersion  = "0.1.0"
+	buildDate   = "unknown"
+	gitCommit   = "unknown"
+	buildBranch = "master"
 )
 
 // Installation paths for Keenetic/Entware
@@ -272,4 +272,3 @@ func runServer() {
 	}
 	log.Println("Server exited normally")
 }
-

@@ -86,11 +86,11 @@ type SubscriptionHandler struct {
 	store       *subscription.Store
 	fetcher     *subscription.Fetcher
 	scheduler   *subscription.Scheduler
-	xrayDir     string // xray config directory for writing generated files
-	mihomoDir   string // mihomo config directory for writing generated files
-	awgDir      string // awg config directory for scanning .conf files
-	currentMode string // "xray" or "mihomo" — set on construction from config
-	restartFn   func() // optional restart function wired from server.go
+	xrayDir     string       // xray config directory for writing generated files
+	mihomoDir   string       // mihomo config directory for writing generated files
+	awgDir      string       // awg config directory for scanning .conf files
+	currentMode string       // "xray" or "mihomo" — set on construction from config
+	restartFn   func()       // optional restart function wired from server.go
 	mark        atomic.Int64 // sockopt.mark for outbounds (0 = none, 255 = proxy_entware on)
 
 	observatoryConcurrency bool // parallel probe flag for Xray observatory

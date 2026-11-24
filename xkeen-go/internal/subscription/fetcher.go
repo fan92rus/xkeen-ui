@@ -256,12 +256,12 @@ func attemptCtx(parent context.Context) (context.Context, context.CancelFunc) {
 
 // FetchWithCascade downloads the subscription with a two-stage strategy:
 //
-//	1. If a proxy is configured (see SetProxyURL), try fetching through it
-//	   with a 20s budget. On success, return SourceProxy.
-//	2. On proxy failure (or if no proxy is set), fall back to a direct
-//	   fetch with a 20s budget. On success, return SourceDirect.
-//	3. If both stages fail, return an aggregated error describing both
-//	   attempts so the caller can surface a useful diagnostic.
+//  1. If a proxy is configured (see SetProxyURL), try fetching through it
+//     with a 20s budget. On success, return SourceProxy.
+//  2. On proxy failure (or if no proxy is set), fall back to a direct
+//     fetch with a 20s budget. On success, return SourceDirect.
+//  3. If both stages fail, return an aggregated error describing both
+//     attempts so the caller can surface a useful diagnostic.
 //
 // The parent ctx bounds the total operation; each stage also receives its
 // own child timeout so a hung proxy does not consume the entire budget.

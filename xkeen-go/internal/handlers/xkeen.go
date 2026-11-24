@@ -364,7 +364,7 @@ func (h *SpeedBalancerHandler) doEnable() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, h.xkeenBinary, "-sb", "on") //nolint:gosec // binary path from config, not user input
-	cmd.Stdin = strings.NewReader("y\n") // auto-accept interactive prompt
+	cmd.Stdin = strings.NewReader("y\n")                        // auto-accept interactive prompt
 	_, err := cmd.CombinedOutput()
 	return err
 }

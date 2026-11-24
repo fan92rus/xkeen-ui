@@ -1,23 +1,31 @@
 package handlers
 
 import (
-	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
+
 	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
 
 	"github.com/fan92rus/xkeen-ui/internal/subscription"
 )
+
+// peerMu serializes config-file mutations (AddPeer/DeletePeer/ApplyObfuscation):
+// concurrent add/remove otherwise race on parse→allocate→append and produce
+// duplicate IPs or lost updates.
+var peerMu sync.Mutex
 
 // ---------- Peer types ----------
 
@@ -110,6 +118,10 @@ func (h *AWGHandler) AddPeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	confPath := filepath.Join(h.awgDir, name+".conf")
+
+	peerMu.Lock()
+	defer peerMu.Unlock()
+
 	conf, err := subscription.ParseAWGConf(confPath)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to parse config: %v", err))
@@ -148,7 +160,7 @@ func (h *AWGHandler) AddPeer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[awg] added peer %s (%s) to %s", ip, label, name)
 
 	// Generate client config
-	clientConf, err := h.generateClientConfig(confPath, privKey, ip)
+	clientConf, warn, err := h.generateClientConfig(confPath, privKey, ip)
 	if err != nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success":       true,
@@ -174,6 +186,8 @@ func (h *AWGHandler) AddPeer(w http.ResponseWriter, r *http.Request) {
 	}
 	if syncErr != nil {
 		resp["warning"] = "peer added but interface sync failed — restart the interface to apply: " + syncErr.Error()
+	} else if warn != "" {
+		resp["warning"] = warn
 	}
 	respondJSON(w, http.StatusOK, resp)
 }
@@ -252,6 +266,28 @@ func (h *AWGHandler) DeletePeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	confPath := filepath.Join(h.awgDir, name+".conf")
+
+	peerMu.Lock()
+	defer peerMu.Unlock()
+
+	// Resolve the peer's IP up front (when deletion is by key/index) so the
+	// stored client config — which contains the private key — is cleaned up too.
+	if peerIP == "" {
+		if conf, perr := subscription.ParseAWGConf(confPath); perr == nil && conf != nil {
+			for i, p := range conf.Peers {
+				match := (pubKey != "" && p.Values["PublicKey"] == pubKey) || (pubKey == "" && i == peerIndex)
+				if !match {
+					continue
+				}
+				if allowed := p.Values["AllowedIPs"]; allowed != "" {
+					first := strings.TrimSpace(strings.Split(allowed, ",")[0])
+					peerIP = strings.SplitN(first, "/", 2)[0]
+				}
+				break
+			}
+		}
+	}
+
 	if err := removePeerFromFile(confPath, pubKey, peerIP, peerIndex); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to remove peer: %v", err))
 		return
@@ -297,8 +333,7 @@ func (h *AWGHandler) syncInterface(name string) (bool, error) {
 	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Step 1: awg-quick strip converts awg-quick format → awg format
-	stripCmd := exec.Command("awg-quick", "strip", confPath)
-	stripped, err := stripCmd.Output()
+	stripped, err := peersExecFn("awg-quick", "strip", confPath)
 	if err != nil {
 		return false, fmt.Errorf("awg-quick strip failed: %w", err)
 	}
@@ -307,8 +342,7 @@ func (h *AWGHandler) syncInterface(name string) (bool, error) {
 	}
 
 	// Step 2: awg syncconf applies changes to the running interface
-	syncCmd := exec.Command("awg", "syncconf", name, tmpFile)
-	if output, err := syncCmd.CombinedOutput(); err != nil {
+	if output, err := peersExecFn("awg", "syncconf", name, tmpFile); err != nil {
 		return false, fmt.Errorf("awg syncconf failed: %w\n%s", err, output)
 	}
 
@@ -321,7 +355,7 @@ func (h *AWGHandler) syncInterface(name string) (bool, error) {
 // generateAWGKeypair runs `awg genkey` and `awg pubkey` to produce a Curve25519 keypair.
 func generateAWGKeypair() (privateKey, publicKey string, err error) {
 	// Generate private key
-	privOut, err := exec.Command("awg", "genkey").Output()
+	privOut, err := peersExecFn("awg", "genkey")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return "", "", errors.New("awg binary not found — install AWG tools first")
@@ -331,9 +365,7 @@ func generateAWGKeypair() (privateKey, publicKey string, err error) {
 	privateKey = strings.TrimSpace(string(privOut))
 
 	// Derive public key from private
-	pubCmd := exec.Command("awg", "pubkey")
-	pubCmd.Stdin = strings.NewReader(privateKey + "\n")
-	pubOut, err := pubCmd.Output()
+	pubOut, err := peersExecFnIn("awg", []string{"pubkey"}, privateKey+"\n")
 	if err != nil {
 		return privateKey, "", fmt.Errorf("awg pubkey: %w", err)
 	}
@@ -351,51 +383,95 @@ func maskKey(key string) string {
 
 // ---------- IP allocation ----------
 
-// allocatePeerIP finds the next available IP in the tunnel subnet.
-// Scans existing peers' AllowedIPs and picks the lowest free address.
-func (h *AWGHandler) allocatePeerIP(conf *subscription.AWGConf) (string, error) {
-	subnet := conf.GetTunnelSubnet()
-	if subnet == "" {
-		subnet = "10.8.0.0/24"
-	}
-
-	// Extract the base (first 3 octets)
-	parts := strings.Split(subnet, ".")
-	if len(parts) < 3 {
-		return "", errors.New("invalid subnet format")
-	}
-	base := parts[0] + "." + parts[1] + "." + parts[2]
-
-	// Collect used IPs (skip .0 network, .1 server, .255 broadcast)
-	used := make(map[int]bool)
-	used[0] = true
-	used[1] = true // server
-	used[255] = true
-
-	for _, p := range conf.Peers {
-		allowed := p.Values["AllowedIPs"]
-		if allowed == "" {
-			continue
+// tunnelPrefix derives the IPv4 /prefix used for peer addressing:
+// 1) the server's own Address in [Interface] (works even for the FIRST peer),
+// 2) fallback: derived from existing peers' AllowedIPs,
+// 3) final fallback: 10.8.0.0/24.
+func tunnelPrefix(conf *subscription.AWGConf) netip.Prefix {
+	if conf.Interface != nil {
+		for _, addr := range strings.Split(conf.Interface.Values["Address"], ",") {
+			addr = strings.TrimSpace(addr)
+			if addr == "" {
+				continue
+			}
+			if p, err := netip.ParsePrefix(addr); err == nil && p.Addr().Is4() {
+				return netip.PrefixFrom(p.Masked().Addr(), p.Bits())
+			}
 		}
-		first := strings.Split(allowed, ",")[0]
-		first = strings.TrimSpace(first)
-		ipStr := strings.SplitN(first, "/", 2)[0]
-		octets := strings.Split(ipStr, ".")
-		if len(octets) == 4 {
-			last, err := strconv.Atoi(octets[3])
-			if err == nil {
-				used[last] = true
+	}
+	if subnet := conf.GetTunnelSubnet(); subnet != "" {
+		if p, err := netip.ParsePrefix(subnet); err == nil && p.Addr().Is4() {
+			return p
+		}
+	}
+	return netip.MustParsePrefix("10.8.0.0/24")
+}
+
+// allocatePeerIP finds the next available IPv4 host in the tunnel subnet.
+// Supports prefixes of any length (not just /24). Skips the network address,
+// the server's own address, the broadcast address (for prefixes ≤ /30) and
+// addresses already assigned to peers.
+func (h *AWGHandler) allocatePeerIP(conf *subscription.AWGConf) (string, error) {
+	prefix := tunnelPrefix(conf)
+
+	used := make(map[netip.Addr]bool)
+	serverAddrSet := false
+	if conf.Interface != nil {
+		for _, addr := range strings.Split(conf.Interface.Values["Address"], ",") {
+			addr = strings.TrimSpace(addr)
+			if addr == "" {
+				continue
+			}
+			// Accept both bare IPs and IP/prefix forms.
+			if strings.Contains(addr, "/") {
+				if p, err := netip.ParsePrefix(addr); err == nil && p.Addr().Is4() {
+					used[p.Addr()] = true
+					serverAddrSet = true
+				}
+				continue
+			}
+			if a, err := netip.ParseAddr(addr); err == nil && a.Is4() {
+				used[a] = true // server address(es)
+				serverAddrSet = true
+			}
+		}
+	}
+	for _, p := range conf.Peers {
+		for _, a := range strings.Split(p.Values["AllowedIPs"], ",") {
+			parts := strings.SplitN(strings.TrimSpace(a), "/", 2)
+			if len(parts) == 0 {
+				continue
+			}
+			if ip, err := netip.ParseAddr(parts[0]); err == nil && ip.Is4() {
+				used[ip] = true
 			}
 		}
 	}
 
-	// Find lowest free (start from 2)
-	for i := 2; i < 255; i++ {
-		if !used[i] {
-			return fmt.Sprintf("%s.%d", base, i), nil
+	network := prefix.Masked().Addr()
+	used[network] = true // network address
+	// Convention: the first usable host is the server itself. When no server
+	// Address is set explicitly (e.g. default /24 fallback), reserve it anyway.
+	if !serverAddrSet && prefix.Bits() < 31 {
+		used[network.Next()] = true
+	}
+	broadcast := network
+	if prefix.Bits() < 31 {
+		//nolint:gosec // prefix.Bits() ≤ 128, no overflow possible
+		hostBits := uint32(32 - prefix.Bits())
+		hostMask := uint32(1)<<hostBits - 1
+		b := network.As4()
+		ipU := binary.BigEndian.Uint32(b[:]) | hostMask
+		broadcast = netip.AddrFrom4([4]byte{byte(ipU >> 24), byte(ipU >> 16), byte(ipU >> 8), byte(ipU)})
+		used[broadcast] = true
+	}
+
+	for cur := network.Next(); netip.PrefixFrom(cur, prefix.Bits()).Contains(cur) && cur != broadcast; cur = cur.Next() {
+		if !used[cur] {
+			return cur.String(), nil
 		}
 	}
-	return "", errors.New("no free IPs in tunnel subnet (10.8.0.2–10.8.0.254 all used)")
+	return "", fmt.Errorf("no free IPs in tunnel subnet %s", prefix.String())
 }
 
 // ---------- Config file manipulation ----------
@@ -584,6 +660,11 @@ func (h *AWGHandler) syncClientWithServer(serverName, clientConfPath string) {
 	//    and inserts the server's current set; with an empty map it strips all
 	//    params (syncing a plain-WG server correctly removes them from clients).
 	params := readAWGParams(serverConf)
+	// Never propagate I1/I2/I3 to clients: numeric I1 = 0 breaks client apps
+	// ("Invalid Signature format"), I2/I3 break Keenetic awg builds (issue #3).
+	delete(params, "I1")
+	delete(params, "I2")
+	delete(params, "I3")
 	if err := applyObfuscationToConfig(clientConfPath, params); err != nil {
 		log.Printf("[awg] syncClientWithServer: failed to sync AWG params for %s: %v", filepath.Base(clientConfPath), err)
 		return // don't proceed to port rewrite on a half-updated file
@@ -596,24 +677,27 @@ func (h *AWGHandler) syncClientWithServer(serverName, clientConfPath string) {
 	}
 }
 
-// generateClientConfig produces a client .conf from a server config and a new client's keys.
-func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientIP string) (string, error) {
+// generateClientConfig produces a client .conf from a server config and a new
+// client's keys. Returns (config, warning, err); warning is non-empty when the
+// config was generated but likely needs manual attention (private endpoint,
+// ::/0 without server IPv6).
+func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientIP string) (clientConf, warning string, err error) {
 	serverConf, err := subscription.ParseAWGConf(serverConfPath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if serverConf.Interface == nil {
-		return "", errors.New("server config has no [Interface] section")
+		return "", "", errors.New("server config has no [Interface] section")
 	}
 
 	// Get server's public key from its private key
 	serverPriv := serverConf.GetPrivateKey()
 	if serverPriv == "" {
-		return "", errors.New("server config has no PrivateKey")
+		return "", "", errors.New("server config has no PrivateKey")
 	}
 	serverPub, err := derivePublicKey(serverPriv)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive server public key: %w", err)
+		return "", "", fmt.Errorf("failed to derive server public key: %w", err)
 	}
 
 	// Get listen port and endpoint
@@ -633,21 +717,44 @@ func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientI
 		}
 	}
 	if endpointHost == "" {
-		return "", errors.New("cannot detect WAN endpoint — set awg_endpoint in settings or configure client Endpoint manually")
+		return "", "", errors.New("cannot detect WAN endpoint — set awg_endpoint in settings or configure client Endpoint manually")
 	}
 	endpoint := fmt.Sprintf("%s:%d", endpointHost, port)
+
+	warning = endpointPrivateWarning(endpointHost)
+
+	// Client-config knobs (settings-overridable, sensible defaults)
+	dns := h.cfg.AWGClientDNS
+	if dns == "" {
+		dns = "1.1.1.1"
+	}
+	mtu := h.cfg.AWGClientMTU
+	if mtu == 0 {
+		mtu = 1420
+	}
+	allowedIPs := h.cfg.AWGClientAllowedIPs
+	if allowedIPs == "" {
+		// Default to IPv4-only: the app never sets up IPv6 forwarding/NAT66
+		// for the tunnel, so ::/0 routes mobile IPv6 traffic into a black hole
+		// (Android prefers IPv6 — the whole connection appears dead). A router
+		// can have global IPv6 on other interfaces (WARP, ULA) which does NOT
+		// make ::/0 usable for VPN clients. Opt in explicitly via
+		// awg_client_allowed_ips if IPv6 is really set up end-to-end.
+		allowedIPs = "0.0.0.0/0"
+	}
 
 	// Build client config
 	var sb strings.Builder
 	sb.WriteString("[Interface]\n")
 	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", clientPrivKey))
 	sb.WriteString(fmt.Sprintf("Address = %s/32\n", clientIP))
-	sb.WriteString("DNS = 1.1.1.1\n")
-	sb.WriteString("MTU = 1420\n")
+	sb.WriteString(fmt.Sprintf("DNS = %s\n", dns))
+	sb.WriteString(fmt.Sprintf("MTU = %d\n", mtu))
 
-	// Copy AWG obfuscation params from server (Jc, Jmin, Jmax, S1-S4, H1-H4, I1)
-	awgParams := []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1"}
-	for _, param := range awgParams {
+	// Copy ALL AWG obfuscation params present in the server [Interface]
+	// (awgParamKeys order, incl. I2/I3 — params other than Jc/Jmin/Jmax must
+	// match exactly between server and client or the handshake fails).
+	for _, param := range awgParamKeys {
 		if val, ok := serverConf.Interface.Values[param]; ok {
 			sb.WriteString(fmt.Sprintf("%s = %s\n", param, val))
 		}
@@ -655,18 +762,16 @@ func (h *AWGHandler) generateClientConfig(serverConfPath, clientPrivKey, clientI
 
 	sb.WriteString("\n[Peer]\n")
 	sb.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
-	sb.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	sb.WriteString(fmt.Sprintf("AllowedIPs = %s\n", allowedIPs))
 	sb.WriteString(fmt.Sprintf("Endpoint = %s\n", endpoint))
 	sb.WriteString("PersistentKeepalive = 25\n")
 
-	return sb.String(), nil
+	return sb.String(), warning, nil
 }
 
 // derivePublicKey computes the public key from a private key via `awg pubkey`.
 func derivePublicKey(privateKey string) (string, error) {
-	cmd := exec.Command("awg", "pubkey")
-	cmd.Stdin = strings.NewReader(privateKey + "\n")
-	out, err := cmd.Output()
+	out, err := peersExecFnIn("awg", []string{"pubkey"}, privateKey+"\n")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return "", errors.New("awg binary not found")
@@ -679,7 +784,7 @@ func derivePublicKey(privateKey string) (string, error) {
 // detectEndpoint tries to find the WAN IP for the client endpoint.
 func (h *AWGHandler) detectEndpoint() string {
 	// Try ip route to find default route's source IP
-	out, err := exec.Command("ip", "route", "get", "8.8.8.8").Output()
+	out, err := peersExecFn("ip", "route", "get", "8.8.8.8")
 	if err != nil {
 		return ""
 	}
@@ -698,7 +803,7 @@ func (h *AWGHandler) detectEndpointFromIface() string {
 	if wanIface == "" {
 		wanIface = "eth3" // common Keenetic WAN interface
 	}
-	out, err := exec.Command("ip", "-4", "addr", "show", "dev", wanIface).Output()
+	out, err := peersExecFn("ip", "-4", "addr", "show", "dev", wanIface)
 	if err != nil {
 		return ""
 	}
@@ -711,5 +816,43 @@ func (h *AWGHandler) detectEndpointFromIface() string {
 	return ""
 }
 
-// unused but kept for potential future server config generation
-var _ = bufio.NewScanner
+// endpointPrivateWarning returns a warning when the endpoint host is an IPv4
+// address that is not globally routable (RFC1918, CGNAT 100.64/10, loopback,
+// link-local). A phone cannot reach such an endpoint from the internet —
+// typical cause: the router sits behind ISP NAT. Domains and public IPs are fine.
+func endpointPrivateWarning(host string) string {
+	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	// Strip a trailing :port if the caller passed host:port by mistake.
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return "" // domain name — cannot judge here
+	}
+	if v4 := ip.To4(); v4 != nil {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return fmt.Sprintf("endpoint %s is a private/CGNAT address — the client will NOT be able to connect from the internet; set awg_endpoint to your public IP/domain or set up port forwarding", host)
+		}
+		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+			return fmt.Sprintf("endpoint %s is a CGNAT (100.64.0.0/10) address — the client will NOT be able to connect; set awg_endpoint to your public IP/domain or set up port forwarding", host)
+		}
+		return ""
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() {
+		return fmt.Sprintf("endpoint %s is not globally routable — the client will NOT be able to connect from the internet", host)
+	}
+	return ""
+}
+
+// Injection seams for tests (same style as opkg*Fn / ipRunFn).
+var (
+	peersExecFn = func(name string, args ...string) ([]byte, error) {
+		return exec.Command(name, args...).Output()
+	}
+	peersExecFnIn = func(name string, args []string, stdin string) ([]byte, error) {
+		cmd := exec.Command(name, args...)
+		cmd.Stdin = strings.NewReader(stdin)
+		return cmd.Output()
+	}
+)

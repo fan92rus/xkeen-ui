@@ -34,6 +34,14 @@ func (s *Server) setupRoutes() {
 	apiRouter.Use(s.middleware.AuthMiddleware)
 	apiRouter.Use(s.middleware.CSRFMiddleware)
 
+	// AWG firewall restore must stay callable by the NDM netfilter.d hook
+	// (/opt/etc/ndm/netfilter.d), which re-applies AWG server rules after
+	// every NDMS firewall rebuild. The hook is a shell script with no session
+	// or CSRF token, so this one route bypasses auth but is loopback-only.
+	// Registered before the apiRouter routes so it wins path matching.
+	s.router.Handle("/api/awg/restore-firewall",
+		loopbackOnly(http.HandlerFunc(s.awgHandler.RestoreFirewall))).Methods("POST")
+
 	// Register handlers from handlers package
 	handlers.RegisterConfigRoutes(apiRouter, s.configHandler)
 	handlers.RegisterServiceRoutes(apiRouter, s.serviceHandler)

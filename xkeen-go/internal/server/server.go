@@ -49,14 +49,14 @@ type Server struct {
 	// metricsPort mirrors cfg.MetricsPort for lock-free reads from the
 	// poller goroutine. 0 = disabled. Updated by the OnMetricsChange
 	// callback; the handler's urlFn reads it on every poll.
-	metricsPort        atomic.Int64
-	commandRegistry    *handlers.CommandRegistry
-	installHandler     *handlers.InstallHandler
-	xkeenInfoHandler   *handlers.XkeenInfoHandler
+	metricsPort              atomic.Int64
+	commandRegistry          *handlers.CommandRegistry
+	installHandler           *handlers.InstallHandler
+	xkeenInfoHandler         *handlers.XkeenInfoHandler
 	speedBalancerHandler     *handlers.SpeedBalancerHandler
 	awgHandler               *handlers.AWGHandler
-	diagnosticsHandler        *handlers.DiagnosticsHandler
-	routingCategoriesHandler  *handlers.RoutingCategoriesHandler
+	diagnosticsHandler       *handlers.DiagnosticsHandler
+	routingCategoriesHandler *handlers.RoutingCategoriesHandler
 
 	// Shutdown state
 	shutdown    bool

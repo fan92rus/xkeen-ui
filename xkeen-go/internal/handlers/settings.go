@@ -380,11 +380,14 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 
 // AWGInterfaceResponse holds AWG LAN/WAN interface and endpoint settings.
 type AWGInterfaceResponse struct {
-	Ok       string `json:"ok"`
-	LanIface string `json:"lan_iface"`
-	WanIface string `json:"wan_iface"`
-	Endpoint string `json:"endpoint"`
-	Error    string `json:"error,omitempty"`
+	Ok            string `json:"ok"`
+	LanIface      string `json:"lan_iface"`
+	WanIface      string `json:"wan_iface"`
+	Endpoint      string `json:"endpoint"`
+	ClientDNS     string `json:"client_dns"`
+	ClientMTU     int    `json:"client_mtu"`
+	ClientAllowed string `json:"client_allowed_ips"`
+	Error         string `json:"error,omitempty"`
 }
 
 // GetAWGInterfaces returns the configured AWG LAN/WAN interfaces and endpoint.
@@ -394,12 +397,18 @@ func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Reques
 	lanIface := h.cfg.AWGLanIface
 	wanIface := h.cfg.AWGWanIface
 	endpoint := h.cfg.AWGEndpoint
+	clientDNS := h.cfg.AWGClientDNS
+	clientMTU := h.cfg.AWGClientMTU
+	clientAllowed := h.cfg.AWGClientAllowedIPs
 	h.cfgMu.RUnlock()
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
-		Ok:       "ok",
-		LanIface: lanIface,
-		WanIface: wanIface,
-		Endpoint: endpoint,
+		Ok:            "ok",
+		LanIface:      lanIface,
+		WanIface:      wanIface,
+		Endpoint:      endpoint,
+		ClientDNS:     clientDNS,
+		ClientMTU:     clientMTU,
+		ClientAllowed: clientAllowed,
 	})
 }
 
@@ -407,9 +416,12 @@ func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Reques
 // PUT /api/settings/awg-interfaces
 func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		LanIface string `json:"lan_iface"`
-		WanIface string `json:"wan_iface"`
-		Endpoint string `json:"endpoint"`
+		LanIface        string `json:"lan_iface"`
+		WanIface        string `json:"wan_iface"`
+		Endpoint        string `json:"endpoint"`
+		ClientDNS       string `json:"client_dns"`
+		ClientMTU       int    `json:"client_mtu"`
+		ClientAllowedIP string `json:"client_allowed_ips"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid request"})
@@ -448,10 +460,22 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	if req.ClientMTU < 0 || req.ClientMTU > 65535 {
+		respondError(w, http.StatusBadRequest, "invalid client_mtu")
+		return
+	}
+	if len(req.ClientDNS) > 100 || len(req.ClientAllowedIP) > 200 {
+		respondError(w, http.StatusBadRequest, "value too long")
+		return
+	}
+
 	h.cfgMu.Lock()
 	h.cfg.AWGLanIface = req.LanIface
 	h.cfg.AWGWanIface = req.WanIface
 	h.cfg.AWGEndpoint = req.Endpoint
+	h.cfg.AWGClientDNS = req.ClientDNS
+	h.cfg.AWGClientMTU = req.ClientMTU
+	h.cfg.AWGClientAllowedIPs = req.ClientAllowedIP
 	h.cfgMu.Unlock()
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + err.Error()})
@@ -459,10 +483,13 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 	}
 
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
-		Ok:       "ok",
-		LanIface: req.LanIface,
-		WanIface: req.WanIface,
-		Endpoint: req.Endpoint,
+		Ok:            "ok",
+		LanIface:      req.LanIface,
+		WanIface:      req.WanIface,
+		Endpoint:      req.Endpoint,
+		ClientDNS:     req.ClientDNS,
+		ClientMTU:     req.ClientMTU,
+		ClientAllowed: req.ClientAllowedIP,
 	})
 }
 

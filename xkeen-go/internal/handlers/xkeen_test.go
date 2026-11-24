@@ -99,12 +99,12 @@ func TestCompareVersionsGE(t *testing.T) {
 		min     string
 		want    bool
 	}{
-		{"2.0.1", "2.0.1", true},   // equal
-		{"2.1.0", "2.0.1", true},   // newer minor
-		{"3.0.0", "2.0.1", true},   // newer major
-		{"1.9.9", "2.0.1", false},  // older
-		{"2.0.0", "2.0.1", false},  // older patch
-		{"2.0.10", "2.0.1", true},  // higher patch
+		{"2.0.1", "2.0.1", true},  // equal
+		{"2.1.0", "2.0.1", true},  // newer minor
+		{"3.0.0", "2.0.1", true},  // newer major
+		{"1.9.9", "2.0.1", false}, // older
+		{"2.0.0", "2.0.1", false}, // older patch
+		{"2.0.10", "2.0.1", true}, // higher patch
 	}
 	for _, tt := range tests {
 		got := compareVersionsGE(tt.version, tt.min)
@@ -567,8 +567,8 @@ func TestSpeedBalancer_UpdateEndpoint_Validation(t *testing.T) {
 	h := NewSpeedBalancerHandler(filepath.Join(dir, "xkeen.json"), "xkeen")
 
 	tests := []struct {
-		name   string
-		body   string
+		name string
+		body string
 	}{
 		{"negative interval", `{"settings":{"enabled":false,"interval":-1,"hysteresis":0,"balancer":"x","max_time":1,"test_url":"x"}}`},
 		{"zero interval", `{"settings":{"enabled":false,"interval":0,"hysteresis":0,"balancer":"x","max_time":1,"test_url":"x"}}`},
@@ -587,4 +587,3 @@ func TestSpeedBalancer_UpdateEndpoint_Validation(t *testing.T) {
 		})
 	}
 }
-

@@ -51,16 +51,16 @@ type Subscription struct {
 
 // ProxyEntry represents a single parsed proxy from a subscription.
 type ProxyEntry struct {
-	Tag            string          `json:"tag"`             // generated tag like "proxy-de-1"
-	Protocol       string          `json:"protocol"`        // vless, vmess, trojan, ss
+	Tag            string          `json:"tag"`                    // generated tag like "proxy-de-1"
+	Protocol       string          `json:"protocol"`               // vless, vmess, trojan, ss
 	Fingerprint    string          `json:"fingerprint,omitempty"`  // TLS fingerprint (chrome, random, ios, …)
 	TLSSecurity    string          `json:"tls_security,omitempty"` // connection security: tls, reality, none
 	Network        string          `json:"network,omitempty"`      // transport: tcp, ws, grpc, hysteria
-	Outbound       json.RawMessage `json:"outbound"`        // complete xray outbound JSON
-	RawURI         string          `json:"raw_uri"`         // original share URI
-	Remarks        string          `json:"remarks"`         // decoded name from #fragment
-	Country        string          `json:"country"`         // country code like "DE", "US"
-	SubscriptionID string          `json:"subscription_id"` // owning subscription ID
+	Outbound       json.RawMessage `json:"outbound"`               // complete xray outbound JSON
+	RawURI         string          `json:"raw_uri"`                // original share URI
+	Remarks        string          `json:"remarks"`                // decoded name from #fragment
+	Country        string          `json:"country"`                // country code like "DE", "US"
+	SubscriptionID string          `json:"subscription_id"`        // owning subscription ID
 }
 
 // Filter rules for proxy filtering.
@@ -98,8 +98,8 @@ type RoutingStrategy struct {
 // letting Xray use its built-in defaults.
 type StrategySettings struct {
 	Expected  int      `json:"expected,omitempty"`  // number of best nodes to select (1 = all traffic through best node)
-	MaxRTT    string   `json:"max_rtt,omitempty"`    // exclude nodes with RTT above this threshold (e.g. "2s", "500ms")
-	Tolerance float64  `json:"tolerance,omitempty"`  // exclude nodes with failure rate above this (0.0–1.0, e.g. 0.1 = 10%)
+	MaxRTT    string   `json:"max_rtt,omitempty"`   // exclude nodes with RTT above this threshold (e.g. "2s", "500ms")
+	Tolerance float64  `json:"tolerance,omitempty"` // exclude nodes with failure rate above this (0.0–1.0, e.g. 0.1 = 10%)
 	Baselines []string `json:"baselines,omitempty"` // RTT baselines to exclude jittery nodes (e.g. ["500ms"])
 }
 

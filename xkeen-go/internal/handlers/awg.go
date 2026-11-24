@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -67,7 +65,7 @@ func (h *AWGHandler) ListInterfaces(w http.ResponseWriter, _ *http.Request) {
 	// Scan for .conf files
 	configs, err := h.store.ScanAWGConfigs(h.awgDir)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan AWG dir: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to scan AWG dir %s: %v", h.awgDir, err))
 		return
 	}
 
@@ -119,32 +117,51 @@ func (h *AWGHandler) UpInterface(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 1: awg-quick up
-	cmd := exec.Command("awg-quick", "up", confPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			respondError(w, http.StatusInternalServerError, "awg-quick binary not found — install AWG tools via Settings → AWG Install first")
-		} else {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("awg-quick up failed: %v\n%s", err, string(output)))
+	// Auto-fix (issue #3): old awg builds shipped for Keenetic reject the I2/I3
+	// obfuscation params with an opaque `awg setconf: Line unrecognized: I2=`
+	// error, and numeric I1 = 0 breaks client apps ("Invalid Signature format":
+	// AWG 2.0 clients expect tag-format signatures). These params are optional
+	// junk/signature packets (upstream docs: "I2-I5 can be left empty") - strip
+	// them from the config instead of failing, and tell the user what happened.
+	var autoFixWarning string
+	if conf, perr := subscription.ParseAWGConf(confPath); perr == nil && conf.Interface != nil {
+		var unsupported []string
+		for _, key := range []string{"I1", "I2", "I3"} {
+			if _, ok := conf.Interface.Values[key]; ok {
+				unsupported = append(unsupported, key)
+			}
 		}
+		if len(unsupported) > 0 {
+			peerMu.Lock()
+			params := readAWGParams(conf)
+			delete(params, "I1")
+			delete(params, "I2")
+			delete(params, "I3")
+			serr := applyObfuscationToConfig(confPath, params)
+			peerMu.Unlock()
+			if serr != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to auto-remove unsupported %s params: %v", strings.Join(unsupported, ", "), serr))
+				return
+			}
+			autoFixWarning = fmt.Sprintf(
+				"removed unsupported %s line(s) from the config: your awg build rejects them (awg setconf: 'Line unrecognized'). They are optional junk-packet params - the interface works without them. You can also try updating the AWG tools via Settings - AWG Install (newer builds support I1-I5) and/or KeeneticOS 5.1+, but this is not guaranteed to help on older firmware",
+				strings.Join(unsupported, ", "))
+			log.Printf("[awg] %s: %s", req.Name, autoFixWarning)
+		}
+	}
+
+	// Steps 1+2: bring the interface up (attach or awg-quick) and apply the
+	// role-based post-up state. See awg_lifecycle.go.
+	attachMode, err := h.bringUp(req.Name, confPath)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	log.Printf("[awg] awg-quick up %s: %s", req.Name, strings.TrimSpace(string(output)))
-
-	// Step 2: role-based post-up hooks
-	if cfg.Role == subscription.AWGRoleServer {
-		// Server: apply full-tunnel firewall preset (iptables + route)
-		params := h.getServerFirewallParams(req.Name)
-		ApplyFullTunnelFirewall(params)
-	} else {
-		// Client: ip rule + ip route for fwmark routing (Xray integration)
-		h.applyClientFwmarkRouting(req.Name, cfg.Mark)
-	}
+	h.postUp(req.Name, cfg.Role, cfg.Mark)
 
 	// Verify: poll awg show for up to 3s until the interface appears.
 	alive := false
-	for i := 0; i < 6; i++ {
+	for i := 0; i < ifacePollAttempts; i++ {
 		active := h.getActiveInterfaces()
 		if addr, ok := active[req.Name]; ok && addr != "" {
 			alive = true
@@ -160,9 +177,16 @@ func (h *AWGHandler) UpInterface(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[awg] awg-quick up %s — interface confirmed up", req.Name)
 	}
 
+	msg := fmt.Sprintf("Interface %q is up (mark %d)", req.Name, cfg.Mark)
+	if attachMode {
+		msg = fmt.Sprintf("Interface %q is up (OpkgTun attach mode, mark %d)", req.Name, cfg.Mark)
+	}
+	if autoFixWarning != "" {
+		msg += " - warning: " + autoFixWarning
+	}
 	respondJSON(w, http.StatusOK, &awgActionResponse{
 		Success: true,
-		Message: fmt.Sprintf("Interface %q is up (mark %d)", req.Name, cfg.Mark),
+		Message: msg,
 	})
 }
 
@@ -179,25 +203,41 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Role-based pre-down hooks: remove routing/firewall BEFORE awg-quick down
+	// Resolve role/mark; for an untracked config (store reset/rescan lag)
+	// fall back to parsing the file so a server's firewall rules never
+	// outlive the interface.
 	cfg, ok := h.store.GetAWGConfig(req.Name)
+	role := subscription.AWGRoleClient
+	mark := 0
 	if ok {
-		if cfg.Role == subscription.AWGRoleServer {
-			// Server: remove full-tunnel firewall
-			params := h.getServerFirewallParams(req.Name)
-			RemoveFullTunnelFirewall(params)
-		} else {
-			// Client: remove fwmark routing
-			h.removeClientFwmarkRouting(req.Name, cfg.Mark)
-		}
+		role, mark = cfg.Role, cfg.Mark
+	} else if h.isServerConf(filepath.Join(h.awgDir, req.Name+".conf")) {
+		role = subscription.AWGRoleServer
 	}
+
+	// OpkgTun attach mode: the netdev belongs to NDMS and must not be deleted.
+	// Detection: netdev OR running daemon (the Keenetic UI may have deleted
+	// the netdev while the daemon lives). Runs even for untracked configs.
+	if isOpkgTunOwned(req.Name) {
+		if err := h.teardown(req.Name, confPathFor(h.awgDir, req.Name), role, mark, false); err != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		respondJSON(w, http.StatusOK, &awgActionResponse{
+			Success: true,
+			Message: fmt.Sprintf("Interface %q is down (OpkgTun attach mode; netdev left to KeeneticOS)", req.Name),
+		})
+		return
+	}
+
+	// Quick mode: remove routing/firewall, then awg-quick down + verify.
+	h.preDown(req.Name, role, mark)
 
 	// awg-quick down — must use the full config path, same as UpInterface.
 	// 'awg-quick down <name>' looks for the config in its default directory
 	// (/opt/etc/amnezia/amneziawg/), but we store configs in h.awgDir.
 	confPath := filepath.Join(h.awgDir, req.Name+".conf")
-	cmd := exec.Command("awg-quick", "down", confPath)
-	output, err := cmd.CombinedOutput()
+	output, err := awgQuickFn("down", confPath)
 	if err != nil {
 		log.Printf("[awg] awg-quick down %s: %v\n%s", req.Name, err, string(output))
 	}
@@ -206,7 +246,7 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 	// This prevents a race where the frontend refreshes the interface list
 	// before the kernel has fully torn down the interface.
 	gone := false
-	for i := 0; i < 6; i++ {
+	for i := 0; i < ifacePollAttempts; i++ {
 		active := h.getActiveInterfaces()
 		if _, stillUp := active[req.Name]; !stillUp {
 			gone = true
@@ -242,219 +282,6 @@ func (h *AWGHandler) DownInterface(w http.ResponseWriter, r *http.Request) {
 // DeleteConfig removes an AWG config file, brings down the interface,
 // cleans up routing rules, and frees the mark.
 // DELETE /api/awg/config/{name}
-func (h *AWGHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if name == "" || !validateAWGName(name) {
-		respondError(w, http.StatusBadRequest, "invalid config name")
-		return
-	}
-
-	confPath := filepath.Join(h.awgDir, name+".conf")
-
-	// Prevent path traversal
-	absPath, _ := filepath.Abs(confPath)
-	absDir, _ := filepath.Abs(h.awgDir)
-	if !strings.HasPrefix(absPath, absDir) {
-		respondError(w, http.StatusForbidden, "invalid config name")
-		return
-	}
-
-	if _, err := os.Stat(confPath); os.IsNotExist(err) {
-		respondError(w, http.StatusNotFound, fmt.Sprintf("config %s not found", name))
-		return
-	}
-
-	// Bring down interface (if active) and clean up routing
-	var messages []string
-
-	// Get mark before removing
-	if mark, ok := h.store.RemoveAWGConfig(name); ok {
-		// Remove routing rule + route
-		_ = exec.Command("ip", "route", "del", "default", "dev", name,
-			"table", fmt.Sprintf("%d", mark)).Run()
-		_ = exec.Command("ip", "rule", "del", "fwmark", fmt.Sprintf("%d", mark)).Run() //nolint:gosec // mark from validated AWG config
-		messages = append(messages, fmt.Sprintf("freed mark %d", mark))
-	}
-
-	// Bring down interface — use full config path, same as DownInterface.
-	// 'awg-quick down <name>' searches the default directory, not h.awgDir.
-	_ = exec.Command("awg-quick", "down", confPath).Run()
-	messages = append(messages, "interface down")
-
-	// Remove config file
-	if err := os.Remove(confPath); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to remove config: %v", err))
-		return
-	}
-	messages = append(messages, "config removed")
-
-	// Remove AWG proxies from proxy pool
-	allProxies := h.store.GetProxies()
-	filtered := make([]*subscription.ProxyEntry, 0, len(allProxies))
-	for _, p := range allProxies {
-		if p.SubscriptionID != subscription.ReservedAWGSubscriptionID || p.Remarks != name {
-			filtered = append(filtered, p)
-		}
-	}
-	h.store.SetProxies(filtered)
-
-	log.Printf("[awg] deleted config %s: %s", name, strings.Join(messages, ", "))
-
-	respondJSON(w, http.StatusOK, &awgActionResponse{
-		Success: true,
-		Message: fmt.Sprintf("Config %q deleted: %s", name, strings.Join(messages, "; ")),
-	})
-}
-
-// UploadConfig uploads a new AWG .conf file.
-// POST /api/awg/upload
-func (h *AWGHandler) UploadConfig(w http.ResponseWriter, r *http.Request) {
-	// Parse multipart form (max 64KB)
-	if err := r.ParseMultipartForm(64 << 10); err != nil {
-		respondError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse form: %v", err))
-		return
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "file is required")
-		return
-	}
-	defer file.Close()
-
-	name := header.Filename
-	if !strings.HasSuffix(name, ".conf") {
-		name += ".conf"
-	}
-	// Sanitize name: only allow alphanumeric, dash, underscore
-	name = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
-			return r
-		}
-		return -1
-	}, name)
-
-	if name == "" || name == ".conf" {
-		respondError(w, http.StatusBadRequest, "invalid filename")
-		return
-	}
-
-	destPath := filepath.Join(h.awgDir, name)
-	if _, err := os.Stat(destPath); err == nil {
-		respondError(w, http.StatusConflict, fmt.Sprintf("file %s already exists", name))
-		return
-	}
-
-	// Ensure directory exists
-	if err := os.MkdirAll(h.awgDir, 0o750); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create AWG dir: %v", err))
-		return
-	}
-
-	// Read file content
-	buf := make([]byte, 64<<10)
-	n, err := file.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read upload: %v", err))
-		return
-	}
-	content := buf[:n]
-
-	// Basic validation: must contain [Interface] and [Peer]
-	if !strings.Contains(string(content), "[Interface]") || !strings.Contains(string(content), "[Peer]") {
-		respondError(w, http.StatusBadRequest, "invalid AWG config: must contain [Interface] and [Peer] sections")
-		return
-	}
-
-	if err := os.WriteFile(destPath, content, 0o600); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config: %v", err))
-		return
-	}
-
-	log.Printf("[awg] uploaded config: %s", name)
-
-	// Auto-scan to add to tracked configs
-	configs, _ := h.store.ScanAWGConfigs(h.awgDir)
-
-	// Determine role for response
-	role := "client"
-	confName := strings.TrimSuffix(name, ".conf")
-	for _, c := range configs {
-		if c.Name == confName {
-			role = string(c.Role)
-			break
-		}
-	}
-
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"name":    confName,
-		"role":    role,
-		"message": fmt.Sprintf("Config %q uploaded (%s)", confName, role),
-	})
-}
-
-// ---------- Helpers ----------
-
-// getActiveInterfaces returns a map of active AWG interface names to their addresses.
-func (h *AWGHandler) getActiveInterfaces() map[string]string {
-	result := make(map[string]string)
-
-	cmd := exec.Command("awg", "show")
-	output, err := cmd.Output()
-	if err != nil {
-		// awg not installed or not available — log once and return empty
-		if errors.Is(err, exec.ErrNotFound) {
-			log.Println("[awg] awg binary not found, skipping interface detection")
-		} else {
-			log.Printf("[awg] awg show failed: %v", err)
-		}
-		return result
-	}
-
-	// Parse `awg show` output. Format (example):
-	//   interface: warp
-	//     public key: ...
-	//     private key: ...
-	//     listening port: 51820
-	//   peer: ...
-	//     endpoint: ...
-	//     allowed ips: ...
-	//   ...
-	lines := strings.Split(string(output), "\n")
-	var currentIface string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "interface:") {
-			currentIface = strings.TrimSpace(strings.TrimPrefix(line, "interface:"))
-			result[currentIface] = ""
-		} else if strings.HasPrefix(line, "address:") && currentIface != "" {
-			addr := strings.TrimSpace(strings.TrimPrefix(line, "address:"))
-			if currentIface != "" {
-				result[currentIface] = addr
-			}
-		}
-	}
-
-	return result
-}
-
-// validateAWGName checks that a config name contains only safe characters.
-func validateAWGName(name string) bool {
-	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") ||
-		strings.Contains(name, "..") || strings.HasPrefix(name, ".") {
-		return false
-	}
-	for _, r := range name {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
-			(r < '0' || r > '9') && r != '-' && r != '_' {
-			return false
-		}
-	}
-	return true
-}
-
 // ---------- Route registration ----------
 
 // RegisterAWGRoutes registers AWG management routes.
@@ -473,8 +300,9 @@ func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {
 	// Peer client config (stored for QR/download)
 	r.HandleFunc("/awg/peer-config/{name}", handler.GetPeerConfig).Methods("GET")
 
-	// Firewall restore (watchdog)
-	r.HandleFunc("/awg/restore-firewall", handler.RestoreFirewall).Methods("POST")
+	// Firewall restore is NOT registered here: the endpoint is wired in the
+	// server package with a loopback-only wrapper so the NDM netfilter.d hook
+	// can call it without a session (see server/routes.go).
 
 	// Obfuscation presets (server configs)
 	r.HandleFunc("/awg/obfuscation/{name}", handler.GetObfuscation).Methods("GET")

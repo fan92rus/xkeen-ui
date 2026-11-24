@@ -57,6 +57,16 @@ type Config struct {
 	// Can be an IP address or domain name (e.g. "funnyhome.netcraze.pro").
 	AWGEndpoint string `json:"awg_endpoint"`
 
+	// AWGClientDNS overrides the DNS in generated client configs (empty = 1.1.1.1).
+	AWGClientDNS string `json:"awg_client_dns"`
+
+	// AWGClientMTU overrides the MTU in generated client configs (0 = 1420).
+	AWGClientMTU int `json:"awg_client_mtu"`
+
+	// AWGClientAllowedIPs overrides AllowedIPs in generated client configs
+	// (empty = "0.0.0.0/0, ::/0" with ::/0 dropped when the server has no global IPv6).
+	AWGClientAllowedIPs string `json:"awg_client_allowed_ips"`
+
 	// ProxyEntware routes router-originated (Entware) traffic through Xray.
 	// When enabled, outbounds get sockopt.mark:255 (so Xray-originated packets
 	// bypass the OUTPUT chain redirect via iptables `-m mark --mark 255 -j RETURN`)
@@ -153,7 +163,7 @@ func DefaultConfig() *Config {
 			AllowedOrigins: []string{},
 		},
 		ObservatoryConcurrency: true,
-		AutoUpdate:           false,
+		AutoUpdate:             false,
 		Auth: AuthConfig{
 			PasswordHash:     "", // Will be generated on first run
 			SessionTimeout:   24,

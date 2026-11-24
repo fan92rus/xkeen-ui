@@ -4,12 +4,13 @@
 // Algorithm reference: github.com/LeeeeT/happ-decryptor.
 //
 // Supported versions:
-//   crypt (v1) — RSA-1024 PKCS#1 v1.5, direct
-//   crypt2    — RSA-4096 PKCS#1 v1.5, direct
-//   crypt3    — RSA-4096 PKCS#1 v1.5, direct
-//   crypt4    — RSA-4096 PKCS#1 v1.5, direct
-//   crypt5    — RSA-4096 PKCS#1 v1.5 + swapBlockHalves + swapAdjacent +
-//               XOR with salt + ChaCha20-Poly1305
+//
+//	crypt (v1) — RSA-1024 PKCS#1 v1.5, direct
+//	crypt2    — RSA-4096 PKCS#1 v1.5, direct
+//	crypt3    — RSA-4096 PKCS#1 v1.5, direct
+//	crypt4    — RSA-4096 PKCS#1 v1.5, direct
+//	crypt5    — RSA-4096 PKCS#1 v1.5 + swapBlockHalves + swapAdjacent +
+//	            XOR with salt + ChaCha20-Poly1305
 package happ
 
 import (

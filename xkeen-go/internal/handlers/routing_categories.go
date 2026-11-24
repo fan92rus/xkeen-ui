@@ -37,9 +37,9 @@ type GeoCategories struct {
 type RoutingCategoriesHandler struct {
 	configDir string
 
-	mu        sync.Mutex
-	cached    *GeoCategories
-	cachedAt  time.Time
+	mu       sync.Mutex
+	cached   *GeoCategories
+	cachedAt time.Time
 }
 
 // NewRoutingCategoriesHandler creates a handler that scans the given

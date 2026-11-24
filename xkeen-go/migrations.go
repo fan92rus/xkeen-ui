@@ -60,6 +60,7 @@ var allMigrations = []migration{
 //   - must be safe to run on every startup (idempotent)
 //   - must be FAST when nothing needs to change (stat a file, return)
 //   - only print/log when an action is actually taken
+//
 // startupMigrations holds startup tasks that run on EVERY server launch.
 // Populated by runServer() (which has the loaded config) via registerStartupMigrations().
 // Kept empty here by design — callers wire closures over the real config.

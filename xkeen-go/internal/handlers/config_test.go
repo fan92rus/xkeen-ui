@@ -1916,7 +1916,7 @@ func TestListFilesGrouped_XkeenFiles(t *testing.T) {
 		filepath.Join(tmpDir, "nope"), // xray (missing)
 		xkeenDir,
 		filepath.Join(tmpDir, "nope"), // mihomo (missing)
-		filepath.Join(tmpDir, "nope"),   // awg (missing)
+		filepath.Join(tmpDir, "nope"), // awg (missing)
 		configPath,
 		"xray",
 	)

@@ -7,11 +7,9 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/fan92rus/xkeen-ui/internal/subscription"
 	"github.com/gorilla/mux"
@@ -27,9 +25,6 @@ var awgParamKeys = []string{
 	"H1", "H2", "H3", "H4",
 	"I1", "I2", "I3",
 }
-
-// awgParamOrder is the preferred write order for params in the config file.
-var awgParamOrder = awgParamKeys
 
 // AWGObfuscationPreset defines one obfuscation profile.
 type AWGObfuscationPreset struct {
@@ -49,8 +44,8 @@ type AWGObfuscationPreset struct {
 //   - S1/S2/S3:     stolen bytes from handshake messages → negligible
 //   - S4:           stolen bytes from EVERY transport packet → real bandwidth cost
 //   - H1-H4:        header obfuscation bits, default 1,2,3,4 — CANNOT be 0
-//                    (Keenetic kernel rejects H=0), negligible cost, can randomize ≥1
-//   - I1:           init packet magic header → negligible (changes fingerprint)
+//     (Keenetic kernel rejects H=0), negligible cost, can randomize ≥1
+//   - I1:           (removed) I1=0 breaks handshake on target AWG builds — not emitted anymore
 func getAWGObfuscationPresets() []AWGObfuscationPreset {
 	return []AWGObfuscationPreset{
 		{
@@ -113,6 +108,7 @@ func getAWGObfuscationPresets() []AWGObfuscationPreset {
 //
 // H1-H4 must be >= 1 (Keenetic kernel rejects H=0, handshake fails).
 // Default is 1,2,3,4; we randomize in 1-100 range for per-server uniqueness.
+//
 //nolint:gosec // non-crypto randomness for AWG DPI obfuscation (safe by design)
 func generateRandomObfuscationParams() map[string]string {
 	jmin := 30 + rand.IntN(20)        // 30-49
@@ -129,7 +125,6 @@ func generateRandomObfuscationParams() map[string]string {
 		"H2":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
 		"H3":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
 		"H4":   strconv.Itoa(1 + rand.IntN(100)), // 1-100
-		"I1":   "0",
 	}
 }
 
@@ -172,7 +167,7 @@ func applyObfuscationToConfig(confPath string, params map[string]string) error {
 		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
 			// Leaving [Interface] — insert AWG params before next section
 			if inInterface && !inserted {
-				for _, key := range awgParamOrder {
+				for _, key := range awgParamKeys {
 					if val, ok := params[key]; ok {
 						result = append(result, fmt.Sprintf("%s = %s", key, val))
 					}
@@ -192,7 +187,7 @@ func applyObfuscationToConfig(confPath string, params map[string]string) error {
 
 	// File ends while still in [Interface] (no [Peer] after)
 	if inInterface && !inserted && len(params) > 0 {
-		for _, key := range awgParamOrder {
+		for _, key := range awgParamKeys {
 			if val, ok := params[key]; ok {
 				result = append(result, fmt.Sprintf("%s = %s", key, val))
 			}
@@ -314,43 +309,6 @@ func (h *AWGHandler) updateClientConfigsObfuscation(server string, params map[st
 
 // ---------- Interface restart ----------
 
-// restartInterface does a full down + up cycle (required for AWG param changes,
-// since syncconf cannot change transport-level obfuscation params).
-func (h *AWGHandler) restartInterface(name string, role subscription.AWGRole, mark int) error {
-	confPath := filepath.Join(h.awgDir, name+".conf")
-
-	// Pre-down: remove firewall / routing
-	if role == subscription.AWGRoleServer {
-		params := h.getServerFirewallParams(name)
-		RemoveFullTunnelFirewall(params)
-	} else {
-		h.removeClientFwmarkRouting(name, mark)
-	}
-
-	// Down
-	if output, err := exec.Command("awg-quick", "down", confPath).CombinedOutput(); err != nil {
-		log.Printf("[awg] restart: awg-quick down failed: %v\n%s", err, output)
-		// Continue anyway — interface might already be down
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	// Up
-	if output, err := exec.Command("awg-quick", "up", confPath).CombinedOutput(); err != nil {
-		return fmt.Errorf("awg-quick up failed: %w\n%s", err, output)
-	}
-
-	// Post-up: re-apply firewall / routing
-	if role == subscription.AWGRoleServer {
-		params := h.getServerFirewallParams(name)
-		ApplyFullTunnelFirewall(params)
-	} else {
-		h.applyClientFwmarkRouting(name, mark)
-	}
-
-	return nil
-}
-
 // ---------- HTTP handlers ----------
 
 // GetObfuscation returns the current preset and available presets.
@@ -419,6 +377,9 @@ func (h *AWGHandler) ApplyObfuscation(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "config not found: "+name)
 		return
 	}
+
+	peerMu.Lock()
+	defer peerMu.Unlock()
 
 	// 1. Apply to server config
 	if err := applyObfuscationToConfig(confPath, params); err != nil {

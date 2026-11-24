@@ -163,8 +163,6 @@ func install() error {
 	_ = os.Symlink(installInitScript, filepath.Join(rcDir, "S70xkeen-ui"))
 	_ = os.Symlink(installInitScript, filepath.Join(rcDir, "K01xkeen-ui"))
 
-	// Clean up stale init scripts from older xkeen-ui versions that can
-	// break boot on some Keenetic setups (non-zero exit aborts rc.unslung).
 	// Create cron watchdog for auto-restart on crash.
 	//
 	// This is a BACKUP autostart mechanism.  The PRIMARY mechanism is the
@@ -427,26 +425,52 @@ func installNDMHook(initScript, logFile string) error {
 	// Remove any old hook from a previous install, then write the new one.
 	_ = os.Remove(installNDMHookPath)
 
-	hookContent := fmt.Sprintf(`#!/bin/sh
-# xkeen-ui + AWG autostart via NDM netfilter hook (auto-generated).
-# NDM fires netfilter.d scripts at boot (firewall init) and on firewall
-# changes.  This hook ensures both xkeen-ui and AWG interfaces are up.
-
-# 1. Start xkeen-ui if down (check is near-instant: PID file + signal 0).
-%s check 2>/dev/null || %s start >>%s 2>&1 &
-
-# 2. Start/recheck AWG interfaces.  NDM resets iptables on firewall changes,
-# which wipes AWG server rules (INPUT/FORWARD/NAT).  'start' is idempotent:
-# skips already-up interfaces, only re-applies missing firewall rules.
-# Only runs if AWG is installed (init script exists and is executable).
-if [ -x /opt/etc/init.d/S90awg ]; then
-	/opt/etc/init.d/S90awg start >>%s 2>&1 &
-fi
-`, initScript, initScript, logFile, logFile)
+	hookContent := ndmHookContent(initScript, logFile)
 
 	//nolint:gosec // NDM hook script needs execute permission
 	if err := os.WriteFile(installNDMHookPath, []byte(hookContent), 0o755); err != nil {
 		return fmt.Errorf("failed to write NDM hook %s: %w", installNDMHookPath, err)
 	}
 	return nil
+}
+
+// ndmHookContent renders the NDM netfilter.d hook script. Kept separate from
+// installNDMHook so tests can exercise the exact generated content.
+func ndmHookContent(initScript, logFile string) string {
+	return fmt.Sprintf(`#!/bin/sh
+# xkeen-ui + AWG autostart via NDM netfilter hook (auto-generated).
+# NDM fires netfilter.d scripts at boot (firewall init) and on firewall
+# changes.  This hook ensures both xkeen-ui and AWG interfaces are up.
+
+# 1. Start xkeen-ui if down (check is near-instant: PID file + signal 0).
+'%s' check 2>/dev/null || '%s' start >>'%s' 2>&1 &
+
+# 2. Start/recheck AWG interfaces.  NDM resets iptables on firewall changes,
+# which wipes AWG server rules (INPUT/FORWARD/NAT).  'start' is idempotent:
+# skips already-up interfaces, only re-applies missing firewall rules.
+# Only runs if AWG is installed (init script exists and is executable).
+if [ -x /opt/etc/init.d/S90awg ]; then
+	/opt/etc/init.d/S90awg start >>'%s' 2>&1 &
+fi
+
+# 3. Restore AWG server firewall rules (quick mode and OpkgTun attach mode).
+# NDM rebuilds iptables on every firewall change, wiping custom rules; the
+# restore endpoint re-applies them for all active servers. The endpoint is
+# loopback-only (no auth). Retries cover cold boot, when the UI is still
+# starting. curl is optional: fall back to busybox wget if it is absent.
+(
+	port=$(grep -o '"port":[[:space:]]*[0-9]*' '%s' 2>/dev/null | grep -o '[0-9]*' | head -1)
+	[ -n "$port" ] || port=8089
+	i=0
+	while [ $i -lt 5 ]; do
+		if command -v curl >/dev/null 2>&1; then
+			curl -s -m 3 -X POST http://127.0.0.1:$port/api/awg/restore-firewall >/dev/null 2>&1 && break
+		else
+			wget -q -T 3 -O /dev/null --post-data='' http://127.0.0.1:$port/api/awg/restore-firewall 2>/dev/null && break
+		fi
+		i=$((i+1))
+		sleep 1
+	done
+) >>'%s' 2>&1 &
+`, initScript, initScript, logFile, logFile, installConfig, logFile)
 }

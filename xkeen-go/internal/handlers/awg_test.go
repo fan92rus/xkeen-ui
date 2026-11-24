@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -242,11 +243,15 @@ func TestGenerateRandomObfuscationParams(t *testing.T) {
 	params := generateRandomObfuscationParams()
 
 	// Must have all expected keys
-	expectedKeys := []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1"}
+	expectedKeys := []string{"Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"}
 	for _, key := range expectedKeys {
 		if _, ok := params[key]; !ok {
 			t.Errorf("missing key %q in random params", key)
 		}
+	}
+	// I1 must NOT be emitted: I1=0 breaks handshake on target AWG builds.
+	if _, ok := params["I1"]; ok {
+		t.Errorf("I1 must not be generated (I1=0 breaks handshake), got %q", params["I1"])
 	}
 
 	// S3 and S4 must be 0 (no transport overhead)
@@ -1880,5 +1885,161 @@ func TestAWGUploadConfig_Duplicate(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Errorf("expected 409 for duplicate, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---------- UpInterface I2/I3 auto-fix (issue #3) ----------
+
+func TestAWGUpInterface_I1I2I3AutoFix(t *testing.T) {
+	handler, router, awgDir := newTestAWGHandler(t)
+
+	conf := "[Interface]\nPrivateKey = k\nListenPort = 443\nJc = 4\nJmin = 40\nJmax = 70\nS1 = 0\nS2 = 0\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nI1 = 11\nI2 = 22\nI3 = 33\n\n[Peer]\nPublicKey = p\nAllowedIPs = 10.8.0.2/32\nEndpoint = 1.2.3.4:443\n"
+	confPath := filepath.Join(awgDir, "issue3.conf")
+	if err := os.WriteFile(confPath, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Register config in the store (UpInterface requires it)
+	if _, err := handler.store.ScanAWGConfigs(awgDir); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/awg/up", body(`{"name":"issue3"}`))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// awg-quick is absent in the test env, so the request itself fails AFTER
+	// the auto-fix — what matters is that the unsupported params were stripped.
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, key := range []string{"I1", "I2", "I3"} {
+		if strings.Contains(out, key+" =") || strings.Contains(out, key+"=") {
+			t.Errorf("%s still present in config after auto-fix:\n%s", key, out)
+		}
+	}
+	// Supported params must survive the rewrite
+	for _, key := range []string{"Jc = 4", "H4 = 4", "PrivateKey = k"} {
+		if !strings.Contains(out, key) {
+			t.Errorf("expected %q preserved in config, got:\n%s", key, out)
+		}
+	}
+}
+
+// ---------- Issue #3 follow-up: stored client config with numeric I1=0 must
+// heal on QR/download (phone apps reject it with "Invalid Signature format").
+
+func TestGetPeerConfig_HealsNumericI1(t *testing.T) {
+	_, router, awgDir := newTestAWGHandler(t)
+
+	// Old-style stored client config exactly like the one from issue #3:
+	// numeric I1 = 0 (pre-2.0 preset output).
+	clientConf := "[Interface]\nPrivateKey = ck\nAddress = 10.8.0.4/32\nDNS = 1.1.1.1\nMTU = 1420\n\nJc = 8\nJmin = 50\nJmax = 100\nS1 = 30\nS2 = 20\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\nI1 = 0\n\n[Peer]\nPublicKey = PX7h6oTAe6BGDu0Lu6HQss1VBl3bx+u3jBonlwbwBWM=\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = 146.120.53.90:443\nPersistentKeepalive = 25\n"
+	clientsDir := filepath.Join(awgDir, "clients")
+	os.MkdirAll(clientsDir, 0o750)
+	storedPath := filepath.Join(clientsDir, "srv-10.8.0.4.conf")
+	if err := os.WriteFile(storedPath, []byte(clientConf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Server config WITHOUT I-params (already healed by Up auto-fix).
+	serverConf := "[Interface]\nPrivateKey = sk\nAddress = 10.8.0.1/24\nListenPort = 443\nJc = 8\nJmin = 50\nJmax = 100\nS1 = 30\nS2 = 20\nS3 = 0\nS4 = 0\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n\n[Peer]\nPublicKey = ck-pub\nAllowedIPs = 10.8.0.4/32\n"
+	if err := os.WriteFile(filepath.Join(awgDir, "srv.conf"), []byte(serverConf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/awg/peer-config/srv?ip=10.8.0.4", http.NoBody)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Success      bool   `json:"success"`
+		ClientConfig string `json:"client_config"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, bad := range []string{"I1 =", "I1=", "I2 =", "I3 ="} {
+		if strings.Contains(resp.ClientConfig, bad) {
+			t.Errorf("client config still contains %q — phone apps reject numeric I-params (Invalid Signature format):\n%s", bad, resp.ClientConfig)
+		}
+		if strings.Contains(resp.ClientConfig, "\n"+strings.TrimSpace(bad)+"\n") {
+			t.Errorf("client config contains bare %q line", bad)
+		}
+	}
+	// Obfuscation params must survive the heal
+	for _, want := range []string{"Jc = 8", "H4 = 4", "Endpoint = 146.120.53.90:443"} {
+		if !strings.Contains(resp.ClientConfig, want) {
+			t.Errorf("expected %q preserved, got:\n%s", want, resp.ClientConfig)
+		}
+	}
+}
+
+// ---------- Full-tunnel firewall INPUT rules (LAN/DNS access for VPN clients) ----------
+
+// The runIPTables hook lets tests capture the iptables calls without executing them.
+var iptablesCalls []string
+
+func fakeRunIPTables(args ...string) error {
+	iptablesCalls = append(iptablesCalls, strings.Join(args, " "))
+	// Emulate iptables -C: rules are never present on a fresh chain, so the
+	// existence check fails and ensureRule proceeds to add the rule.
+	for _, a := range args {
+		if a == "-C" {
+			return errors.New("rule not found")
+		}
+	}
+	return nil
+}
+
+func TestApplyFullTunnelFirewall_ClientInputRules(t *testing.T) {
+	orig := runIPTablesFn
+	runIPTablesFn = fakeRunIPTables
+	defer func() { runIPTablesFn = orig; iptablesCalls = nil }()
+
+	iptablesCalls = nil
+	ApplyFullTunnelFirewall(AWGFirewallParams{
+		Iface: "awg0", Subnet: "10.8.0.0/24", Port: 443,
+		LANIface: "br0", WANIface: "eth3",
+	})
+
+	joined := strings.Join(iptablesCalls, "\n")
+	for _, want := range []string{
+		"-I INPUT -i awg0 -p icmp -j ACCEPT",
+		"-I INPUT -i awg0 -p udp --dport 53 -j ACCEPT",
+		"-I INPUT -i awg0 -p tcp --dport 53 -j ACCEPT",
+		"-I INPUT -i awg0 -p tcp --dport 22 -j ACCEPT",
+		"-I INPUT -i awg0 -p tcp --dport 80 -j ACCEPT",
+		"-I INPUT -i awg0 -p tcp --dport 443 -j ACCEPT",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing INPUT rule %q; got:\n%s", want, joined)
+		}
+	}
+
+	// Remove must delete exactly the rules Apply inserted (idempotent teardown)
+	iptablesCalls = nil
+	RemoveFullTunnelFirewall(AWGFirewallParams{
+		Iface: "awg0", Subnet: "10.8.0.0/24", Port: 443,
+		LANIface: "br0", WANIface: "eth3",
+	})
+	joined = strings.Join(iptablesCalls, "\n")
+	for _, want := range []string{
+		"-D INPUT -i awg0 -p icmp -j ACCEPT",
+		"-D INPUT -i awg0 -p udp --dport 53 -j ACCEPT",
+		"-D INPUT -i awg0 -p tcp --dport 53 -j ACCEPT",
+		"-D INPUT -i awg0 -p tcp --dport 22 -j ACCEPT",
+		"-D INPUT -i awg0 -p tcp --dport 80 -j ACCEPT",
+		"-D INPUT -i awg0 -p tcp --dport 443 -j ACCEPT",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing teardown rule %q; got:\n%s", want, joined)
+		}
 	}
 }

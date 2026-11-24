@@ -19,9 +19,9 @@ import (
 // Safe to run multiple times: if S90awg already exists, just removes old awg.
 func migrateAWGInitS90() error {
 	const (
-		oldPath = "/opt/etc/init.d/awg"      // legacy: no S-prefix, never ran at boot
-		newPath = "/opt/etc/init.d/S90awg"   // S-prefix: rc.unslung picks it up
-		confDir = "/opt/etc/awg"             // AWG config directory
+		oldPath = "/opt/etc/init.d/awg"    // legacy: no S-prefix, never ran at boot
+		newPath = "/opt/etc/init.d/S90awg" // S-prefix: rc.unslung picks it up
+		confDir = "/opt/etc/awg"           // AWG config directory
 	)
 
 	// Case 1: S90awg already exists — just clean up legacy if present.

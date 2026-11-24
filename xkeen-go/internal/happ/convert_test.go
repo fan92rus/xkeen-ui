@@ -9,9 +9,9 @@ func TestExtractCountry(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		remarks  string
-		want     string
+		name    string
+		remarks string
+		want    string
 	}{
 		{
 			name:    "Netherlands flag",

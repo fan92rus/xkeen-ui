@@ -69,8 +69,8 @@ type ProxyPortsResponse struct {
 
 // UpdateProxyPortsRequest is the payload of PUT /api/settings/proxy-ports.
 type UpdateProxyPortsRequest struct {
-	Mode     string `json:"mode"`  // "proxying" | "exclude" | "none"
-	Ports    string `json:"ports"` // comma-separated ports/ranges, e.g. "80,443,50000:51000"
+	Mode     string `json:"mode"`      // "proxying" | "exclude" | "none"
+	Ports    string `json:"ports"`     // comma-separated ports/ranges, e.g. "80,443,50000:51000"
 	UDPPorts string `json:"udp_ports"` // ports for UDP; may be independent of ports (TCP)
 }
 
