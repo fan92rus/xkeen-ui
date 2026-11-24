@@ -322,7 +322,7 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 // CLI. Keenetic's `ndmc -c` executes exactly one command; subcommands must be
 // prefixed with the interface name in each call. Returns applied=false with
 // an error string when ndmc is missing or a command fails.
-func applyNDMSInterface(name, subnet string) (bool, string) {
+func applyNDMSInterface(name, subnet string) (applied bool, errMsg string) {
 	if _, err := ndmcLookPathFn("ndmc"); err != nil {
 		return false, "ndmc not found (xkeen-ui not running on a Keenetic router?)"
 	}
