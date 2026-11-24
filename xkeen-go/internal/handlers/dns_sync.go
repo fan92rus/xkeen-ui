@@ -69,16 +69,13 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 	}
 
 	want := map[string]bool{}
-	if cfg.AWDNSForward {
-		if cfg.AWDNSForwardAllZones {
-			// "All zones" = the existing default (empty-domain) name-server
-			// already handles every query; no zone-scoped rules to add.
-		} else {
-			for _, z := range cfg.AWDNSZones {
-				z = strings.TrimPrefix(strings.TrimSpace(z), ".")
-				if z != "" && zoneRe.MatchString(z) {
-					want[z] = true
-				}
+	// "All zones" = the existing default (empty-domain) name-server already
+	// handles every query; no zone-scoped rules to add in that mode.
+	if cfg.AWDNSForward && !cfg.AWDNSForwardAllZones {
+		for _, z := range cfg.AWDNSZones {
+			z = strings.TrimPrefix(strings.TrimSpace(z), ".")
+			if z != "" && zoneRe.MatchString(z) {
+				want[z] = true
 			}
 		}
 	}
