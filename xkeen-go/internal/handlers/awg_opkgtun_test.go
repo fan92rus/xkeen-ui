@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -185,9 +184,12 @@ func TestStopOpkgTunAttach(t *testing.T) {
 	var commands [][]string
 	procRunning := true
 	opkgProcessRunningFn = func(string) bool { return procRunning }
+	origPID := opkgDaemonPIDFn
+	t.Cleanup(func() { opkgDaemonPIDFn = origPID })
+	opkgDaemonPIDFn = func(string) (int, error) { return 4242, nil }
 	opkgExecFn = func(name string, args ...string) ([]byte, error) {
 		commands = append(commands, append([]string{name}, args...))
-		if name == "pkill" {
+		if name == "kill" {
 			procRunning = false
 		}
 		return nil, nil
@@ -197,7 +199,7 @@ func TestStopOpkgTunAttach(t *testing.T) {
 		t.Fatalf("stopOpkgTunAttach: %v", err)
 	}
 	joined := joinCommands(commands)
-	if !strings.Contains(joined, "pkill -f amneziawg-go opkgtun0") {
+	if !strings.Contains(joined, "kill 4242") {
 		t.Fatalf("daemon must be killed; got:\n%s", joined)
 	}
 	if !strings.Contains(joined, "ip link set opkgtun0 down") {
@@ -222,33 +224,17 @@ func joinCommands(commands [][]string) string {
 // The pgrep/pkill pattern must be end-anchored: without '$', checking for
 // opkgtun0 also matches a daemon running as opkgtun01 (prefix collision),
 // which makes stop kill the wrong daemon or Up hang on the socket wait.
-func TestOpkgProcPattern_Anchored(t *testing.T) {
-	p := opkgProcPattern("opkgtun0")
-	if !strings.HasSuffix(p, "$") {
-		t.Fatalf("pattern must be end-anchored, got %q", p)
-	}
-	if !strings.HasPrefix(p, "amneziawg-go opkgtun0") {
-		t.Fatalf("unexpected pattern %q", p)
-	}
-	// An ERE anchored on opkgtun0 must NOT match opkgtun01's cmdline
-	// but must match opkgtun0's.
-	re := regexp.MustCompile(p)
-	if re.MatchString("amneziawg-go opkgtun01") {
-		t.Fatalf("anchored pattern %q must not match opkgtun01", p)
-	}
-	if !re.MatchString("amneziawg-go opkgtun0") {
-		t.Fatalf("anchored pattern %q must match opkgtun0", p)
-	}
-}
-
-func TestStopOpkgTunAttach_UsesAnchoredPattern(t *testing.T) {
+func TestStopOpkgTunAttach_UsesKillByPID(t *testing.T) {
 	setupOpkgTest(t)
-	var patterns []string
+	var kills []string
 	procRunning := true
 	opkgProcessRunningFn = func(string) bool { return procRunning }
+	origPID := opkgDaemonPIDFn
+	t.Cleanup(func() { opkgDaemonPIDFn = origPID })
+	opkgDaemonPIDFn = func(string) (int, error) { return 4242, nil }
 	opkgExecFn = func(name string, args ...string) ([]byte, error) {
-		if name == "pkill" {
-			patterns = append(patterns, strings.Join(args[1:], " "))
+		if name == "kill" {
+			kills = append(kills, strings.Join(args, " "))
 			procRunning = false
 		}
 		return nil, nil
@@ -256,8 +242,8 @@ func TestStopOpkgTunAttach_UsesAnchoredPattern(t *testing.T) {
 	if err := stopOpkgTunAttach("opkgtun0"); err != nil {
 		t.Fatalf("stop failed: %v", err)
 	}
-	if len(patterns) == 0 || patterns[0] != "amneziawg-go opkgtun0$" {
-		t.Fatalf("pkill must use anchored pattern, got %v", patterns)
+	if len(kills) != 1 || kills[0] != "4242" {
+		t.Fatalf("must kill daemon by PID (pkill unavailable on Keenetic), got %v", kills)
 	}
 }
 
@@ -383,8 +369,11 @@ func TestDownInterface_NetdevGone_DaemonAlive(t *testing.T) {
 	opkgLinkExistsFn = func(string) bool { return false } // netdev deleted
 	procRunning := true
 	opkgProcessRunningFn = func(string) bool { return procRunning } // daemon alive
+	origPID := opkgDaemonPIDFn
+	t.Cleanup(func() { opkgDaemonPIDFn = origPID })
+	opkgDaemonPIDFn = func(string) (int, error) { return 4242, nil }
 	opkgExecFn = func(name string, _ ...string) ([]byte, error) {
-		if name == "pkill" {
+		if name == "kill" {
 			procRunning = false
 		}
 		return nil, nil

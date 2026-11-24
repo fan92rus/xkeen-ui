@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -48,8 +50,12 @@ var (
 		out, err := exec.Command("ndmc", "-c", "show interface "+ndmsName).CombinedOutput() //nolint:gosec // ndmsName derived from validated config name
 		return err == nil && strings.Contains(string(out), ndmsName)
 	}
+	// opkgProcessRunningFn scans /proc directly: Keenetic's pgrep lives in
+	// /opt/usr/bin (not in the service PATH) and pkill is not installed at
+	// all — relying on either breaks Down/Delete on the router.
 	opkgProcessRunningFn = func(name string) bool {
-		return exec.Command("pgrep", "-f", opkgProcPattern(name)).Run() == nil //nolint:gosec // name validated by validateAWGName
+		pid, _ := opkgDaemonPIDFn(name)
+		return pid > 0
 	}
 	opkgExecFn = func(name string, args ...string) ([]byte, error) {
 		return exec.Command(name, args...).CombinedOutput()
@@ -64,11 +70,35 @@ var (
 	}
 )
 
-// opkgProcPattern returns the pgrep/pkill pattern for an attach-mode
-// daemon. End-anchored: without '$' a check for opkgtun0 would also match
-// a daemon running as opkgtun01 (prefix collision), killing the wrong one.
-func opkgProcPattern(name string) string {
-	return "amneziawg-go " + name + "$"
+// opkgDaemonPID returns the PID of `amneziawg-go <name>` by scanning
+// /proc/*/cmdline (exact argv match, no pgrep/pkill dependency).
+var opkgDaemonPIDFn = opkgDaemonPID
+
+func opkgDaemonPID(name string) (int, error) {
+	want := "amneziawg-go " + name
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		cmdline, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+		if err != nil {
+			continue
+		}
+		args := strings.Split(strings.TrimSuffix(string(cmdline), "\x00"), "\x00")
+		if len(args) >= 2 && (args[0] == "amneziawg-go" || strings.HasSuffix(args[0], "/amneziawg-go")) && args[1] == name {
+			return pid, nil
+		}
+	}
+	_ = want
+	return 0, nil
 }
 
 // isOpkgTunAttachMode reports whether the interface runs in OpkgTun attach
@@ -238,7 +268,9 @@ func startOpkgTunAttach(name, confPath string) error {
 // and sets the netdev down. The netdev itself is never deleted — NDMS owns it.
 func stopOpkgTunAttach(name string) error {
 	opkgMu.Lock()
-	_, _ = opkgExecFn("pkill", "-f", opkgProcPattern(name))
+	if pid, _ := opkgDaemonPIDFn(name); pid > 0 {
+		_, _ = opkgExecFn("kill", strconv.Itoa(pid))
+	}
 	opkgMu.Unlock()
 	// Wait for the daemon to die outside the lock.
 	for i := 0; i < 10 && opkgProcessRunningFn(name); i++ {
