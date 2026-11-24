@@ -125,7 +125,17 @@
     "client_desc": "Загрузите .conf через кнопку ниже или перетащите файл в эту область",
     "server_hint": "Сервер — это входящий VPN для удалённого доступа к домашней сети.",
     "full_tunnel": "🔒 full-tunnel",
-    "route_chain": "Xray → mark {mark} → table {mark} → dev {name}"
+    "route_chain": "Xray → mark {mark} → table {mark} → dev {name}",
+    "server_create_btn": "Добавить сервер",
+    "server_create_title": "Добавить AWG-сервер",
+    "server_create_name": "Имя интерфейса",
+    "server_create_subnet": "Подсеть туннеля",
+    "server_create_port": "Порт (UDP)",
+    "server_create_obfuscation": "Профиль обфускации",
+    "server_create_desc": "Будет создан конфиг сервера. NDMS-интерфейс (OpkgTunN) нужно создать отдельно — команды будут показаны после создания.",
+    "server_create_creating": "Создание…",
+    "server_create_done": "Сервер {name} создан",
+    "server_create_ndms_hint": "Выполните эти команды в CLI Keenetic (SSH), затем нажмите «Запустить»:"
   },
   "commands": {
     "unknown_reason": "причина неизвестна",

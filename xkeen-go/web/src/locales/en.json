@@ -125,7 +125,17 @@
     "client_desc": "Upload a .conf via the button below or drag-and-drop a file here",
     "server_hint": "A server is an inbound VPN for remote access to your home network.",
     "full_tunnel": "🔒 full-tunnel",
-    "route_chain": "Xray → mark {mark} → table {mark} → dev {name}"
+    "route_chain": "Xray → mark {mark} → table {mark} → dev {name}",
+    "server_create_btn": "Add server",
+    "server_create_title": "Add AWG server",
+    "server_create_name": "Interface name",
+    "server_create_subnet": "Tunnel subnet",
+    "server_create_port": "Port (UDP)",
+    "server_create_obfuscation": "Obfuscation profile",
+    "server_create_desc": "Server config will be created. The NDMS interface (OpkgTunN) must be created separately — commands will be shown after creation.",
+    "server_create_creating": "Creating…",
+    "server_create_done": "Server {name} created",
+    "server_create_ndms_hint": "Run these commands in the Keenetic CLI (SSH), then press Start:"
   },
   "commands": {
     "unknown_reason": "unknown reason",
