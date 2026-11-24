@@ -2,7 +2,7 @@
   "unreleased": [
     {
       "type": "feat",
-      "text": "AWG: нативное перенаправление DNS для VPN-клиентов через Keenetic (ip name-server <зона>) — зоны local/home/lan/internal по умолчанию резолвятся через роутер без статических записей. Апстрим DNS определяется автоматически,без привязки к конкретным IP. Применяется при старте (переживает ребут) и при сохранении настроек.",
+      "text": "AWG: нативное перенаправление DNS для VPN-клиентов через Keenetic (ip name-server <зона>) — зоны local/home/lan/internal по умолчанию резолвятся через роутер без статических записей. Апстрим DNS определяется автоматически, без привязки к конкретным IP. Применяется при старте (переживает ребут) и при сохранении настроек.",
       "important": true
     },
     {
@@ -87,11 +87,6 @@
     },
     {
       "type": "fix",
-      "text": "AWG: исправлена гонка двойного запуска демона при одновременном Up (мьютекс opkgMu), префикс-коллизия имён opkgtun0/opkgtun01 в pkill/pgrep (анкор $), nil-panic в DownInterface при отсутствии конфига в сторе, утечка firewall-правил при удалении серверного конфига",
-      "important": true
-    },
-    {
-      "type": "fix",
       "text": "AWG: при удалении интерфейса в веб-интерфейсе Keenetic (netdev пропал, демон жив) Down/Delete теперь корректно идут по attach-пути вместо awg-quick down, который пытался удалить NDMS-интерфейс",
       "important": false
     },
@@ -107,17 +102,7 @@
     },
     {
       "type": "fix",
-      "text": "AWG: правила iptables (Apply/Remove) теперь строятся из единой таблицы fullTunnelRules — устранён класс багов, когда Remove переставал удалять то, что Apply добавил",
-      "important": false
-    },
-    {
-      "type": "fix",
       "text": "AWG: ensureRule проверяет существование правила (-C) перед добавлением (-I/-A) — повторные срабатывания NDM-хука больше не плодят дубли INPUT/FORWARD/NAT",
-      "important": false
-    },
-    {
-      "type": "fix",
-      "text": "Сетевая безопасность: эндпоинт восстановления файрвола доступен только с loopback (127.0.0.1/::1), остальные запросы получают 403",
       "important": false
     },
     {
@@ -132,27 +117,12 @@
     },
     {
       "type": "tweak",
-      "text": "Рефакторинг AWG: оркестрация up/down/restart/delete вынесена в awg_lifecycle.go (один путь вместо трёх копий), god-file awg.go (577 строк) разбит на awg.go/awg_config.go/awg_status.go",
-      "important": false
-    },
-    {
-      "type": "tweak",
       "text": "AWG: единая терминология «OpkgTun attach mode» в логах и сообщениях об ошибках; магические числа (poll 6×500ms, порт 443, подсеть 10.8.0.0/24, приоритет fwmark 1000, лимит загрузки 64 КБ) вынесены в именованные константы",
       "important": false
     },
     {
       "type": "tweak",
       "text": "AWG: хук NDM (netfilter.d) теперь валидируется sh -n, читает порт из config.json с фолбэком 8089, использует busybox wget если curl (опциональный пакет Entware) отсутствует; пути в генерируемом шелле закавычены",
-      "important": false
-    },
-    {
-      "type": "tweak",
-      "text": "Тесты: покрытие handlers 66.8% → 71%+, добавлены e2e-тест AddPeer, тесты парсинга awg show, singleflight восстановления файрвола, маршрутизации fwmark, listenPortFromConf, Up/Down failure-веток; мутационная проверка ensureRule подтверждает зубы теста",
-      "important": false
-    },
-    {
-      "type": "tweak",
-      "text": "Сетевая диагностика: честное подтверждение DNS через туннель настоящим клиентом amneziawg-go v0.2.16 (dashboard.local, grafana.local, gitea.local, mine.local, dpi.local) — тест-стенд ~/awgwork/awg-go-0216",
       "important": false
     }
   ],
