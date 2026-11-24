@@ -168,7 +168,7 @@ func DefaultConfig() *Config {
 		MihomoLogDir:    "/opt/var/log/mihomo",
 		MihomoBinary:    "mihomo",
 		AWGConfigDir:    "/opt/etc/awg",
-		AWDNSForward:    true,
+		AWDNSForward:    false,
 		AWDNSZones:      []string{"local", "home", "lan", "internal"},
 		AllowedRoots: []string{
 			"/opt/etc/xray",

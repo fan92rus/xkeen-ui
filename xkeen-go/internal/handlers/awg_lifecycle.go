@@ -88,12 +88,20 @@ func (h *AWGHandler) postUp(name string, role subscription.AWGRole, mark int) {
 func (h *AWGHandler) restartInterface(name string, role subscription.AWGRole, mark int) error {
 	confPath := confPathFor(h.awgDir, name)
 
+	// Preserve "user wants this up" intent across a restart: teardown clears
+	// the watchdog marker, but a restart is not an operator-requested stop.
+	wasEnabled := isServerEnabled(name)
+
 	// Tolerant teardown: the interface may already be down.
 	_ = h.teardown(name, confPath, role, mark, true)
 
 	time.Sleep(500 * time.Millisecond)
 
 	_, upErr := h.bringUp(name, confPath)
+	if wasEnabled {
+		// Restore intent even if up failed — the watchdog should retry.
+		markServerEnabled(name, true)
+	}
 	// Post-up state is re-applied unconditionally (see comment above).
 	h.postUp(name, role, mark)
 	return upErr

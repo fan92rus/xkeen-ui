@@ -100,7 +100,12 @@ func CLIWatchdog(h *AWGHandler) (string, error) {
 			continue
 		}
 		if pid, err := opkgDaemonPIDFn(c.Name); err == nil && pid > 0 {
-			continue // running
+			// A daemon from a pre-marker version is running but has no marker
+			// — seed it so the watchdog keeps it alive after a future crash.
+			if !isServerEnabled(c.Name) {
+				markServerEnabled(c.Name, true)
+			}
+			continue
 		}
 		if !isServerEnabled(c.Name) {
 			continue // intentionally stopped by user

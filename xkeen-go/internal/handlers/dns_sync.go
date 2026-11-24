@@ -94,16 +94,21 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 		}
 	}
 
+	if cfg.AWDNSForward && !cfg.AWDNSForwardAllZones && upstream == "" {
+		// Do not touch ownership or persisted config: without an upstream we
+		// cannot manage these rules safely.
+		return "", fmt.Errorf("cannot detect default DNS upstream — set a DNS server in Keenetic first")
+	}
 	if cfg.AWDNSForward && !cfg.AWDNSForwardAllZones {
-		if upstream == "" {
-			return "", fmt.Errorf("cannot detect default DNS upstream — set a DNS server in Keenetic first")
-		}
 		for z := range want {
 			// remove-then-add keeps Keenetic from duplicating a rule. Use the
 			// recorded IP for removal in case the default upstream changed.
-			if oldIP := cfg.AWDNSManagedZoneIPs[z]; oldIP != "" && oldIP != upstream {
+			// Always remove before adding — Keenetic may already have a rule
+			// from a previous sync (recorded IP or current upstream).
+			if oldIP := cfg.AWDNSManagedZoneIPs[z]; oldIP != "" {
 				_, _ = ndmc("-c", fmt.Sprintf("no ip name-server %s %s", oldIP, z))
 			}
+			_, _ = ndmc("-c", fmt.Sprintf("no ip name-server %s %s", upstream, z))
 			if out, err := ndmc("-c", fmt.Sprintf("ip name-server %s %s", upstream, z)); err != nil {
 				return "", fmt.Errorf("ip name-server %s %s: %v\n%s", upstream, z, err, string(out))
 			}
