@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -26,18 +27,27 @@ func NewCLIHandler(cfg *config.Config, configPath string) (*AWGHandler, error) {
 	return NewAWGHandler(store, cfg.AWGConfigDir, cfg), nil
 }
 
+// cliJSONRequest builds a POST request with a JSON body via encoding/json
+// (Go's %q is not JSON encoding — it can emit \xNN escapes).
+func cliJSONRequest(path string, payload interface{}) (*http.Request, *httptest.ResponseRecorder, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	return httptest.NewRequest("POST", path, strings.NewReader(string(body))), httptest.NewRecorder(), nil
+}
+
 // CLICreateServer creates a server config via the normal HTTP handler path.
 func CLICreateServer(h *AWGHandler, name, subnet string, port int, obfuscation string, params map[string]string) (string, error) {
 	if params == nil {
 		params = map[string]string{}
 	}
-	paramsJSON, err := json.Marshal(params)
+	req, rec, err := cliJSONRequest("/api/awg/server/create", map[string]interface{}{
+		"name": name, "subnet": subnet, "port": port, "obfuscation": obfuscation, "params": params,
+	})
 	if err != nil {
 		return "", err
 	}
-	body := fmt.Sprintf(`{"name":%q,"subnet":%q,"port":%d,"obfuscation":%q,"params":%s}`, name, subnet, port, obfuscation, paramsJSON)
-	req := httptest.NewRequest("POST", "/api/awg/server/create", strings.NewReader(body))
-	rec := httptest.NewRecorder()
 	h.CreateServer(rec, req)
 	if rec.Code < 200 || rec.Code >= 300 {
 		return "", fmt.Errorf("create failed (%d): %s", rec.Code, rec.Body.String())
@@ -47,9 +57,10 @@ func CLICreateServer(h *AWGHandler, name, subnet string, port int, obfuscation s
 
 // CLIUp starts an interface via the normal handler path.
 func CLIUp(h *AWGHandler, name string) (string, error) {
-	body := fmt.Sprintf(`{"name":%q}`, name)
-	req := httptest.NewRequest("POST", "/api/awg/up", strings.NewReader(body))
-	rec := httptest.NewRecorder()
+	req, rec, err := cliJSONRequest("/api/awg/up", map[string]string{"name": name})
+	if err != nil {
+		return "", err
+	}
 	h.UpInterface(rec, req)
 	if rec.Code < 200 || rec.Code >= 300 {
 		return "", fmt.Errorf("up failed (%d): %s", rec.Code, rec.Body.String())
@@ -59,9 +70,10 @@ func CLIUp(h *AWGHandler, name string) (string, error) {
 
 // CLIDown stops an interface via the normal handler path.
 func CLIDown(h *AWGHandler, name string) (string, error) {
-	body := fmt.Sprintf(`{"name":%q}`, name)
-	req := httptest.NewRequest("POST", "/api/awg/down", strings.NewReader(body))
-	rec := httptest.NewRecorder()
+	req, rec, err := cliJSONRequest("/api/awg/down", map[string]string{"name": name})
+	if err != nil {
+		return "", err
+	}
 	h.DownInterface(rec, req)
 	if rec.Code < 200 || rec.Code >= 300 {
 		return "", fmt.Errorf("down failed (%d): %s", rec.Code, rec.Body.String())

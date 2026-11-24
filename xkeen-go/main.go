@@ -128,11 +128,11 @@ func main() {
 
 // cliAWGWatchdog restarts dead AWG server daemons (for cron).
 func cliAWGWatchdog() {
-	cfg, err := config.LoadConfig(installConfig)
+	cfg, err := config.LoadConfig(cliConfigPath())
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	h, err := handlers.NewCLIHandler(cfg, installConfig)
+	h, err := handlers.NewCLIHandler(cfg, cliConfigPath())
 	if err != nil {
 		log.Fatalf("init AWG handler: %v", err)
 	}
@@ -145,15 +145,27 @@ func cliAWGWatchdog() {
 
 // cliDNSSync applies native DNS zone forwarding from config.json.
 func cliDNSSync() {
-	cfg, err := config.LoadConfig(installConfig)
+	cfg, err := config.LoadConfig(cliConfigPath())
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	status, err := handlers.CLIDNSSync(cfg, installConfig)
+	status, err := handlers.CLIDNSSync(cfg, cliConfigPath())
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(status)
+}
+
+// cliConfigPath returns the config path from -config anywhere in argv,
+// defaulting to the standard install location.
+func cliConfigPath() string {
+	path := installConfig
+	for i, arg := range os.Args {
+		if arg == "-config" && i+1 < len(os.Args) {
+			path = os.Args[i+1]
+		}
+	}
+	return path
 }
 
 // cliAWGServer runs AWG server management from the CLI (no web session).
@@ -169,11 +181,11 @@ func cliAWGServer() {
 		fmt.Println("  down <name>                          — stop server")
 		os.Exit(1)
 	}
-	cfg, err := config.LoadConfig(installConfig)
+	cfg, err := config.LoadConfig(cliConfigPath())
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	h, err := handlers.NewCLIHandler(cfg, installConfig)
+	h, err := handlers.NewCLIHandler(cfg, cliConfigPath())
 	if err != nil {
 		log.Fatalf("init AWG handler: %v", err)
 	}
@@ -315,7 +327,7 @@ func runServer() {
 
 	// Re-apply native DNS zone forwarding at startup: Keenetic regenerates
 	// its DNS config on reboot, so our zone rules must be restored.
-	if status, err := handlers.CLIDNSSync(cfg, installConfig); err != nil {
+	if status, err := handlers.CLIDNSSync(cfg, cliConfigPath()); err != nil {
 		log.Printf("DNS forward sync at startup failed: %v", err)
 	} else if status != "" {
 		log.Printf("%s", status)

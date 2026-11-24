@@ -55,3 +55,25 @@ func TestCLICreateAndUp_Down(t *testing.T) {
 		t.Fatalf("CLIDown must find the freshly created config: %v", err)
 	}
 }
+
+func TestCLICreateServer_CustomPresetParams(t *testing.T) {
+	h, r, awgDir := newTestAWGHandler(t)
+	origKey, origLook, origRun := awgGenKeyFn, ndmcLookPathFn, ndmcRunFn
+	t.Cleanup(func() { awgGenKeyFn, ndmcLookPathFn, ndmcRunFn = origKey, origLook, origRun })
+	awgGenKeyFn = func() (string, string, error) { return "PRIV", "PUB", nil }
+	ndmcLookPathFn = func(string) (string, error) { return "", os.ErrNotExist }
+	ndmcRunFn = func(_ ...string) ([]byte, error) { return nil, nil }
+	_ = r
+
+	out, err := CLICreateServer(h, "opkgtun4", "10.8.4.0/24", 4446, "custom", map[string]string{"Jc": "5", "H1": "42"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !strings.Contains(out, "opkgtun4") {
+		t.Fatalf("unexpected output: %s", out)
+	}
+	data, _ := os.ReadFile(filepath.Join(awgDir, "opkgtun4.conf"))
+	if !strings.Contains(string(data), "Jc = 5") || !strings.Contains(string(data), "H1 = 42") {
+		t.Fatalf("custom params missing:\n%s", data)
+	}
+}
