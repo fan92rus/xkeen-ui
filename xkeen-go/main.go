@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -88,6 +89,9 @@ func main() {
 		case "check":
 			checkProcess()
 			os.Exit(0)
+		case "awg-server":
+			cliAWGServer()
+			os.Exit(0)
 		case "version", "-version", "--version", "-v":
 			printVersion()
 			os.Exit(0)
@@ -114,6 +118,62 @@ func main() {
 
 	// No subcommand - run server
 	runServer()
+}
+
+// cliAWGServer runs AWG server management from the CLI (no web session).
+// Usage: xkeen-ui awg-server add <name> <subnet> <port> [preset]
+//
+//	xkeen-ui awg-server up <name>
+//	xkeen-ui awg-server down <name>
+func cliAWGServer() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: xkeen-ui awg-server <add|up|down> ...")
+		fmt.Println("  add <name> <subnet> <port> [preset]  — create server + apply NDMS interface")
+		fmt.Println("  up <name>                            — start server (cold attach works)")
+		fmt.Println("  down <name>                          — stop server")
+		os.Exit(1)
+	}
+	cfg, err := config.LoadConfig(installConfig)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	h, err := handlers.NewCLIHandler(cfg, installConfig)
+	if err != nil {
+		log.Fatalf("init AWG handler: %v", err)
+	}
+	switch os.Args[2] {
+	case "add":
+		if len(os.Args) < 6 {
+			log.Fatal("usage: awg-server add <name> <subnet> <port> [preset]")
+		}
+		port, err := strconv.Atoi(os.Args[5])
+		if err != nil {
+			log.Fatalf("invalid port: %v", err)
+		}
+		preset := "full"
+		if len(os.Args) > 6 {
+			preset = os.Args[6]
+		}
+		out, err := handlers.CLICreateServer(h, os.Args[3], os.Args[4], port, preset, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(out)
+	case "up":
+		out, err := handlers.CLIUp(h, os.Args[3])
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(out)
+	case "down":
+		out, err := handlers.CLIDown(h, os.Args[3])
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(out)
+	default:
+		log.Fatalf("unknown awg-server action %q", os.Args[2])
+	}
 }
 
 func printVersion() {
@@ -151,6 +211,7 @@ func printUsage() {
 	fmt.Println("COMMANDS:")
 	fmt.Println("    install     Install on Keenetic router (requires root)")
 	fmt.Println("    uninstall   Remove from system (requires root)")
+	fmt.Println("    awg-server  Manage AWG server configs (add/up/down) from CLI")
 	fmt.Println("    version     Show version information")
 	fmt.Println("    help        Show this help message")
 	fmt.Println()
