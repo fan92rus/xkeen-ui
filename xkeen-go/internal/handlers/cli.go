@@ -82,7 +82,7 @@ func CLIWatchdog(h *AWGHandler) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var restarted []string
+	restarted := make([]string, 0, len(configs))
 	for _, c := range configs {
 		if c.Role != "server" || !strings.HasPrefix(c.Name, "opkgtun") {
 			continue

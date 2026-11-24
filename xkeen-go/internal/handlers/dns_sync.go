@@ -17,7 +17,7 @@ import (
 
 var (
 	dnsSyncNDMCFn = func(ctx context.Context, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, "ndmc", args...).CombinedOutput() //nolint:gosec // args built from validated values
+		return exec.CommandContext(ctx, "ndmc", args...).CombinedOutput()
 	}
 	dnsSyncLookPathFn = exec.LookPath
 	dnsSyncTimeout    = 8 * time.Second
@@ -112,7 +112,7 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 	}
 
 	// Persist ownership = current zones (so future runs can clean them up).
-	var keys []string
+	keys := make([]string, 0, len(want))
 	for z := range want {
 		keys = append(keys, z)
 	}
