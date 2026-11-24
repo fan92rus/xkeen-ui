@@ -291,6 +291,8 @@ func RegisterAWGRoutes(r *mux.Router, handler *AWGHandler) {
 	r.HandleFunc("/awg/down", handler.DownInterface).Methods("POST")
 	r.HandleFunc("/awg/config/{name}", handler.DeleteConfig).Methods("DELETE")
 	r.HandleFunc("/awg/upload", handler.UploadConfig).Methods("POST")
+	// Server config creation (multi-server support)
+	r.HandleFunc("/awg/server/create", handler.CreateServer).Methods("POST")
 
 	// Peer management (server configs only)
 	r.HandleFunc("/awg/peers/{name}", handler.ListPeers).Methods("GET")

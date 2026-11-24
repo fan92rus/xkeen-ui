@@ -3,9 +3,11 @@ package handlers
 // Config file management for AWG: delete (with teardown) and upload.
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -198,3 +200,268 @@ func (h *AWGHandler) UploadConfig(w http.ResponseWriter, r *http.Request) {
 		"message": fmt.Sprintf("Config %q uploaded (%s)", confName, role),
 	})
 }
+
+// CreateServer creates a new AWG server config (opkgtunN) from scratch.
+// POST /api/awg/server/create  body: {"name","subnet","port","obfuscation","params"}
+//
+// It generates a fresh keypair, writes the .conf file, and returns the NDMS
+// commands needed to create the matching OpkgTun netdev. It does NOT create
+// the NDMS interface itself (that is the firmware's job) and does NOT bring
+// the interface up — the caller does that after creating the netdev.
+func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string            `json:"name"`
+		Subnet      string            `json:"subnet"`
+		Port        int               `json:"port"`
+		Obfuscation string            `json:"obfuscation"`
+		Params      map[string]string `json:"params"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// --- validate name ---------------------------------------------------
+	if !validateServerName(req.Name) {
+		respondError(w, http.StatusBadRequest, "invalid server name: must match opkgtunN (e.g. opkgtun1)")
+		return
+	}
+	confPath := filepath.Join(h.awgDir, req.Name+".conf")
+	if _, err := os.Stat(confPath); err == nil {
+		respondError(w, http.StatusConflict, fmt.Sprintf("config %s already exists", req.Name))
+		return
+	}
+
+	// --- validate subnet -------------------------------------------------
+	subnet, err := parseServerSubnet(req.Subnet)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid subnet: "+err.Error())
+		return
+	}
+	if err := h.checkSubnetConflict(subnet, req.Name); err != nil {
+		respondError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	// --- validate port ---------------------------------------------------
+	if req.Port < 1 || req.Port > 65535 {
+		respondError(w, http.StatusBadRequest, "port must be 1..65535")
+		return
+	}
+	if err := h.checkPortConflict(req.Port, req.Name); err != nil {
+		respondError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	// --- obfuscation preset ---------------------------------------------
+	params, err := resolveObfuscationParams(req.Obfuscation, req.Params)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// --- generate keypair -----------------------------------------------
+	privKey, _, err := awgGenKeyFn()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate keypair: %v", err))
+		return
+	}
+
+	// --- write config ----------------------------------------------------
+	gateway := subnetNetworkPlusOne(subnet)
+	var b strings.Builder
+	b.WriteString("[Interface]\n")
+	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", privKey))
+	b.WriteString(fmt.Sprintf("Address = %s\n", gateway))
+	b.WriteString(fmt.Sprintf("ListenPort = %d\n", req.Port))
+	b.WriteString("MTU = 1420\n")
+	for _, key := range awgParamKeys {
+		if v, ok := params[key]; ok && v != "" {
+			b.WriteString(fmt.Sprintf("%s = %s\n", key, v))
+		}
+	}
+	b.WriteString("\n")
+
+	if err := os.MkdirAll(h.awgDir, 0o750); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create AWG dir: %v", err))
+		return
+	}
+	if err := os.WriteFile(confPath, []byte(b.String()), 0o600); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config %s: %v", confPath, err))
+		return
+	}
+
+	log.Printf("[awg] created server config %s (subnet %s, port %d)", req.Name, subnet, req.Port)
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"success":       true,
+		"name":          req.Name,
+		"path":          confPath,
+		"subnet":        subnet,
+		"port":          req.Port,
+		"gateway":       gateway,
+		"ndms_commands": ndmsCreateCommands(req.Name, subnet),
+		"message":       fmt.Sprintf("Server config %q created. Create the NDMS OpkgTun interface (commands below), then press Start.", req.Name),
+	})
+}
+
+// --- helpers ---------------------------------------------------------------
+
+func validateServerName(name string) bool {
+	if !strings.HasPrefix(name, "opkgtun") {
+		return false
+	}
+	suffix := strings.TrimPrefix(name, "opkgtun")
+	if suffix == "" {
+		return false
+	}
+	for _, c := range suffix {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func parseServerSubnet(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("subnet is required (e.g. 10.8.1.0/24)")
+	}
+	ip, ipnet, err := net.ParseCIDR(s)
+	if err != nil {
+		return "", err
+	}
+	if !ip.Equal(ipnet.IP) {
+		return "", fmt.Errorf("must be a network address (e.g. 10.8.1.0/24, not 10.8.1.5/24)")
+	}
+	ones, bits := ipnet.Mask.Size()
+	if bits != 32 || ones < 16 || ones > 30 {
+		return "", fmt.Errorf("only IPv4 /16../30 subnets are supported")
+	}
+	return ipnet.String(), nil
+}
+
+func subnetNetworkPlusOne(cidr string) string {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return ""
+	}
+	// gateway = network + 1
+	gw := make(net.IP, len(ipnet.IP))
+	copy(gw, ipnet.IP)
+	gw[len(gw)-1] = 1
+	ones, _ := ipnet.Mask.Size()
+	return fmt.Sprintf("%s/%d", gw.String(), ones)
+}
+
+func (h *AWGHandler) checkSubnetConflict(newSubnet, self string) error {
+	configs, _ := h.store.ScanAWGConfigs(h.awgDir)
+	for _, c := range configs {
+		if c.Name == self {
+			continue
+		}
+		conf, err := subscription.ParseAWGConf(filepath.Join(h.awgDir, c.Name+".conf"))
+		if err != nil || conf == nil || conf.Interface == nil {
+			continue
+		}
+		addr := conf.Interface.Values["Address"]
+		if addr == "" {
+			continue
+		}
+		// parse the existing subnet from the Address (assume /24-class)
+		_, existingNet, err := net.ParseCIDR(addr)
+		if err != nil {
+			// Address may be a single IP like 10.8.0.1/24 — try appending
+			continue
+		}
+		_, newNet, err := net.ParseCIDR(newSubnet)
+		if err != nil {
+			return err
+		}
+		if existingNet.Contains(newNet.IP) || newNet.Contains(existingNet.IP) {
+			return fmt.Errorf("subnet %s overlaps with %s (%s)", newSubnet, c.Name, addr)
+		}
+	}
+	return nil
+}
+
+func (h *AWGHandler) checkPortConflict(port int, self string) error {
+	configs, _ := h.store.ScanAWGConfigs(h.awgDir)
+	for _, c := range configs {
+		if c.Name == self {
+			continue
+		}
+		conf, err := subscription.ParseAWGConf(filepath.Join(h.awgDir, c.Name+".conf"))
+		if err != nil || conf == nil {
+			continue
+		}
+		if p := conf.GetListenPort(); p == port {
+			return fmt.Errorf("port %d already used by %s", port, c.Name)
+		}
+	}
+	return nil
+}
+
+func resolveObfuscationParams(preset string, custom map[string]string) (map[string]string, error) {
+	preset = strings.TrimSpace(preset)
+	if preset == "" {
+		preset = "full"
+	}
+	if preset == "custom" {
+		// validate keys
+		out := map[string]string{}
+		for k, v := range custom {
+			ok := false
+			for _, key := range awgParamKeys {
+				if k == key {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return nil, fmt.Errorf("unknown obfuscation param %q", k)
+			}
+			out[k] = v
+		}
+		return out, nil
+	}
+	if preset == "random" {
+		return generateRandomObfuscationParams(), nil
+	}
+	for _, p := range getAWGObfuscationPresets() {
+		if p.ID == preset {
+			out := map[string]string{}
+			for k, v := range p.Params {
+				out[k] = v
+			}
+			return out, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown obfuscation preset %q", preset)
+}
+
+func ndmsCreateCommands(name, subnet string) string {
+	// NDMS interface names are CamelCase (OpkgTunN), configs are lowercase
+	// (opkgtunN) — convert for the CLI commands.
+	ndmsName := "OpkgTun" + strings.TrimPrefix(name, "opkgtun")
+	// Derive gateway = network + 1
+	gw := subnetNetworkPlusOne(subnet)
+	mask := "255.255.255.0"
+	if _, ipnet, err := net.ParseCIDR(subnet); err == nil {
+		m := ipnet.Mask
+		mask = fmt.Sprintf("%d.%d.%d.%d", m[0], m[1], m[2], m[3])
+	}
+	return fmt.Sprintf(`interface %s
+  description AWG-Server-%s
+  security-level private
+  ip address %s %s
+  mtu 1420
+  adjust-mss pmtu
+  up
+exit
+system configuration save`, ndmsName, strings.TrimPrefix(name, "opkgtun"), gw, mask)
+}
+
+// awgGenKeyFn is the seam for key generation (tests override).
+var awgGenKeyFn = generateAWGKeypair
