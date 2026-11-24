@@ -537,7 +537,4 @@ var (
 		return exec.Command("ndmc", args...).CombinedOutput()
 	}
 	ndmcLookPathFn = exec.LookPath
-	ndmcLinkFn     = func(name string) bool {
-		return exec.Command("ip", "link", "show", name).Run() == nil
-	}
 )
