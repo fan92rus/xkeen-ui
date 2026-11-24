@@ -369,7 +369,7 @@ const sections = computed(() =>
 );
 
 const awg = ref({ installed: false, interfaces: '', installing: false, uninstalling: false, error: '', progress: '' });
-const awgIface = ref({ lan: '', wan: '', endpoint: '', client_dns: '', client_mtu: 0, client_allowed_ips: '' });
+const awgIface = ref({ lan: '', wan: '', endpoint: '', client_dns: '', client_mtu: 0, client_allowed_ips: '', dns_forward: false, dns_forward_all_zones: false, dns_zones: [] });
 const awgIfaceSaving = ref(false);
 const awgIfaceDetecting = ref(false);
 
@@ -383,7 +383,11 @@ async function loadAWGIfaceSettings() {
       client_dns: d.client_dns || '',
       client_mtu: d.client_mtu || 0,
       client_allowed_ips: d.client_allowed_ips || '',
+      dns_forward: d.dns_forward || false,
+      dns_forward_all_zones: d.dns_forward_all_zones || false,
+      dns_zones: d.dns_zones || [],
     };
+    awgIface.value.dns_zones_text = (d.dns_zones || []).join(', ');
   } catch { /* ignore */ }
 }
 
@@ -406,7 +410,9 @@ async function saveAWGIfaceSettings() {
   try {
     await xkeen.updateAWGInterfaces(
       awgIface.value.lan, awgIface.value.wan, awgIface.value.endpoint,
-      awgIface.value.client_dns, awgIface.value.client_mtu, awgIface.value.client_allowed_ips
+      awgIface.value.client_dns, awgIface.value.client_mtu, awgIface.value.client_allowed_ips,
+      awgIface.value.dns_forward, awgIface.value.dns_forward_all_zones,
+      (awgIface.value.dns_zones_text || '').split(',').map(x => x.trim().replace(/^\./, '')).filter(Boolean)
     );
     app.showToast('AWG interface settings saved', 'success');
   } catch (e) {
@@ -1055,6 +1061,37 @@ onMounted(() => {
                 {{ awgIfaceSaving ? i18n.t('awg.saving') : i18n.t('awg.save') }}
               </button>
             </div>
+          </div>
+
+          <!-- DNS forwarding for VPN clients -->
+          <div class="s-block" style="margin-top:12px;">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('awg.dns_forward_title') }}</div>
+                <div class="s-row-desc">{{ i18n.t('awg.dns_forward_desc') }}</div>
+              </div>
+              <label class="toggle">
+                <input v-model="awgIface.dns_forward" type="checkbox">
+                <span class="toggle-slider" />
+              </label>
+            </div>
+            <template v-if="awgIface.dns_forward">
+              <div class="s-row">
+                <div class="s-row-main">
+                  <div class="s-row-label">{{ i18n.t('awg.dns_forward_all') }}</div>
+                  <div class="s-row-desc">{{ i18n.t('awg.dns_forward_all_desc') }}</div>
+                </div>
+                <label class="toggle">
+                  <input v-model="awgIface.dns_forward_all_zones" type="checkbox">
+                  <span class="toggle-slider" />
+                </label>
+              </div>
+              <div v-if="!awgIface.dns_forward_all_zones" class="s-row s-row-col">
+                <div class="s-row-label">{{ i18n.t('awg.dns_zones') }}</div>
+                <div class="s-row-desc">{{ i18n.t('awg.dns_zones_desc') }}</div>
+                <input v-model="awgIface.dns_zones_text" type="text" class="s-input" style="width:100%; font-family:var(--font-mono)" placeholder="local, home, lan, internal">
+              </div>
+            </template>
           </div>
         </section>
 

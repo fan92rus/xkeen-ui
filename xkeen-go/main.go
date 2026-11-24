@@ -92,6 +92,9 @@ func main() {
 		case "awg-server":
 			cliAWGServer()
 			os.Exit(0)
+		case "dns-sync":
+			cliDNSSync()
+			os.Exit(0)
 		case "version", "-version", "--version", "-v":
 			printVersion()
 			os.Exit(0)
@@ -118,6 +121,19 @@ func main() {
 
 	// No subcommand - run server
 	runServer()
+}
+
+// cliDNSSync applies native DNS zone forwarding from config.json.
+func cliDNSSync() {
+	cfg, err := config.LoadConfig(installConfig)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	status, err := handlers.CLIDNSSync(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(status)
 }
 
 // cliAWGServer runs AWG server management from the CLI (no web session).
@@ -212,6 +228,7 @@ func printUsage() {
 	fmt.Println("    install     Install on Keenetic router (requires root)")
 	fmt.Println("    uninstall   Remove from system (requires root)")
 	fmt.Println("    awg-server  Manage AWG server configs (add/up/down) from CLI")
+	fmt.Println("    dns-sync    Apply native DNS zone forwarding (from config.json)")
 	fmt.Println("    version     Show version information")
 	fmt.Println("    help        Show this help message")
 	fmt.Println()
@@ -274,6 +291,14 @@ func runServer() {
 	log.Printf("XKEEN-UI %s (branch: %s) starting...", appVersion, buildBranch)
 	log.Printf("Config file: %s", configPath)
 	log.Printf("Listen port: %d", cfg.Port)
+
+	// Re-apply native DNS zone forwarding at startup: Keenetic regenerates
+	// its DNS config on reboot, so our zone rules must be restored.
+	if status, err := handlers.CLIDNSSync(cfg); err != nil {
+		log.Printf("DNS forward sync at startup failed: %v", err)
+	} else if status != "" {
+		log.Printf("%s", status)
+	}
 	log.Printf("Xray config dir: %s", cfg.XrayConfigDir)
 	log.Printf("Allowed roots: %v", cfg.AllowedRoots)
 

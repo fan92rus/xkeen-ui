@@ -67,6 +67,18 @@ type Config struct {
 	// (empty = "0.0.0.0/0, ::/0" with ::/0 dropped when the server has no global IPv6).
 	AWGClientAllowedIPs string `json:"awg_client_allowed_ips"`
 
+	// AWDNSForward enables native Keenetic conditional DNS forwarding for the
+	// listed zones (ip name-server <upstream> <zone>), so VPN clients can
+	// resolve local names through the router's DNS proxy.
+	AWDNSForward bool `json:"awg_dns_forward"`
+
+	// AWDNSForwardAllZones forwards all DNS (empty zone) instead of only
+	// AWDNSZones. Default off — only the explicit zones are forwarded.
+	AWDNSForwardAllZones bool `json:"awg_dns_forward_all_zones"`
+
+	// AWDNSZones are the zones forwarded to the upstream DNS server.
+	AWDNSZones []string `json:"awg_dns_zones"`
+
 	// ProxyEntware routes router-originated (Entware) traffic through Xray.
 	// When enabled, outbounds get sockopt.mark:255 (so Xray-originated packets
 	// bypass the OUTPUT chain redirect via iptables `-m mark --mark 255 -j RETURN`)
@@ -147,6 +159,8 @@ func DefaultConfig() *Config {
 		MihomoLogDir:    "/opt/var/log/mihomo",
 		MihomoBinary:    "mihomo",
 		AWGConfigDir:    "/opt/etc/awg",
+		AWDNSForward:    true,
+		AWDNSZones:      []string{"local", "home", "lan", "internal"},
 		AllowedRoots: []string{
 			"/opt/etc/xray",
 			"/opt/etc/xkeen",

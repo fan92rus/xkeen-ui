@@ -141,7 +141,13 @@
     "server_create_stolen": "Stolen bytes",
     "server_create_headers": "Заголовки (H, ≥1)",
     "server_create_legacy": "Дополнительные (I)",
-    "server_create_ndms_ok": "NDMS-интерфейс создан автоматически"
+    "server_create_ndms_ok": "NDMS-интерфейс создан автоматически",
+    "dns_forward_title": "Перенаправление DNS для VPN-клиентов",
+    "dns_forward_desc": "Нативно через Keenetic (ip name-server <зона>): локальные зоны резолвятся через роутер, без статических записей. Требуется KeeneticOS.",
+    "dns_forward_all": "Все зоны",
+    "dns_forward_all_desc": "Использовать основной DNS-сервер для всех запросов (зоновые правила удаляются). По умолчанию выключено.",
+    "dns_zones": "Зоны",
+    "dns_zones_desc": "Через запятую. По умолчанию: local, home, lan, internal"
   },
   "commands": {
     "unknown_reason": "причина неизвестна",

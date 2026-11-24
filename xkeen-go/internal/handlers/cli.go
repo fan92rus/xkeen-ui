@@ -67,3 +67,9 @@ func CLIDown(h *AWGHandler, name string) (string, error) {
 	}
 	return rec.Body.String(), nil
 }
+
+// CLIDNSSync applies (or removes) native DNS zone forwarding and returns a
+// status message. Used by `xkeen-ui dns-sync` and the startup hook.
+func CLIDNSSync(cfg *config.Config) (string, error) {
+	return SyncDNSForward(cfg)
+}

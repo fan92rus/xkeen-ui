@@ -380,14 +380,17 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 
 // AWGInterfaceResponse holds AWG LAN/WAN interface and endpoint settings.
 type AWGInterfaceResponse struct {
-	Ok            string `json:"ok"`
-	LanIface      string `json:"lan_iface"`
-	WanIface      string `json:"wan_iface"`
-	Endpoint      string `json:"endpoint"`
-	ClientDNS     string `json:"client_dns"`
-	ClientMTU     int    `json:"client_mtu"`
-	ClientAllowed string `json:"client_allowed_ips"`
-	Error         string `json:"error,omitempty"`
+	Ok            string   `json:"ok"`
+	LanIface      string   `json:"lan_iface"`
+	WanIface      string   `json:"wan_iface"`
+	Endpoint      string   `json:"endpoint"`
+	ClientDNS     string   `json:"client_dns"`
+	ClientMTU     int      `json:"client_mtu"`
+	ClientAllowed string   `json:"client_allowed_ips"`
+	DNSForward    bool     `json:"dns_forward"`
+	DNSForwardAll bool     `json:"dns_forward_all_zones"`
+	DNSZones      []string `json:"dns_zones"`
+	Error         string   `json:"error,omitempty"`
 }
 
 // GetAWGInterfaces returns the configured AWG LAN/WAN interfaces and endpoint.
@@ -400,6 +403,9 @@ func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Reques
 	clientDNS := h.cfg.AWGClientDNS
 	clientMTU := h.cfg.AWGClientMTU
 	clientAllowed := h.cfg.AWGClientAllowedIPs
+	dnsForward := h.cfg.AWDNSForward
+	dnsForwardAll := h.cfg.AWDNSForwardAllZones
+	dnsZones := h.cfg.AWDNSZones
 	h.cfgMu.RUnlock()
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
 		Ok:            "ok",
@@ -409,6 +415,9 @@ func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Reques
 		ClientDNS:     clientDNS,
 		ClientMTU:     clientMTU,
 		ClientAllowed: clientAllowed,
+		DNSForward:    dnsForward,
+		DNSForwardAll: dnsForwardAll,
+		DNSZones:      dnsZones,
 	})
 }
 
@@ -437,12 +446,15 @@ func (h *SettingsHandler) DetectAWGInterfaces(w http.ResponseWriter, _ *http.Req
 // PUT /api/settings/awg-interfaces
 func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		LanIface        string `json:"lan_iface"`
-		WanIface        string `json:"wan_iface"`
-		Endpoint        string `json:"endpoint"`
-		ClientDNS       string `json:"client_dns"`
-		ClientMTU       int    `json:"client_mtu"`
-		ClientAllowedIP string `json:"client_allowed_ips"`
+		LanIface        string   `json:"lan_iface"`
+		WanIface        string   `json:"wan_iface"`
+		Endpoint        string   `json:"endpoint"`
+		ClientDNS       string   `json:"client_dns"`
+		ClientMTU       int      `json:"client_mtu"`
+		ClientAllowedIP string   `json:"client_allowed_ips"`
+		DNSForward      bool     `json:"dns_forward"`
+		DNSForwardAll   bool     `json:"dns_forward_all_zones"`
+		DNSZones        []string `json:"dns_zones"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, AWGInterfaceResponse{Error: "invalid request"})
@@ -497,10 +509,21 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 	h.cfg.AWGClientDNS = req.ClientDNS
 	h.cfg.AWGClientMTU = req.ClientMTU
 	h.cfg.AWGClientAllowedIPs = req.ClientAllowedIP
+	h.cfg.AWDNSForward = req.DNSForward
+	h.cfg.AWDNSForwardAllZones = req.DNSForwardAll
+	h.cfg.AWDNSZones = req.DNSZones
 	h.cfgMu.Unlock()
 	if err := h.cfg.SaveConfig(h.configPath); err != nil {
 		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + err.Error()})
 		return
+	}
+
+	// Apply native conditional DNS forwarding (best-effort: on non-Keenetic
+	// systems ndmc is unavailable and SyncDNSForward returns a no-op).
+	if status, err := SyncDNSForward(h.cfg); err != nil {
+		log.Printf("[awg] DNS forward sync failed: %v", err)
+	} else if status != "" {
+		log.Printf("[awg] %s", status)
 	}
 
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{

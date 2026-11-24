@@ -49,10 +49,11 @@ export async function getAWGInterfaces() {
     return get('/api/settings/awg-interfaces');
 }
 
-export async function updateAWGInterfaces(lanIface, wanIface, endpoint, clientDns, clientMtu, clientAllowed) {
+export async function updateAWGInterfaces(lanIface, wanIface, endpoint, clientDns, clientMtu, clientAllowed, dnsForward, dnsForwardAll, dnsZones) {
     return put('/api/settings/awg-interfaces', {
         lan_iface: lanIface, wan_iface: wanIface, endpoint,
         client_dns: clientDns || '', client_mtu: clientMtu || 0, client_allowed_ips: clientAllowed || '',
+        dns_forward: !!dnsForward, dns_forward_all_zones: !!dnsForwardAll, dns_zones: dnsZones || [],
     });
 }
 
