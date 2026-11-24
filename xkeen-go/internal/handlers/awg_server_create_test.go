@@ -203,3 +203,12 @@ func TestCreateServer_NDMSFallbackWhenNoNdmc(t *testing.T) {
 		t.Fatalf("fallback commands missing: %v", resp["ndms_commands"])
 	}
 }
+
+func TestCreateServer_LeadingZeroNameRejected(t *testing.T) {
+	_, r, _ := newTestAWGHandler(t)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/awg/server/create", strings.NewReader(`{"name":"opkgtun01","subnet":"10.8.1.0/24","port":4443}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("leading-zero name must be rejected, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

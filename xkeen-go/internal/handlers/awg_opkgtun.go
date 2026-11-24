@@ -37,7 +37,14 @@ var (
 	// opkgNDMSHasIfaceFn checks whether Keenetic's NDMS config has the OpkgTun
 	// interface (registered but netdev may not exist until daemon start).
 	opkgNDMSHasIfaceFn = func(name string) bool {
-		ndmsName := "OpkgTun" + strings.TrimPrefix(name, "opkgtun")
+		// Keenetic normalizes leading zeros in interface numbers
+		// (OpkgTun01 -> OpkgTun1); normalize ours the same way so a legacy
+		// config with a leading zero is still recognized.
+		idx := strings.TrimLeft(strings.TrimPrefix(name, "opkgtun"), "0")
+		if idx == "" {
+			idx = "0"
+		}
+		ndmsName := "OpkgTun" + idx
 		out, err := exec.Command("ndmc", "-c", "show interface "+ndmsName).CombinedOutput() //nolint:gosec // ndmsName derived from validated config name
 		return err == nil && strings.Contains(string(out), ndmsName)
 	}

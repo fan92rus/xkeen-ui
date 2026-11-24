@@ -387,6 +387,11 @@ func validateServerName(name string) bool {
 			return false
 		}
 	}
+	// Keenetic normalizes leading zeros away (OpkgTun01 -> OpkgTun1), which
+	// breaks the name<->netdev mapping xkeen-ui relies on. Reject it early.
+	if len(suffix) > 1 && suffix[0] == '0' {
+		return false
+	}
 	return true
 }
 
