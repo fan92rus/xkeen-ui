@@ -132,11 +132,16 @@
     "server_create_subnet": "Tunnel subnet",
     "server_create_port": "Port (UDP)",
     "server_create_obfuscation": "Obfuscation profile",
-    "server_create_desc": "Server config will be created. The NDMS interface (OpkgTunN) must be created separately — commands will be shown after creation.",
+    "server_create_desc": "Server config will be written and the NDMS interface (OpkgTunN) created automatically. If ndmc is unavailable, commands will be shown for manual entry.",
     "server_create_creating": "Creating…",
     "server_create_done": "Server {name} created",
     "server_create_ndms_hint": "Run these commands in the Keenetic CLI (SSH), then press Start:",
-    "detect_btn": "Auto-detect"
+    "detect_btn": "Auto-detect",
+    "server_create_junk": "Junk packets",
+    "server_create_stolen": "Stolen bytes",
+    "server_create_headers": "Headers (H, ≥1)",
+    "server_create_legacy": "Additional (I)",
+    "server_create_ndms_ok": "NDMS interface created automatically"
   },
   "commands": {
     "unknown_reason": "unknown reason",

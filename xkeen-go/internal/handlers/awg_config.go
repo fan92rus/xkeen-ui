@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -293,6 +294,16 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[awg] created server config %s (subnet %s, port %d)", req.Name, subnet, req.Port)
 
+	// Apply the NDMS interface automatically when ndmc is available (xkeen-ui
+	// runs on the router). Every Keenetic CLI command is a separate `ndmc -c`
+	// invocation, re-entering the interface context for each subcommand —
+	// multiline `ndmc -c` is rejected by NDM and a plain pipe needs a tty.
+	ndmsApplied, ndmsErr := applyNDMSInterface(req.Name, subnet)
+	msg := fmt.Sprintf("Server config %q created. Press Start to bring it up.", req.Name)
+	if !ndmsApplied {
+		msg = fmt.Sprintf("Server config %q created, but NDMS interface could not be created automatically — run the commands below in the Keenetic CLI, then press Start.", req.Name)
+	}
+
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"success":       true,
 		"name":          req.Name,
@@ -300,9 +311,44 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 		"subnet":        subnet,
 		"port":          req.Port,
 		"gateway":       gateway,
+		"ndms_applied":  ndmsApplied,
+		"ndms_error":    ndmsErr,
 		"ndms_commands": ndmsCreateCommands(req.Name, subnet),
-		"message":       fmt.Sprintf("Server config %q created. Create the NDMS OpkgTun interface (commands below), then press Start.", req.Name),
+		"message":       msg,
 	})
+}
+
+// applyNDMSInterface creates the matching Keenetic OpkgTun interface via ndm
+// CLI. Keenetic's `ndmc -c` executes exactly one command; subcommands must be
+// prefixed with the interface name in each call. Returns applied=false with
+// an error string when ndmc is missing or a command fails.
+func applyNDMSInterface(name, subnet string) (bool, string) {
+	if _, err := ndmcLookPathFn("ndmc"); err != nil {
+		return false, "ndmc not found (xkeen-ui not running on a Keenetic router?)"
+	}
+	ndmsName := "OpkgTun" + strings.TrimPrefix(name, "opkgtun")
+	gw := subnetNetworkPlusOne(subnet)
+	mask := "255.255.255.0"
+	if _, ipnet, err := net.ParseCIDR(subnet); err == nil {
+		m := ipnet.Mask
+		mask = fmt.Sprintf("%d.%d.%d.%d", m[0], m[1], m[2], m[3])
+	}
+	cmds := []string{
+		fmt.Sprintf("interface %s", ndmsName),
+		fmt.Sprintf("interface %s description AWG-Server-%s", ndmsName, strings.TrimPrefix(name, "opkgtun")),
+		fmt.Sprintf("interface %s security-level private", ndmsName),
+		fmt.Sprintf("interface %s ip address %s %s", ndmsName, strings.SplitN(gw, "/", 2)[0], mask),
+		fmt.Sprintf("interface %s up", ndmsName),
+		"system configuration save",
+	}
+	for _, cmd := range cmds {
+		if out, err := ndmcRunFn("-c", cmd); err != nil {
+			log.Printf("[awg] ndmc %q failed: %v\n%s", cmd, err, string(out))
+			return false, fmt.Sprintf("ndmc %q failed: %v", cmd, err)
+		}
+	}
+	log.Printf("[awg] NDMS interface %s created automatically", ndmsName)
+	return true, ""
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -456,12 +502,18 @@ func ndmsCreateCommands(name, subnet string) string {
   description AWG-Server-%s
   security-level private
   ip address %s %s
-  mtu 1420
-  adjust-mss pmtu
   up
 exit
-system configuration save`, ndmsName, strings.TrimPrefix(name, "opkgtun"), gw, mask)
+system configuration save`, ndmsName, strings.TrimPrefix(name, "opkgtun"), strings.SplitN(gw, "/", 2)[0], mask)
 }
 
 // awgGenKeyFn is the seam for key generation (tests override).
 var awgGenKeyFn = generateAWGKeypair
+
+// ndmcRunFn / ndmcLookPathFn are seams for Keenetic CLI calls (tests override).
+var (
+	ndmcRunFn = func(args ...string) ([]byte, error) {
+		return exec.Command("ndmc", args...).CombinedOutput() //nolint:gosec // args are built from validated values
+	}
+	ndmcLookPathFn = exec.LookPath
+)

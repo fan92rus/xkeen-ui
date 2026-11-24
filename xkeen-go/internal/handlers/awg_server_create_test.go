@@ -141,3 +141,62 @@ func TestCreateServer_CustomParams(t *testing.T) {
 		t.Fatalf("custom params not written:\n%s", data)
 	}
 }
+
+func TestCreateServer_NDMSAppliedAutomatically(t *testing.T) {
+	h, r, awgDir := newTestAWGHandler(t)
+	origKey, origRun, origLook := awgGenKeyFn, ndmcRunFn, ndmcLookPathFn
+	t.Cleanup(func() { awgGenKeyFn, ndmcRunFn, ndmcLookPathFn = origKey, origRun, origLook })
+	awgGenKeyFn = func() (string, string, error) { return "PRIV", "PUB", nil }
+	ndmcLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
+	var cmds []string
+	ndmcRunFn = func(args ...string) ([]byte, error) {
+		cmds = append(cmds, strings.Join(args, " "))
+		return nil, nil
+	}
+
+	body := `{"name":"opkgtun1","subnet":"10.8.1.0/24","port":4443,"obfuscation":"full"}`
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/awg/server/create", strings.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["ndms_applied"] != true {
+		t.Fatalf("ndms must be applied automatically, resp: %v", resp)
+	}
+	if len(cmds) == 0 || !strings.Contains(cmds[0], "interface OpkgTun1") {
+		t.Fatalf("ndmc commands missing: %v", cmds)
+	}
+	// must include creation, ip address, up, save
+	joined := strings.Join(cmds, "\n")
+	for _, want := range []string{"ip address 10.8.1.1 255.255.255.0", "up", "system configuration save"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in ndmc commands:\n%s", want, joined)
+		}
+	}
+	_ = h
+	os.Remove(filepath.Join(awgDir, "opkgtun1.conf"))
+}
+
+func TestCreateServer_NDMSFallbackWhenNoNdmc(t *testing.T) {
+	_, r, _ := newTestAWGHandler(t)
+	origKey, origLook := awgGenKeyFn, ndmcLookPathFn
+	t.Cleanup(func() { awgGenKeyFn, ndmcLookPathFn = origKey, origLook })
+	awgGenKeyFn = func() (string, string, error) { return "PRIV", "PUB", nil }
+	ndmcLookPathFn = func(string) (string, error) { return "", os.ErrNotExist }
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/awg/server/create", strings.NewReader(`{"name":"opkgtun3","subnet":"10.8.3.0/24","port":4445,"obfuscation":"full"}`)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["ndms_applied"] != false {
+		t.Fatalf("ndms must not be applied, resp: %v", resp)
+	}
+	if resp["ndms_commands"] == nil || !strings.Contains(resp["ndms_commands"].(string), "interface OpkgTun3") {
+		t.Fatalf("fallback commands missing: %v", resp["ndms_commands"])
+	}
+}

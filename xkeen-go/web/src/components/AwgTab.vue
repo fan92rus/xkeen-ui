@@ -297,8 +297,39 @@
                 <option value="minimal">minimal (Jc=2)</option>
                 <option value="plain">plain (без обфускации)</option>
                 <option value="random">random (уникальный)</option>
+                <option value="custom">custom (свои параметры)</option>
               </select>
             </div>
+            <template v-if="createServer.obfuscation === 'custom'">
+              <div class="awg-form-group-label">{{ i18n.t('awg.server_create_junk') }}</div>
+              <div class="awg-form-grid">
+                <label v-for="key in ['Jc','Jmin','Jmax']" :key="key" class="awg-form-field">
+                  <span>{{ key }}</span>
+                  <input v-model="createServer.params[key]" type="number" min="0" class="awg-modal-input">
+                </label>
+              </div>
+              <div class="awg-form-group-label">{{ i18n.t('awg.server_create_stolen') }}</div>
+              <div class="awg-form-grid">
+                <label v-for="key in ['S1','S2','S3','S4']" :key="key" class="awg-form-field">
+                  <span>{{ key }}</span>
+                  <input v-model="createServer.params[key]" type="number" min="0" class="awg-modal-input">
+                </label>
+              </div>
+              <div class="awg-form-group-label">{{ i18n.t('awg.server_create_headers') }}</div>
+              <div class="awg-form-grid">
+                <label v-for="key in ['H1','H2','H3','H4']" :key="key" class="awg-form-field">
+                  <span>{{ key }}</span>
+                  <input v-model="createServer.params[key]" type="number" min="1" class="awg-modal-input">
+                </label>
+              </div>
+              <div class="awg-form-group-label">{{ i18n.t('awg.server_create_legacy') }}</div>
+              <div class="awg-form-grid">
+                <label v-for="key in ['I1','I2','I3']" :key="key" class="awg-form-field">
+                  <span>{{ key }}</span>
+                  <input v-model="createServer.params[key]" type="text" class="awg-modal-input">
+                </label>
+              </div>
+            </template>
             <p class="awg-modal-hint">{{ i18n.t('awg.server_create_desc') }}</p>
             <div v-if="createServer.error" class="awg-result-banner awg-result-error">⚠ {{ createServer.error }}</div>
             <div class="awg-modal-actions">
@@ -310,8 +341,12 @@
           </template>
           <template v-else>
             <div class="awg-result-banner">✅ {{ i18n.t('awg.server_create_done', { name: createServer.result.name }) }}</div>
-            <p class="awg-modal-hint">{{ i18n.t('awg.server_create_ndms_hint') }}</p>
-            <pre class="awg-config-text">{{ createServer.result.ndms_commands }}</pre>
+            <div v-if="createServer.result.ndms_applied" class="awg-result-banner awg-result-ok">✅ {{ i18n.t('awg.server_create_ndms_ok') }}</div>
+            <template v-else>
+              <div class="awg-result-banner awg-result-error">⚠ {{ createServer.result.ndms_error || i18n.t('awg.server_create_ndms_hint') }}</div>
+              <p class="awg-modal-hint">{{ i18n.t('awg.server_create_ndms_hint') }}</p>
+              <pre class="awg-config-text">{{ createServer.result.ndms_commands }}</pre>
+            </template>
             <div class="awg-modal-actions">
               <button class="btn btn-primary" @click="closeCreateServer">{{ i18n.t('awg.peer_done') }}</button>
             </div>
@@ -353,7 +388,7 @@ const peerLoading = reactive({});
 
 // Add peer dialog
 const addPeer = reactive({ show: false, server: '', label: '', loading: false, result: null });
-const createServer = reactive({ show: false, name: '', subnet: '10.8.1.0/24', port: 4443, obfuscation: 'full', loading: false, error: '', result: null });
+const createServer = reactive({ show: false, name: '', subnet: '10.8.1.0/24', port: 4443, obfuscation: 'full', params: {}, loading: false, error: '', result: null });
 const copied = ref(false);
 
 // QR code state
@@ -565,6 +600,7 @@ function openCreateServer() {
   createServer.subnet = '10.8.1.0/24';
   createServer.port = 4443;
   createServer.obfuscation = 'full';
+  createServer.params = { Jc: 8, Jmin: 50, Jmax: 100, S1: 30, S2: 20, S3: 0, S4: 0, H1: 1, H2: 2, H3: 3, H4: 4, I1: 0 };
 }
 
 function closeCreateServer() {
@@ -579,7 +615,7 @@ async function doCreateServer() {
   createServer.error = '';
   try {
     const res = await awgApi.createServer(
-      createServer.name, createServer.subnet, createServer.port, createServer.obfuscation, {}
+      createServer.name, createServer.subnet, createServer.port, createServer.obfuscation, createServer.obfuscation === 'custom' ? { ...createServer.params } : {}
     );
     createServer.result = res;
   } catch (e) {
@@ -1250,6 +1286,26 @@ function downloadConfig() {
   border-color: var(--primary-color);
 }
 
+.awg-form-row { margin-bottom: 4px; }
+.awg-form-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin: 10px 0 6px;
+  border-bottom: 1px solid var(--menu-border);
+  padding-bottom: 3px;
+}
+.awg-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px;
+}
+.awg-form-field { display: flex; flex-direction: column; gap: 2px; }
+.awg-form-field span { font-size: 11px; color: var(--help-text); }
+.awg-form-field .awg-modal-input { margin-bottom: 0; }
+
 .awg-modal-hint {
   font-size: var(--text-small);
   color: var(--help-text);
@@ -1281,6 +1337,11 @@ function downloadConfig() {
 .awg-result-error {
   background: var(--status-warning-background);
   color: var(--error);
+}
+
+.awg-result-ok {
+  background: var(--status-success-background);
+  color: var(--status-success-text);
 }
 
 .awg-config-wrap {
