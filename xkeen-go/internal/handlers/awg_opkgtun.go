@@ -34,6 +34,13 @@ var (
 	opkgLinkExistsFn = func(name string) bool {
 		return exec.Command("ip", "link", "show", name).Run() == nil
 	}
+	// opkgNDMSHasIfaceFn checks whether Keenetic's NDMS config has the OpkgTun
+	// interface (registered but netdev may not exist until daemon start).
+	opkgNDMSHasIfaceFn = func(name string) bool {
+		ndmsName := "OpkgTun" + strings.TrimPrefix(name, "opkgtun")
+		out, err := exec.Command("ndmc", "-c", "show interface "+ndmsName).CombinedOutput()
+		return err == nil && strings.Contains(string(out), ndmsName)
+	}
 	opkgProcessRunningFn = func(name string) bool {
 		return exec.Command("pgrep", "-f", opkgProcPattern(name)).Run() == nil //nolint:gosec // name validated by validateAWGName
 	}
@@ -58,10 +65,16 @@ func opkgProcPattern(name string) string {
 }
 
 // isOpkgTunAttachMode reports whether the interface runs in OpkgTun attach
-// mode: the config name matches the Keenetic OpkgTun convention and the netdev
-// already exists (created by NDMS from the system config).
+// mode: the config name matches the Keenetic OpkgTun convention AND either
+// the netdev exists or the interface is registered in NDMS's config.
+// Keenetic 5.x does not hot-add OpkgTun netdevs — after CreateServer the
+// interface is in the NDMS config but has no netdev; amneziawg-go creates it
+// when started, so attach mode must apply in that "cold" state too.
 func isOpkgTunAttachMode(name string) bool {
-	return strings.HasPrefix(name, "opkgtun") && opkgLinkExistsFn(name)
+	if !strings.HasPrefix(name, "opkgtun") {
+		return false
+	}
+	return opkgLinkExistsFn(name) || opkgNDMSHasIfaceFn(name)
 }
 
 // isOpkgTunOwned reports whether the name is in the OpkgTun namespace and
@@ -70,7 +83,10 @@ func isOpkgTunAttachMode(name string) bool {
 // while the daemon is still running, awg-quick must still not be invoked —
 // it would fail forever on an interface it does not own.
 func isOpkgTunOwned(name string) bool {
-	return strings.HasPrefix(name, "opkgtun") && (opkgLinkExistsFn(name) || opkgProcessRunningFn(name))
+	if !strings.HasPrefix(name, "opkgtun") {
+		return false
+	}
+	return opkgLinkExistsFn(name) || opkgProcessRunningFn(name) || opkgNDMSHasIfaceFn(name)
 }
 
 // runtimeConfForOpkgTun copies the config to a runtime setconf file without

@@ -621,3 +621,63 @@ func TestFwmarkRouting_MarkZeroIsNoop(t *testing.T) {
 		t.Fatalf("mark 0 must not touch ip rules/routes, got %v", *calls)
 	}
 }
+
+// ---------- cold attach: NDMS interface registered but netdev not up yet ----------
+
+// Keenetic registers OpkgTun interfaces in its config but does not materialize
+// the netdev until reboot. amneziawg-go creates the netdev itself on start,
+// so attach mode must also apply when the netdev is absent but the NDMS config
+// has the interface.
+func TestIsOpkgTunAttachMode_NDMSRegisteredNoNetdev(t *testing.T) {
+	setupOpkgTest(t)
+	orig := opkgNDMSHasIfaceFn
+	t.Cleanup(func() { opkgNDMSHasIfaceFn = orig })
+
+	opkgLinkExistsFn = func(string) bool { return false }  // no netdev yet
+	opkgNDMSHasIfaceFn = func(string) bool { return true } // but NDMS config has it
+
+	if !isOpkgTunAttachMode("opkgtun1") {
+		t.Fatal("NDMS-registered interface without netdev must be attach mode")
+	}
+	// A plain opkgtun-named config with no netdev and no NDMS entry is NOT
+	// attach mode (avoids hijacking a quick-mode user config).
+	opkgNDMSHasIfaceFn = func(string) bool { return false }
+	if isOpkgTunAttachMode("opkgtun1") {
+		t.Fatal("neither netdev nor NDMS interface must not be attach mode")
+	}
+}
+
+// startOpkgTunAttach must wait for the netdev that amneziawg-go creates for a
+// cold interface. If the daemon starts but the netdev never appears, it must
+// fail rather than apply firewall rules to a nonexistent interface.
+func TestStartOpkgTunAttach_ColdNetdevCreatedByDaemon(t *testing.T) {
+	setupOpkgTest(t)
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "opkgtun1.conf")
+	os.WriteFile(confPath, []byte("[Interface]\nAddress = 10.8.1.1/24\nListenPort = 4443\n"), 0o600)
+
+	procRunning := false
+	netdev := false
+	opkgLinkExistsFn = func(string) bool { return netdev }
+	opkgProcessRunningFn = func(string) bool { return procRunning }
+	opkgLookPathFn = func(string) (string, error) { return "/opt/bin/amneziawg-go", nil }
+	origStart := opkgStartDaemonFn
+	t.Cleanup(func() { opkgStartDaemonFn = origStart })
+	opkgStartDaemonFn = func(_, _ string) error {
+		procRunning = true
+		netdev = true // amneziawg-go created the netdev
+		return nil
+	}
+	opkgExecFn = func(name string, args ...string) ([]byte, error) {
+		if name == "awg" && args[0] == "show" {
+			return []byte("interface: opkgtun1\n  listening port: 4443\n"), nil
+		}
+		return nil, nil
+	}
+	if err := startOpkgTunAttach("opkgtun1", confPath); err != nil {
+		t.Fatalf("cold attach failed: %v", err)
+	}
+	if !netdev {
+		t.Fatal("netdev must exist after daemon start")
+	}
+}
