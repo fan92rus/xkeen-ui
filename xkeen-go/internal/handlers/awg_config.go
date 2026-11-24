@@ -277,6 +277,11 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(fmt.Sprintf("ListenPort = %d\n", req.Port))
 	b.WriteString("MTU = 1420\n")
 	for _, key := range awgParamKeys {
+		// I1/I2/I3 are rejected by the local awg build (issue #3);
+		// never write them into a freshly created server config.
+		if key == "I1" || key == "I2" || key == "I3" {
+			continue
+		}
 		if v, ok := params[key]; ok && v != "" {
 			b.WriteString(fmt.Sprintf("%s = %s\n", key, v))
 		}
@@ -299,7 +304,7 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 	// invocation, re-entering the interface context for each subcommand —
 	// multiline `ndmc -c` is rejected by NDM and a plain pipe needs a tty.
 	ndmsApplied, ndmsErr := applyNDMSInterface(req.Name, subnet)
-	msg := fmt.Sprintf("Server config %q created. NDMS interface registered — reboot the router once for its netdev to appear, then press Start.", req.Name)
+	msg := fmt.Sprintf("Server config %q created. NDMS interface registered — press Start to bring it up (the daemon creates the netdev if Keenetic has not yet).", req.Name)
 	if !ndmsApplied {
 		msg = fmt.Sprintf("Server config %q created, but NDMS interface could not be created automatically — run the commands below in the Keenetic CLI, then press Start.", req.Name)
 	}

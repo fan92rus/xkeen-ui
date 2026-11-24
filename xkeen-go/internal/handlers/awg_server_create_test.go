@@ -32,6 +32,9 @@ func TestCreateServer_Valid(t *testing.T) {
 			t.Errorf("config missing %q:\n%s", want, data)
 		}
 	}
+	if strings.Contains(string(data), "I1") {
+		t.Fatalf("I1 must not be written into a fresh server config:\n%s", data)
+	}
 	// response contains ndms commands
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
