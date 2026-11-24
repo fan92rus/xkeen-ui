@@ -38,7 +38,7 @@ var (
 	// interface (registered but netdev may not exist until daemon start).
 	opkgNDMSHasIfaceFn = func(name string) bool {
 		ndmsName := "OpkgTun" + strings.TrimPrefix(name, "opkgtun")
-		out, err := exec.Command("ndmc", "-c", "show interface "+ndmsName).CombinedOutput()
+		out, err := exec.Command("ndmc", "-c", "show interface "+ndmsName).CombinedOutput() //nolint:gosec // ndmsName derived from validated config name
 		return err == nil && strings.Contains(string(out), ndmsName)
 	}
 	opkgProcessRunningFn = func(name string) bool {
