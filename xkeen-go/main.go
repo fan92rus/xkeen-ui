@@ -92,6 +92,9 @@ func main() {
 		case "awg-server":
 			cliAWGServer()
 			os.Exit(0)
+		case "awg-watchdog":
+			cliAWGWatchdog()
+			os.Exit(0)
 		case "dns-sync":
 			cliDNSSync()
 			os.Exit(0)
@@ -123,13 +126,30 @@ func main() {
 	runServer()
 }
 
+// cliAWGWatchdog restarts dead AWG server daemons (for cron).
+func cliAWGWatchdog() {
+	cfg, err := config.LoadConfig(installConfig)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+	h, err := handlers.NewCLIHandler(cfg, installConfig)
+	if err != nil {
+		log.Fatalf("init AWG handler: %v", err)
+	}
+	status, err := handlers.CLIWatchdog(h)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(status)
+}
+
 // cliDNSSync applies native DNS zone forwarding from config.json.
 func cliDNSSync() {
 	cfg, err := config.LoadConfig(installConfig)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	status, err := handlers.CLIDNSSync(cfg)
+	status, err := handlers.CLIDNSSync(cfg, installConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -228,6 +248,7 @@ func printUsage() {
 	fmt.Println("    install     Install on Keenetic router (requires root)")
 	fmt.Println("    uninstall   Remove from system (requires root)")
 	fmt.Println("    awg-server  Manage AWG server configs (add/up/down) from CLI")
+	fmt.Println("    awg-watchdog Restart dead AWG server daemons (cron-safe)")
 	fmt.Println("    dns-sync    Apply native DNS zone forwarding (from config.json)")
 	fmt.Println("    version     Show version information")
 	fmt.Println("    help        Show this help message")
@@ -294,7 +315,7 @@ func runServer() {
 
 	// Re-apply native DNS zone forwarding at startup: Keenetic regenerates
 	// its DNS config on reboot, so our zone rules must be restored.
-	if status, err := handlers.CLIDNSSync(cfg); err != nil {
+	if status, err := handlers.CLIDNSSync(cfg, installConfig); err != nil {
 		log.Printf("DNS forward sync at startup failed: %v", err)
 	} else if status != "" {
 		log.Printf("%s", status)

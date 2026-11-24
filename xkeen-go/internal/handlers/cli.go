@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -70,6 +71,33 @@ func CLIDown(h *AWGHandler, name string) (string, error) {
 
 // CLIDNSSync applies (or removes) native DNS zone forwarding and returns a
 // status message. Used by `xkeen-ui dns-sync` and the startup hook.
-func CLIDNSSync(cfg *config.Config) (string, error) {
-	return SyncDNSForward(cfg)
+func CLIDNSSync(cfg *config.Config, configPath string) (string, error) {
+	return SyncDNSForward(cfg, configPath)
+}
+
+// CLIWatchdog restarts any dead OpkgTun server daemon. Safe to run from cron
+// every minute: running daemons are left alone.
+func CLIWatchdog(h *AWGHandler) (string, error) {
+	configs, err := h.store.ScanAWGConfigs(h.awgDir)
+	if err != nil {
+		return "", err
+	}
+	var restarted []string
+	for _, c := range configs {
+		if c.Role != "server" || !strings.HasPrefix(c.Name, "opkgtun") {
+			continue
+		}
+		if _, err := opkgDaemonPIDFn(c.Name); err == nil {
+			continue // running
+		}
+		if _, err := CLIUp(h, c.Name); err != nil {
+			log.Printf("[awg] watchdog: restart %s failed: %v", c.Name, err)
+			continue
+		}
+		restarted = append(restarted, c.Name)
+	}
+	if len(restarted) == 0 {
+		return "all AWG server daemons running", nil
+	}
+	return "restarted: " + strings.Join(restarted, ", "), nil
 }

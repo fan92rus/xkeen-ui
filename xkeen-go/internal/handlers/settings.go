@@ -520,7 +520,7 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 
 	// Apply native conditional DNS forwarding (best-effort: on non-Keenetic
 	// systems ndmc is unavailable and SyncDNSForward returns a no-op).
-	if status, err := SyncDNSForward(h.cfg); err != nil {
+	if status, err := SyncDNSForward(h.cfg, h.configPath); err != nil {
 		log.Printf("[awg] DNS forward sync failed: %v", err)
 	} else if status != "" {
 		log.Printf("[awg] %s", status)

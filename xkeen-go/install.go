@@ -322,6 +322,7 @@ func generateSecret() string {
 // cronWatchdogMarker is the comment that identifies our watchdog line in the
 // root crontab, so we can find and replace it on upgrade without duplicating.
 const cronWatchdogMarker = "# xkeen-ui-watchdog (auto-managed)"
+const awgWatchdogMarker = "# xkeen-ui AWG server watchdog"
 
 // installCronWatchdog installs a per-minute watchdog into the root user's
 // crontab (the only place Keenetic busybox crond actually scans).  The
@@ -354,6 +355,12 @@ func installCronWatchdog(initScript, logFile string) error {
 		"@reboot sleep 10 && %s start >> %s 2>&1",
 		initScript, logFile,
 	)
+	// AWG process watchdog: restarts dead amneziawg-go daemons for server
+	// configs (the xkeen-ui watchdog above only watches the UI process).
+	awgWatchdogLine := fmt.Sprintf(
+		"* * * * * %s awg-watchdog >> %s 2>&1",
+		filepath.Join(installBinDir, binaryName), logFile,
+	)
 
 	// 3. Rebuild crontab: keep all lines except our previous watchdog entries.
 	//
@@ -364,8 +371,11 @@ func installCronWatchdog(initScript, logFile string) error {
 	var kept []string
 	for _, line := range strings.Split(string(current), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == markerLine {
-			continue // drop our marker comment
+		if trimmed == markerLine || trimmed == awgWatchdogMarker {
+			continue // drop our marker comments
+		}
+		if strings.Contains(line, "awg-watchdog") {
+			continue // drop old AWG watchdog command
 		}
 		// Match watchdog commands: references init.d + xkeen-ui + check.
 		// This preserves log rotation and unrelated entries that merely
@@ -389,7 +399,8 @@ func installCronWatchdog(initScript, logFile string) error {
 	if newCrontab != "" {
 		newCrontab += "\n"
 	}
-	newCrontab += markerLine + "\n" + watchdogLine + "\n" + rebootLine + "\n"
+	newCrontab += markerLine + "\n" + watchdogLine + "\n" + rebootLine + "\n" +
+		awgWatchdogMarker + "\n" + awgWatchdogLine + "\n"
 
 	// 4. Install via "crontab -".
 	cmd := exec.Command("crontab", "-")

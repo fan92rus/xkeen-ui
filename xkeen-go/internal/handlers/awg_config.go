@@ -296,6 +296,12 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config %s: %v", confPath, err))
 		return
 	}
+	// Register the new config in the store: each CLI invocation builds a fresh
+	// Store from subscriptions.json, and UpInterface requires the config to
+	// be tracked there (otherwise the next `awg-server up` returns 404).
+	if _, err := h.store.ScanAWGConfigs(h.awgDir); err != nil {
+		log.Printf("[awg] warning: could not register %s in AWG store: %v", req.Name, err)
+	}
 
 	log.Printf("[awg] created server config %s (subnet %s, port %d)", req.Name, subnet, req.Port)
 

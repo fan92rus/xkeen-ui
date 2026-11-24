@@ -79,6 +79,10 @@ type Config struct {
 	// AWDNSZones are the zones forwarded to the upstream DNS server.
 	AWDNSZones []string `json:"awg_dns_zones"`
 
+	// AWDNSManagedZones records the zone rules we created, so stale-rule
+	// cleanup never deletes name-server entries configured by the user or ISP.
+	AWDNSManagedZones []string `json:"awg_dns_managed_zones"`
+
 	// ProxyEntware routes router-originated (Entware) traffic through Xray.
 	// When enabled, outbounds get sockopt.mark:255 (so Xray-originated packets
 	// bypass the OUTPUT chain redirect via iptables `-m mark --mark 255 -j RETURN`)

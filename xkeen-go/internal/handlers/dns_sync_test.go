@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -10,11 +11,13 @@ import (
 func TestDiscoverDNSUpstream(t *testing.T) {
 	orig := dnsSyncNDMCFn
 	defer func() { dnsSyncNDMCFn = orig }()
-	dnsSyncNDMCFn = func(_ ...string) ([]byte, error) {
-		return []byte("           server: \n              address: 127.0.0.1\n               domain: \n              address: 192.168.5.10\n               domain: \n              address: 1.1.1.1\n               domain: local\n"), nil
+	dnsSyncNDMCFn = func(_ context.Context, _ ...string) ([]byte, error) {
+		// zone-scoped entry BEFORE default — catches parsers that latch the
+		// first non-loopback IP regardless of its domain.
+		return []byte("address: 8.8.8.8\ndomain: local\naddress: 127.0.0.1\ndomain: \naddress: 192.168.5.10\ndomain: \n"), nil
 	}
 	if got := discoverDNSUpstream(); got != "192.168.5.10" {
-		t.Fatalf("expected first non-loopback default DNS, got %q", got)
+		t.Fatalf("expected first non-loopback DEFAULT DNS, got %q", got)
 	}
 }
 
@@ -23,16 +26,16 @@ func TestSyncDNSForward_Zones(t *testing.T) {
 	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
 	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
 	var cmds []string
-	dnsSyncNDMCFn = func(args ...string) ([]byte, error) {
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
 		cmd := strings.Join(args, " ")
 		cmds = append(cmds, cmd)
 		if strings.Contains(cmd, "show ip name-server") {
-			return []byte("address: 10.0.0.1\ndomain: \naddress: 10.0.0.1\ndomain: oldzone\n"), nil
+			return []byte("address: 10.0.0.1\ndomain: \naddress: 10.0.0.9\ndomain: userzone\naddress: 10.0.0.1\ndomain: local\n"), nil
 		}
 		return nil, nil
 	}
-	cfg := &config.Config{AWDNSForward: true, AWDNSZones: []string{"local", ".home", "lan"}}
-	status, err := SyncDNSForward(cfg)
+	cfg := &config.Config{AWDNSForward: true, AWDNSZones: []string{"local", ".home", "lan"}, AWDNSManagedZones: []string{"local", "oldzone"}}
+	status, err := SyncDNSForward(cfg, "") // no config save in test
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -44,38 +47,49 @@ func TestSyncDNSForward_Zones(t *testing.T) {
 		"ip name-server 10.0.0.1 local",
 		"ip name-server 10.0.0.1 home",
 		"ip name-server 10.0.0.1 lan",
-		"no ip name-server 10.0.0.1 oldzone",
+		"no ip name-server 10.0.0.1 oldzone", // stale OWNED rule removed
 		"system configuration save",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in commands:\n%s", want, joined)
 		}
 	}
+	// User-configured zone must NOT be touched.
+	if strings.Contains(joined, "no ip name-server 10.0.0.9 userzone") {
+		t.Fatalf("must not remove user-configured zones:\n%s", joined)
+	}
+	// Ownership updated to current zones.
+	if len(cfg.AWDNSManagedZones) != 3 {
+		t.Fatalf("managed zones not updated: %v", cfg.AWDNSManagedZones)
+	}
 }
 
-func TestSyncDNSForward_DisabledRemovesStale(t *testing.T) {
+func TestSyncDNSForward_DisabledRemovesOnlyOwned(t *testing.T) {
 	origRun, origLook := dnsSyncNDMCFn, dnsSyncLookPathFn
 	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
 	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
 	var cmds []string
-	dnsSyncNDMCFn = func(args ...string) ([]byte, error) {
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
 		cmd := strings.Join(args, " ")
 		cmds = append(cmds, cmd)
 		if strings.Contains(cmd, "show ip name-server") {
-			return []byte("address: 10.0.0.1\ndomain: \naddress: 10.0.0.1\ndomain: local\n"), nil
+			return []byte("address: 10.0.0.1\ndomain: \naddress: 10.0.0.1\ndomain: local\naddress: 10.0.0.9\ndomain: userzone\n"), nil
 		}
 		return nil, nil
 	}
-	cfg := &config.Config{AWDNSForward: false}
-	if _, err := SyncDNSForward(cfg); err != nil {
+	cfg := &config.Config{AWDNSForward: false, AWDNSManagedZones: []string{"local"}}
+	if _, err := SyncDNSForward(cfg, ""); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(cmds, "\n")
 	if !strings.Contains(joined, "no ip name-server 10.0.0.1 local") {
-		t.Fatalf("stale zone must be removed:\n%s", joined)
+		t.Fatalf("owned stale zone must be removed:\n%s", joined)
+	}
+	if strings.Contains(joined, "userzone") {
+		t.Fatalf("user zone must be untouched:\n%s", joined)
 	}
 	for _, line := range strings.Split(joined, "\n") {
-		if strings.HasPrefix(line, "-c ip name-server") {
+		if strings.HasPrefix(line, "-c ip name-server") && !strings.Contains(line, "10.0.0.1") {
 			t.Fatalf("must not add zones when disabled:\n%s", joined)
 		}
 	}

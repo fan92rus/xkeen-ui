@@ -44,9 +44,14 @@ func TestCLICreateAndUp_Down(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(awgDir, "opkgtun1.conf")); err != nil {
 		t.Fatalf("config not created: %v", err)
 	}
-	// Up in CLI env will try to start amneziawg-go (not installed) — just
-	// assert the helper reaches the handler and returns an error message,
-	// not a panic.
-	_, _ = CLIUp(h, "opkgtun1")
-	_, _ = CLIDown(h, "opkgtun1")
+	// Up/Down must not fail with "config not found" — the config was just
+	// created and must be registered in the store for the next CLI process.
+	if _, err := CLIUp(h, "opkgtun1"); err != nil && strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "binary not found") {
+		t.Fatalf("CLIUp must find the freshly created config: %v", err)
+	}
+	// Down reaches the handler (no 404) — in the test env the up path may
+	// fail because awg-quick is absent, which is expected off-router.
+	if _, err := CLIDown(h, "opkgtun1"); err != nil && strings.Contains(err.Error(), "config") {
+		t.Fatalf("CLIDown must find the freshly created config: %v", err)
+	}
 }
