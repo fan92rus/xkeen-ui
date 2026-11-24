@@ -64,7 +64,7 @@ func SyncDNSForward(cfg *config.Config) (string, error) {
 			if addr != "" && domain != "" {
 				existing[domain] = addr
 			}
-			addr, domain = "", ""
+			addr = ""
 		}
 	}
 
