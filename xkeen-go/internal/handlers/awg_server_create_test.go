@@ -52,7 +52,7 @@ func TestCreateServer_InvalidName(t *testing.T) {
 func TestCreateServer_DuplicateName(t *testing.T) {
 	h, r, awgDir := newTestAWGHandler(t)
 	os.WriteFile(filepath.Join(awgDir, "opkgtun1.conf"), []byte("[Interface]\nListenPort=4443\n"), 0o600)
-	h.store.ScanAWGConfigs(awgDir) //nolint:errcheck // test setup: scan result not needed
+	_, _ = h.store.ScanAWGConfigs(awgDir)
 	orig := awgGenKeyFn
 	t.Cleanup(func() { awgGenKeyFn = orig })
 	awgGenKeyFn = func() (string, string, error) { return "k", "p", nil }
@@ -67,7 +67,7 @@ func TestCreateServer_DuplicateName(t *testing.T) {
 func TestCreateServer_PortConflict(t *testing.T) {
 	h, r, awgDir := newTestAWGHandler(t)
 	os.WriteFile(filepath.Join(awgDir, "opkgtun0.conf"), []byte("[Interface]\nAddress = 10.8.0.1/24\nListenPort = 443\n"), 0o600)
-	h.store.ScanAWGConfigs(awgDir) //nolint:errcheck // test setup: scan result not needed
+	_, _ = h.store.ScanAWGConfigs(awgDir)
 	orig := awgGenKeyFn
 	t.Cleanup(func() { awgGenKeyFn = orig })
 	awgGenKeyFn = func() (string, string, error) { return "k", "p", nil }
@@ -82,7 +82,7 @@ func TestCreateServer_PortConflict(t *testing.T) {
 func TestCreateServer_SubnetConflict(t *testing.T) {
 	h, r, awgDir := newTestAWGHandler(t)
 	os.WriteFile(filepath.Join(awgDir, "opkgtun0.conf"), []byte("[Interface]\nAddress = 10.8.0.1/24\nListenPort = 443\n"), 0o600)
-	h.store.ScanAWGConfigs(awgDir) //nolint:errcheck // test setup: scan result not needed
+	_, _ = h.store.ScanAWGConfigs(awgDir)
 	orig := awgGenKeyFn
 	t.Cleanup(func() { awgGenKeyFn = orig })
 	awgGenKeyFn = func() (string, string, error) { return "k", "p", nil }
