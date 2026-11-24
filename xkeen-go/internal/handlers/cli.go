@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"path/filepath"
@@ -26,9 +27,14 @@ func NewCLIHandler(cfg *config.Config, configPath string) (*AWGHandler, error) {
 
 // CLICreateServer creates a server config via the normal HTTP handler path.
 func CLICreateServer(h *AWGHandler, name, subnet string, port int, obfuscation string, params map[string]string) (string, error) {
-	body := fmt.Sprintf(`{"name":%q,"subnet":%q,"port":%d,"obfuscation":%q,"params":{}}`, name, subnet, port, obfuscation)
-	// params are intentionally empty for the CLI helper (presets only); the
-	// web UI handles the custom-params case.
+	if params == nil {
+		params = map[string]string{}
+	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return "", err
+	}
+	body := fmt.Sprintf(`{"name":%q,"subnet":%q,"port":%d,"obfuscation":%q,"params":%s}`, name, subnet, port, obfuscation, paramsJSON)
 	req := httptest.NewRequest("POST", "/api/awg/server/create", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	h.CreateServer(rec, req)
