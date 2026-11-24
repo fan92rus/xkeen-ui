@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,7 +87,7 @@ func opkgDaemonPID(name string) (int, error) {
 		if err != nil {
 			continue
 		}
-		cmdline, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+		cmdline, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
 		if err != nil {
 			continue
 		}
