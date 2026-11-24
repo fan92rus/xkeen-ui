@@ -83,6 +83,11 @@ type Config struct {
 	// cleanup never deletes name-server entries configured by the user or ISP.
 	AWDNSManagedZones []string `json:"awg_dns_managed_zones"`
 
+	// AWDNSManagedZoneIPs remembers which upstream each owned zone rule was
+	// created with, so stale rules can be removed even if the default DNS
+	// server changes (ISP lease, failover, user edit).
+	AWDNSManagedZoneIPs map[string]string `json:"awg_dns_managed_zone_ips"`
+
 	// ProxyEntware routes router-originated (Entware) traffic through Xray.
 	// When enabled, outbounds get sockopt.mark:255 (so Xray-originated packets
 	// bypass the OUTPUT chain redirect via iptables `-m mark --mark 255 -j RETURN`)

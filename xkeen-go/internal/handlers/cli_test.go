@@ -77,3 +77,41 @@ func TestCLICreateServer_CustomPresetParams(t *testing.T) {
 		t.Fatalf("custom params missing:\n%s", data)
 	}
 }
+
+func TestCLIWatchdog_PIDCheckAndMarker(t *testing.T) {
+	h, r, awgDir := newTestAWGHandler(t)
+	_ = r
+	// temp dir for enabled markers
+	origDir := serverEnabledDirFn
+	t.Cleanup(func() { serverEnabledDirFn = origDir })
+	serverEnabledDirFn = func() string { return awgDir }
+
+	os.WriteFile(filepath.Join(awgDir, "opkgtun7.conf"), []byte("[Interface]\nListenPort = 4477\nAddress=10.8.7.1/24\n"), 0o600)
+	if _, err := h.store.ScanAWGConfigs(awgDir); err != nil {
+		t.Fatal(err)
+	}
+	origPID := opkgDaemonPIDFn
+	defer func() { opkgDaemonPIDFn = origPID }()
+
+	// (0, nil) = no daemon found — must be treated as DEAD
+	opkgDaemonPIDFn = func(string) (int, error) { return 0, nil }
+	// without an enabled marker, watchdog must not restart (intentionally down)
+	out, err := CLIWatchdog(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "all") {
+		t.Fatalf("intentionally-down server must be skipped: %s", out)
+	}
+
+	// with marker, dead daemon must be restarted (CLIUp attempted)
+	markServerEnabled("opkgtun7", true)
+	_, _ = CLIWatchdog(h) // will try real awg-quick (absent in test env) — just no panic
+	if !isServerEnabled("opkgtun7") {
+		t.Fatal("marker must persist until Down")
+	}
+	markServerEnabled("opkgtun7", false)
+	if isServerEnabled("opkgtun7") {
+		t.Fatal("marker must be cleared on Down")
+	}
+}

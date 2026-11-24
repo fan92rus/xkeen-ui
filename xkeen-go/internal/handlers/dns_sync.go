@@ -71,15 +71,8 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 	want := map[string]bool{}
 	if cfg.AWDNSForward {
 		if cfg.AWDNSForwardAllZones {
-			// "All zones" = use the default upstream for everything: ensure
-			// it is registered with an empty domain, then no zone rules.
-			up := discoverDNSUpstream()
-			if up == "" {
-				return "", fmt.Errorf("cannot detect default DNS upstream")
-			}
-			if out, err := ndmc("-c", fmt.Sprintf("ip name-server %s", up)); err != nil {
-				return "", fmt.Errorf("ip name-server %s: %v\n%s", up, err, string(out))
-			}
+			// "All zones" = the existing default (empty-domain) name-server
+			// already handles every query; no zone-scoped rules to add.
 		} else {
 			for _, z := range cfg.AWDNSZones {
 				z = strings.TrimPrefix(strings.TrimSpace(z), ".")
@@ -94,7 +87,13 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 	upstream := discoverDNSUpstream()
 	for z := range managed {
 		if !want[z] {
-			_, _ = ndmc("-c", fmt.Sprintf("no ip name-server %s %s", upstream, z))
+			ip := upstream
+			if recorded := cfg.AWDNSManagedZoneIPs[z]; recorded != "" {
+				ip = recorded
+			}
+			if ip != "" {
+				_, _ = ndmc("-c", fmt.Sprintf("no ip name-server %s %s", ip, z))
+			}
 		}
 	}
 
@@ -103,8 +102,11 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 			return "", fmt.Errorf("cannot detect default DNS upstream — set a DNS server in Keenetic first")
 		}
 		for z := range want {
-			// remove-then-add keeps Keenetic from duplicating a rule
-			_, _ = ndmc("-c", fmt.Sprintf("no ip name-server %s %s", upstream, z))
+			// remove-then-add keeps Keenetic from duplicating a rule. Use the
+			// recorded IP for removal in case the default upstream changed.
+			if oldIP := cfg.AWDNSManagedZoneIPs[z]; oldIP != "" && oldIP != upstream {
+				_, _ = ndmc("-c", fmt.Sprintf("no ip name-server %s %s", oldIP, z))
+			}
 			if out, err := ndmc("-c", fmt.Sprintf("ip name-server %s %s", upstream, z)); err != nil {
 				return "", fmt.Errorf("ip name-server %s %s: %v\n%s", upstream, z, err, string(out))
 			}
@@ -117,6 +119,17 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 		keys = append(keys, z)
 	}
 	cfg.AWDNSManagedZones = keys
+	if cfg.AWDNSManagedZoneIPs == nil {
+		cfg.AWDNSManagedZoneIPs = map[string]string{}
+	}
+	for z := range cfg.AWDNSManagedZoneIPs {
+		if !want[z] {
+			delete(cfg.AWDNSManagedZoneIPs, z)
+		}
+	}
+	for _, z := range keys {
+		cfg.AWDNSManagedZoneIPs[z] = upstream
+	}
 	if configPath != "" {
 		if err := cfg.SaveConfig(configPath); err != nil {
 			log.Printf("[awg] warning: could not persist DNS managed zones: %v", err)

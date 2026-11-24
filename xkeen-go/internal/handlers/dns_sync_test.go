@@ -94,3 +94,39 @@ func TestSyncDNSForward_DisabledRemovesOnlyOwned(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncDNSForward_UpstreamChanged(t *testing.T) {
+	origRun, origLook := dnsSyncNDMCFn, dnsSyncLookPathFn
+	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
+	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
+	var cmds []string
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
+		cmd := strings.Join(args, " ")
+		cmds = append(cmds, cmd)
+		if strings.Contains(cmd, "show ip name-server") {
+			return []byte("address: 10.0.0.2\ndomain: \n"), nil // new upstream
+		}
+		return nil, nil
+	}
+	cfg := &config.Config{AWDNSForward: true, AWDNSZones: []string{"local"},
+		AWDNSManagedZones:   []string{"local", "oldzone"},
+		AWDNSManagedZoneIPs: map[string]string{"local": "10.0.0.1", "oldzone": "10.0.0.1"}}
+	if _, err := SyncDNSForward(cfg, ""); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(cmds, "\n")
+	// stale rule must be removed using the OLD recorded IP, not the new one
+	if !strings.Contains(joined, "no ip name-server 10.0.0.1 oldzone") {
+		t.Fatalf("stale rule removal must use recorded IP:\n%s", joined)
+	}
+	// new zone rule added with the new IP
+	if !strings.Contains(joined, "no ip name-server 10.0.0.1 local") {
+		t.Fatalf("old zone rule must be removed before adding with new IP:\n%s", joined)
+	}
+	if !strings.Contains(joined, "ip name-server 10.0.0.2 local") {
+		t.Fatalf("zone must be added with current upstream:\n%s", joined)
+	}
+	if cfg.AWDNSManagedZoneIPs["local"] != "10.0.0.2" {
+		t.Fatalf("recorded IP not updated: %v", cfg.AWDNSManagedZoneIPs)
+	}
+}

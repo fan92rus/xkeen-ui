@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -267,6 +268,7 @@ func startOpkgTunAttach(name, confPath string) error {
 	}
 
 	log.Printf("[awg] OpkgTun attach: %s up (config %s)", name, confPath)
+	markServerEnabled(name, true)
 	return nil
 }
 
@@ -289,5 +291,27 @@ func stopOpkgTunAttach(name string) error {
 		return fmt.Errorf("ip link set %s down: %v\n%s", name, err, strings.TrimSpace(string(out)))
 	}
 	log.Printf("[awg] OpkgTun attach: %s down", name)
+	markServerEnabled(name, false)
 	return nil
+}
+
+// Enabled-state marker: the watchdog must not restart servers the user
+// intentionally stopped. The marker lives next to the configs (not in /tmp).
+var serverEnabledDirFn = func() string { return "/opt/etc/awg" }
+
+func serverEnabledPath(name string) string {
+	return filepath.Join(serverEnabledDirFn(), ".enabled-"+name)
+}
+
+func isServerEnabled(name string) bool {
+	_, err := os.Stat(serverEnabledPath(name))
+	return err == nil
+}
+
+func markServerEnabled(name string, enabled bool) {
+	if enabled {
+		_ = os.WriteFile(serverEnabledPath(name), []byte("1\n"), 0o600)
+	} else {
+		_ = os.Remove(serverEnabledPath(name))
+	}
 }

@@ -99,8 +99,11 @@ func CLIWatchdog(h *AWGHandler) (string, error) {
 		if c.Role != "server" || !strings.HasPrefix(c.Name, "opkgtun") {
 			continue
 		}
-		if _, err := opkgDaemonPIDFn(c.Name); err == nil {
+		if pid, err := opkgDaemonPIDFn(c.Name); err == nil && pid > 0 {
 			continue // running
+		}
+		if !isServerEnabled(c.Name) {
+			continue // intentionally stopped by user
 		}
 		if _, err := CLIUp(h, c.Name); err != nil {
 			log.Printf("[awg] watchdog: restart %s failed: %v", c.Name, err)
