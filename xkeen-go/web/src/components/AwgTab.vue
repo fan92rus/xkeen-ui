@@ -18,6 +18,9 @@
         <span v-if="!uploading">{{ i18n.t('awg.upload_btn') }}</span>
         <span v-else>{{ i18n.t('awg.uploading') }}</span>
       </button>
+      <button class="btn btn-primary btn-sm" :disabled="busy" @click="openCreateServer">
+        + {{ i18n.t('awg.server_create_btn') }}
+      </button>
       <input ref="fileInput" type="file" accept=".conf" class="awg-file-hidden" @change="onFilePicked">
     </div>
 
@@ -75,36 +78,6 @@
 
       <!-- Server tab: settings + interfaces -->
       <template v-else-if="subTab === 'server'">
-        <!-- Firewall interface settings -->
-        <div class="awg-card awg-settings-card">
-          <div class="awg-card-header">
-            <div class="awg-card-title-group">
-              <span class="awg-iface-icon">⚙</span>
-              <span class="awg-iface-name">{{ i18n.t('awg.server_settings_title') }}</span>
-            </div>
-          </div>
-          <div class="awg-card-body">
-            <p class="awg-settings-desc">{{ i18n.t('awg.server_settings_desc') }}</p>
-            <div class="awg-iface-row">
-              <label class="awg-iface-field">
-                <span class="awg-iface-field-label">LAN</span>
-                <input v-model="awgIface.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving">
-              </label>
-              <label class="awg-iface-field">
-                <span class="awg-iface-field-label">WAN</span>
-                <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving">
-              </label>
-              <label class="awg-iface-field awg-iface-field-wide">
-                <span class="awg-iface-field-label">{{ i18n.t('awg.endpoint_label') }}</span>
-                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving">
-              </label>
-              <button class="btn btn-primary btn-sm" :disabled="awgIfaceSaving" @click="saveIfaceSettings()">
-                {{ awgIfaceSaving ? i18n.t('awg.saving') : i18n.t('awg.save') }}
-              </button>
-            </div>
-          </div>
-        </div>
-
         <!-- Empty state -->
         <div v-if="serverIfaces.length === 0" class="awg-state">
           <div class="awg-state-icon">🖥️</div>
@@ -295,13 +268,63 @@
         </div>
       </div>
     </div>
+    <!-- Create Server Modal -->
+    <div v-if="createServer.show" class="awg-modal-overlay" @click.self="closeCreateServer">
+      <div class="awg-modal">
+        <div class="awg-modal-head">
+          <h3>{{ i18n.t('awg.server_create_title') }}</h3>
+          <button class="awg-banner-close" @click="closeCreateServer">✕</button>
+        </div>
+        <div class="awg-modal-body">
+          <template v-if="!createServer.result">
+            <div class="awg-form-row">
+              <label class="awg-modal-label">{{ i18n.t('awg.server_create_name') }}</label>
+              <input v-model="createServer.name" type="text" class="awg-modal-input" placeholder="opkgtun1" @keyup.enter="doCreateServer">
+            </div>
+            <div class="awg-form-row">
+              <label class="awg-modal-label">{{ i18n.t('awg.server_create_subnet') }}</label>
+              <input v-model="createServer.subnet" type="text" class="awg-modal-input" placeholder="10.8.1.0/24">
+            </div>
+            <div class="awg-form-row">
+              <label class="awg-modal-label">{{ i18n.t('awg.server_create_port') }}</label>
+              <input v-model.number="createServer.port" type="number" class="awg-modal-input" placeholder="4443">
+            </div>
+            <div class="awg-form-row">
+              <label class="awg-modal-label">{{ i18n.t('awg.server_create_obfuscation') }}</label>
+              <select v-model="createServer.obfuscation" class="awg-obfuscation-select">
+                <option value="full">full (Jc=8)</option>
+                <option value="light">light (Jc=4)</option>
+                <option value="minimal">minimal (Jc=2)</option>
+                <option value="plain">plain (без обфускации)</option>
+                <option value="random">random (уникальный)</option>
+              </select>
+            </div>
+            <p class="awg-modal-hint">{{ i18n.t('awg.server_create_desc') }}</p>
+            <div v-if="createServer.error" class="awg-result-banner awg-result-error">⚠ {{ createServer.error }}</div>
+            <div class="awg-modal-actions">
+              <button class="btn" @click="closeCreateServer">{{ i18n.t('awg.add_cancel') }}</button>
+              <button class="btn btn-primary" :disabled="createServer.loading" @click="doCreateServer">
+                {{ createServer.loading ? i18n.t('awg.server_create_creating') : i18n.t('awg.server_create_btn') }}
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="awg-result-banner">✅ {{ i18n.t('awg.server_create_done', { name: createServer.result.name }) }}</div>
+            <p class="awg-modal-hint">{{ i18n.t('awg.server_create_ndms_hint') }}</p>
+            <pre class="awg-config-text">{{ createServer.result.ndms_commands }}</pre>
+            <div class="awg-modal-actions">
+              <button class="btn btn-primary" @click="closeCreateServer">{{ i18n.t('awg.peer_done') }}</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import * as awgApi from '../services/awg.js';
-import * as xkeen from '../services/xkeen.js';
 import { useAppStore } from '../stores/app.js';
 import { useI18nStore } from '../stores/i18n.js';
 import { log } from '../utils/logger.js';
@@ -318,10 +341,6 @@ const busy = ref(false);
 const fileInput = ref(null);
 const uploading = ref(false);
 
-// Server firewall interface settings (LAN/WAN)
-const awgIface = ref({ lan: '', wan: '', endpoint: '' });
-const awgIfaceSaving = ref(false);
-
 const subTab = ref(localStorage.getItem('awg_subtab') || 'client');
 watch(subTab, (v) => localStorage.setItem('awg_subtab', v));
 
@@ -334,6 +353,7 @@ const peerLoading = reactive({});
 
 // Add peer dialog
 const addPeer = reactive({ show: false, server: '', label: '', loading: false, result: null });
+const createServer = reactive({ show: false, name: '', subnet: '10.8.1.0/24', port: 4443, obfuscation: 'full', loading: false, error: '', result: null });
 const copied = ref(false);
 
 // QR code state
@@ -348,7 +368,6 @@ const obfuscation = reactive({}); // { [name]: { current, presets, loading, appl
 
 onMounted(() => {
   loadInterfaces();
-  loadIfaceSettings();
 });
 
 // ── Data loading ──
@@ -371,29 +390,6 @@ async function loadInterfaces() {
   }
 }
 
-async function loadIfaceSettings() {
-  try {
-    const d = await xkeen.getAWGInterfaces();
-    awgIface.value = { lan: d.lan_iface || '', wan: d.wan_iface || '', endpoint: d.endpoint || '' };
-  } catch { /* ignore */ }
-}
-
-async function saveIfaceSettings() {
-  awgIfaceSaving.value = true;
-  try {
-    await xkeen.updateAWGInterfaces(awgIface.value.lan, awgIface.value.wan, awgIface.value.endpoint);
-    app.showToast(
-      awgIface.value.lan || awgIface.value.wan
-        ? i18n.t('awg.saved_ok')
-        : i18n.t('awg.saved_auto'),
-      'success',
-    );
-  } catch (e) {
-    app.showToast(e.message || i18n.t('awg.saved_error'), 'error');
-  } finally {
-    awgIfaceSaving.value = false;
-  }
-}
 
 async function loadPeers(name) {
   peerLoading[name] = true;
@@ -560,6 +556,39 @@ function closeAddPeer() {
   addPeer.result = null;
   qrDataUrl.value = '';
 }
+
+function openCreateServer() {
+  createServer.show = true;
+  createServer.result = null;
+  createServer.error = '';
+  createServer.name = '';
+  createServer.subnet = '10.8.1.0/24';
+  createServer.port = 4443;
+  createServer.obfuscation = 'full';
+}
+
+function closeCreateServer() {
+  createServer.show = false;
+  createServer.result = null;
+  createServer.error = '';
+  loadInterfaces();
+}
+
+async function doCreateServer() {
+  createServer.loading = true;
+  createServer.error = '';
+  try {
+    const res = await awgApi.createServer(
+      createServer.name, createServer.subnet, createServer.port, createServer.obfuscation, {}
+    );
+    createServer.result = res;
+  } catch (e) {
+    createServer.error = e.message || 'Create failed';
+  } finally {
+    createServer.loading = false;
+  }
+}
+
 
 async function doAddPeer() {
   addPeer.loading = true;

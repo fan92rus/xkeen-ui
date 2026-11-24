@@ -49,8 +49,15 @@ export async function getAWGInterfaces() {
     return get('/api/settings/awg-interfaces');
 }
 
-export async function updateAWGInterfaces(lanIface, wanIface, endpoint) {
-    return put('/api/settings/awg-interfaces', { lan_iface: lanIface, wan_iface: wanIface, endpoint });
+export async function updateAWGInterfaces(lanIface, wanIface, endpoint, clientDns, clientMtu, clientAllowed) {
+    return put('/api/settings/awg-interfaces', {
+        lan_iface: lanIface, wan_iface: wanIface, endpoint,
+        client_dns: clientDns || '', client_mtu: clientMtu || 0, client_allowed_ips: clientAllowed || '',
+    });
+}
+
+export async function detectAWGInterfaces() {
+    return get('/api/settings/awg-interfaces/detect');
 }
 
 // --- Speed Balancer settings ---

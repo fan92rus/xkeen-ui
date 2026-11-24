@@ -68,3 +68,16 @@ export async function getObfuscation(name) {
 export async function applyObfuscation(name, preset) {
     return api.post('/api/awg/obfuscation/' + encodeURIComponent(name), { preset });
 }
+
+
+// --- Multi-server creation ---
+
+export async function createServer(name, subnet, port, obfuscation, params) {
+    return api.post('/api/awg/server/create', {
+        name,
+        subnet,
+        port,
+        obfuscation: obfuscation || 'full',
+        params: params || {},
+    });
+}

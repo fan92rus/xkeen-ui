@@ -11,6 +11,7 @@ import { getProxyPorts, updateProxyPorts } from '../services/proxy-ports.js';
 import { getAutoUpdate, updateAutoUpdate } from '../services/update.js';
 import { getChangelog } from '../services/changelog.js';
 import { getXkeenVersion, getSpeedBalancer, updateSpeedBalancer, getSpeedBalancerStatus } from '../services/xkeen.js';
+import * as xkeen from '../services/xkeen.js';
 
 const app = useAppStore();
 const i18n = useI18nStore();
@@ -368,6 +369,52 @@ const sections = computed(() =>
 );
 
 const awg = ref({ installed: false, interfaces: '', installing: false, uninstalling: false, error: '', progress: '' });
+const awgIface = ref({ lan: '', wan: '', endpoint: '', client_dns: '', client_mtu: 0, client_allowed_ips: '' });
+const awgIfaceSaving = ref(false);
+const awgIfaceDetecting = ref(false);
+
+async function loadAWGIfaceSettings() {
+  try {
+    const d = await xkeen.getAWGInterfaces();
+    awgIface.value = {
+      lan: d.lan_iface || '',
+      wan: d.wan_iface || '',
+      endpoint: d.endpoint || '',
+      client_dns: d.client_dns || '',
+      client_mtu: d.client_mtu || 0,
+      client_allowed_ips: d.client_allowed_ips || '',
+    };
+  } catch { /* ignore */ }
+}
+
+async function detectAWGIfaceSettings() {
+  awgIfaceDetecting.value = true;
+  try {
+    const d = await xkeen.detectAWGInterfaces();
+    awgIface.value.lan = d.lan_iface || awgIface.value.lan;
+    awgIface.value.wan = d.wan_iface || awgIface.value.wan;
+    awgIface.value.endpoint = d.endpoint || awgIface.value.endpoint;
+  } catch {
+    // fallback: nothing
+  } finally {
+    awgIfaceDetecting.value = false;
+  }
+}
+
+async function saveAWGIfaceSettings() {
+  awgIfaceSaving.value = true;
+  try {
+    await xkeen.updateAWGInterfaces(
+      awgIface.value.lan, awgIface.value.wan, awgIface.value.endpoint,
+      awgIface.value.client_dns, awgIface.value.client_mtu, awgIface.value.client_allowed_ips
+    );
+    app.showToast('AWG interface settings saved', 'success');
+  } catch (e) {
+    app.showToast(e.message || 'Save failed', 'error');
+  } finally {
+    awgIfaceSaving.value = false;
+  }
+}
 
 async function checkAWG() {
   try {
@@ -393,6 +440,7 @@ async function installAWG() {
         awg.value.progress = '';
         app.showToast(i18n.t('settings.awg_install_ok'), 'success');
         checkAWG();
+  loadAWGIfaceSettings();
       },
       onError: (err) => {
         awg.value.installing = false;
@@ -956,6 +1004,46 @@ onMounted(() => {
                 {{ i18n.t('settings.awg_uninstall_btn') }}
               </button>
               <button v-if="awg.uninstalling" disabled class="btn btn-danger">{{ i18n.t('settings.awg_uninstalling') }}</button>
+            </div>
+          </div>
+
+          <!-- AWG router interfaces (LAN/WAN/endpoint) — shared by all servers -->
+          <div class="s-block" style="margin-top:12px;">
+            <div class="s-row">
+              <div class="s-row-main">
+                <div class="s-row-label">{{ i18n.t('awg.server_settings_title') }}</div>
+                <div class="s-row-desc">{{ i18n.t('awg.server_settings_desc') }} Общие для всех AWG-серверов (opkgtun0, opkgtun1, …). Порт и подсеть настраиваются отдельно в каждом сервере.</div>
+              </div>
+            </div>
+            <div class="s-row" style="gap:10px; flex-wrap:wrap;">
+              <label class="s-field"><span class="s-field-label">LAN</span>
+                <input v-model="awgIface.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving" class="s-input">
+              </label>
+              <label class="s-field"><span class="s-field-label">WAN</span>
+                <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving" class="s-input">
+              </label>
+              <label class="s-field s-field-wide"><span class="s-field-label">{{ i18n.t('awg.endpoint_label') }}</span>
+                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving" class="s-input">
+              </label>
+            </div>
+            <div class="s-row" style="gap:10px; flex-wrap:wrap;">
+              <label class="s-field"><span class="s-field-label">Client DNS</span>
+                <input v-model="awgIface.client_dns" type="text" placeholder="1.1.1.1" :disabled="awgIfaceSaving" class="s-input">
+              </label>
+              <label class="s-field"><span class="s-field-label">Client MTU</span>
+                <input v-model.number="awgIface.client_mtu" type="number" placeholder="1420" :disabled="awgIfaceSaving" class="s-input">
+              </label>
+              <label class="s-field s-field-wide"><span class="s-field-label">Client AllowedIPs</span>
+                <input v-model="awgIface.client_allowed_ips" type="text" placeholder="0.0.0.0/0" :disabled="awgIfaceSaving" class="s-input">
+              </label>
+            </div>
+            <div class="s-row s-row-actions">
+              <button class="btn btn-sm" :disabled="awgIfaceDetecting" @click="detectAWGIfaceSettings()">
+                {{ awgIfaceDetecting ? '…' : 'Автоопределить' }}
+              </button>
+              <button class="btn btn-primary btn-sm" style="margin-left:auto" :disabled="awgIfaceSaving" @click="saveAWGIfaceSettings()">
+                {{ awgIfaceSaving ? i18n.t('awg.saving') : i18n.t('awg.save') }}
+              </button>
             </div>
           </div>
         </section>

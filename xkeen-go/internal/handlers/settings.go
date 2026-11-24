@@ -412,6 +412,27 @@ func (h *SettingsHandler) GetAWGInterfaces(w http.ResponseWriter, _ *http.Reques
 	})
 }
 
+// DetectAWGInterfaces returns auto-detected LAN/WAN/endpoint values without
+// saving them. Used by the Settings UI "auto-detect" button.
+// GET /api/settings/awg-interfaces/detect
+func (h *SettingsHandler) DetectAWGInterfaces(w http.ResponseWriter, _ *http.Request) {
+	lan := detectLANInterface()
+	wan := detectWANInterface()
+	endpoint := detectAWGEndpoint()
+	if lan == "" {
+		lan = "br0"
+	}
+	if wan == "" {
+		wan = "eth3"
+	}
+	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
+		Ok:       "ok",
+		LanIface: lan,
+		WanIface: wan,
+		Endpoint: endpoint,
+	})
+}
+
 // UpdateAWGInterfaces updates the AWG LAN/WAN interfaces and endpoint in config.json.
 // PUT /api/settings/awg-interfaces
 func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Request) {
@@ -652,6 +673,7 @@ func RegisterSettingsRoutes(r *mux.Router, handler *SettingsHandler) {
 	r.HandleFunc("/settings/metrics", handler.GetMetricsPort).Methods("GET")
 	r.HandleFunc("/settings/metrics", handler.UpdateMetricsPort).Methods("PUT")
 	r.HandleFunc("/settings/awg-interfaces", handler.GetAWGInterfaces).Methods("GET")
+	r.HandleFunc("/settings/awg-interfaces/detect", handler.DetectAWGInterfaces).Methods("GET")
 	r.HandleFunc("/settings/awg-interfaces", handler.UpdateAWGInterfaces).Methods("PUT")
 	r.HandleFunc("/settings/proxy-entware", handler.GetProxyEntware).Methods("GET")
 	r.HandleFunc("/settings/proxy-entware", handler.UpdateProxyEntware).Methods("POST")

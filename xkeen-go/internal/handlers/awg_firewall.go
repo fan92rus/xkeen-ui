@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -364,3 +365,19 @@ var (
 		return exec.Command("ip", args...).CombinedOutput()
 	}
 )
+
+// detectAWGEndpoint returns the WAN IP used for client endpoints, or "" if it
+// cannot be determined. Mirrors AWGHandler.detectEndpoint (package-level so
+// the Settings handler can call it without an AWGHandler).
+func detectAWGEndpoint() string {
+	out, err := exec.Command("ip", "route", "get", "8.8.8.8").Output()
+	if err != nil {
+		return ""
+	}
+	re := regexp.MustCompile(`src\s+(\d+\.\d+\.\d+\.\d+)`)
+	matches := re.FindStringSubmatch(string(out))
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
