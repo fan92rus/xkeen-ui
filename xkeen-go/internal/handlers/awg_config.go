@@ -347,7 +347,7 @@ func subnetNetworkPlusOne(cidr string) string {
 	if err != nil {
 		return ""
 	}
-	// gateway = network + 1
+	// gateway is the network address plus one
 	gw := make(net.IP, len(ipnet.IP))
 	copy(gw, ipnet.IP)
 	gw[len(gw)-1] = 1
