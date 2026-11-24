@@ -2,6 +2,66 @@
   "unreleased": [
     {
       "type": "feat",
+      "text": "AWG: нативное перенаправление DNS для VPN-клиентов через Keenetic (ip name-server <зона>) — зоны local/home/lan/internal по умолчанию резолвятся через роутер без статических записей. Апстрим DNS определяется автоматически,без привязки к конкретным IP. Применяется при старте (переживает ребут) и при сохранении настроек.",
+      "important": true
+    },
+    {
+      "type": "feat",
+      "text": "AWG: настройки DNS для VPN в разделе «Настройки → AmneziaWG» — переключатель «Перенаправление DNS», флаг «Все зоны» (по умолчанию выключен) и список зон через запятую",
+      "important": false
+    },
+    {
+      "type": "feat",
+      "text": "CLI: новая команда xkeen-ui dns-sync — ручное применение/диагностика перенаправления DNS зон",
+      "important": false
+    },
+    {
+      "type": "feat",
+      "text": "CLI: команды xkeen-ui awg-server add/up/down — управление AWG-серверами без веб-авторизации (для отладки и автоматизации)",
+      "important": false
+    },
+    {
+      "type": "fix",
+      "text": "AWG: демон amneziawg-go теперь явно поднимает netdev (ip link set up) после старта — Keenetic оставлял свежий tun-интерфейс в состоянии DOWN, из-за чего хендшейки были, но трафик не шёл",
+      "important": true
+    },
+    {
+      "type": "fix",
+      "text": "AWG: исправлена остановка демона на Keenetic — pkill отсутствует, pgrep не в PATH; теперь PID ищется через /proc, а kill работает через /opt/bin/kill",
+      "important": false
+    },
+    {
+      "type": "fix",
+      "text": "AWG: «холодный» attach — сервер поднимается сразу после создания, даже если netdev ещё не появился (демон создаёт его сам), без перезагрузки роутера",
+      "important": true
+    },
+    {
+      "type": "fix",
+      "text": "AWG: автоматическое создание NDMS-интерфейса (OpkgTunN) при создании сервера через CLI/UI, tolerant к transient-ошибкам ndmc; проверка через show interface вместо ip link",
+      "important": false
+    },
+    {
+      "type": "fix",
+      "text": "AWG: имена серверов с ведущим нулём (opkgtun01) запрещены — Keenetic нормализует их в OpkgTun1, что ломало соответствие имени и netdev",
+      "important": false
+    },
+    {
+      "type": "fix",
+      "text": "AWG: I1/I2/I3 больше не записываются в новые конфиги серверов — локальная сборка awg их отклоняла и выдавала предупреждение при каждом запуске",
+      "important": false
+    },
+    {
+      "type": "tweak",
+      "text": "AWG: оркестрация up/down/restart вынесена в awg_lifecycle.go (единый путь), правила iptables строятся из одной таблицы fullTunnelRules (Apply/Remove не могут разойтись)",
+      "important": false
+    },
+    {
+      "type": "tweak",
+      "text": "AWG: покрытие тестов handlers 66.8% → 71%+, добавлены e2e-тест AddPeer, тесты restore/singleflight/fwmark/parse awg show; мутационные проверки подтверждают чувствительность тестов",
+      "important": false
+    },
+    {
+      "type": "feat",
       "text": "AWG: режим OpkgTun attach для серверных интерфейсов на KeeneticOS 5.x — xkeen-ui присоединяет amneziawg-go к netdev, которым владеет NDMS, вместо awg-quick (который пытался создавать/удалять интерфейс и конфликтовал с прошивкой). Сохраняются IP/маршрут/MTU из конфига NDMS, адрес/DNS/MTU вырезаются из runtime-конфига",
       "important": true
     },
