@@ -1015,31 +1015,41 @@ onMounted(() => {
                 <div class="s-row-desc">{{ i18n.t('awg.server_settings_desc') }} Общие для всех AWG-серверов (opkgtun0, opkgtun1, …). Порт и подсеть настраиваются отдельно в каждом сервере.</div>
               </div>
             </div>
-            <div class="s-row" style="gap:10px; flex-wrap:wrap;">
-              <label class="s-field"><span class="s-field-label">LAN</span>
+            <div class="sb-grid">
+              <label class="sb-field">
+                <span class="s-row-label">LAN</span>
+                <span class="s-row-desc">мост локальной сети</span>
                 <input v-model="awgIface.lan" type="text" placeholder="br0" :disabled="awgIfaceSaving" class="s-input">
               </label>
-              <label class="s-field"><span class="s-field-label">WAN</span>
+              <label class="sb-field">
+                <span class="s-row-label">WAN</span>
+                <span class="s-row-desc">интерфейс аплинка</span>
                 <input v-model="awgIface.wan" type="text" placeholder="eth3" :disabled="awgIfaceSaving" class="s-input">
               </label>
-              <label class="s-field s-field-wide"><span class="s-field-label">{{ i18n.t('awg.endpoint_label') }}</span>
-                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving" class="s-input">
+              <label class="sb-field">
+                <span class="s-row-label">{{ i18n.t('awg.endpoint_label') }}</span>
+                <span class="s-row-desc">WAN-IP для клиентов</span>
+                <input v-model="awgIface.endpoint" type="text" :placeholder="i18n.t('awg.endpoint_placeholder')" :disabled="awgIfaceSaving" class="s-input" style="font-family:var(--font-mono)">
               </label>
-            </div>
-            <div class="s-row" style="gap:10px; flex-wrap:wrap;">
-              <label class="s-field"><span class="s-field-label">Client DNS</span>
+              <label class="sb-field">
+                <span class="s-row-label">Client DNS</span>
+                <span class="s-row-desc">DNS для клиентов</span>
                 <input v-model="awgIface.client_dns" type="text" placeholder="1.1.1.1" :disabled="awgIfaceSaving" class="s-input">
               </label>
-              <label class="s-field"><span class="s-field-label">Client MTU</span>
+              <label class="sb-field">
+                <span class="s-row-label">Client MTU</span>
+                <span class="s-row-desc">MTU туннеля</span>
                 <input v-model.number="awgIface.client_mtu" type="number" placeholder="1420" :disabled="awgIfaceSaving" class="s-input">
               </label>
-              <label class="s-field s-field-wide"><span class="s-field-label">Client AllowedIPs</span>
-                <input v-model="awgIface.client_allowed_ips" type="text" placeholder="0.0.0.0/0" :disabled="awgIfaceSaving" class="s-input">
+              <label class="sb-field">
+                <span class="s-row-label">Client AllowedIPs</span>
+                <span class="s-row-desc">маршруты клиента</span>
+                <input v-model="awgIface.client_allowed_ips" type="text" placeholder="0.0.0.0/0" :disabled="awgIfaceSaving" class="s-input" style="font-family:var(--font-mono)">
               </label>
             </div>
             <div class="s-row s-row-actions">
               <button class="btn btn-sm" :disabled="awgIfaceDetecting" @click="detectAWGIfaceSettings()">
-                {{ awgIfaceDetecting ? '…' : 'Автоопределить' }}
+                {{ awgIfaceDetecting ? '…' : i18n.t('awg.detect_btn') }}
               </button>
               <button class="btn btn-primary btn-sm" style="margin-left:auto" :disabled="awgIfaceSaving" @click="saveAWGIfaceSettings()">
                 {{ awgIfaceSaving ? i18n.t('awg.saving') : i18n.t('awg.save') }}

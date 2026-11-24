@@ -135,7 +135,8 @@
     "server_create_desc": "Server config will be created. The NDMS interface (OpkgTunN) must be created separately — commands will be shown after creation.",
     "server_create_creating": "Creating…",
     "server_create_done": "Server {name} created",
-    "server_create_ndms_hint": "Run these commands in the Keenetic CLI (SSH), then press Start:"
+    "server_create_ndms_hint": "Run these commands in the Keenetic CLI (SSH), then press Start:",
+    "detect_btn": "Auto-detect"
   },
   "commands": {
     "unknown_reason": "unknown reason",
