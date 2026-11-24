@@ -670,3 +670,31 @@ func TestStartOpkgTunAttach_ColdNetdevCreatedByDaemon(t *testing.T) {
 		t.Fatal("netdev must exist after daemon start")
 	}
 }
+
+// amneziawg-go creates the netdev but Keenetic may leave it DOWN (NDMS
+// "link pending"). startOpkgTunAttach must explicitly bring it up.
+func TestStartOpkgTunAttach_BringsNetdevUp(t *testing.T) {
+	setupOpkgTest(t)
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "opkgtun1.conf")
+	os.WriteFile(confPath, []byte("[Interface]\nAddress = 10.8.1.1/24\nListenPort = 4443\n"), 0o600)
+
+	opkgProcessRunningFn = func(string) bool { return true }
+	opkgLinkExistsFn = func(string) bool { return true }
+	opkgLookPathFn = func(string) (string, error) { return "/opt/bin/amneziawg-go", nil }
+	var cmds [][]string
+	opkgExecFn = func(name string, args ...string) ([]byte, error) {
+		cmds = append(cmds, append([]string{name}, args...))
+		if name == "awg" && args[0] == "show" {
+			return []byte("interface: opkgtun1\n  listening port: 4443\n"), nil
+		}
+		return nil, nil
+	}
+	if err := startOpkgTunAttach("opkgtun1", confPath); err != nil {
+		t.Fatalf("attach failed: %v", err)
+	}
+	joined := joinCommands(cmds)
+	if !strings.Contains(joined, "ip link set opkgtun1 up") {
+		t.Fatalf("must bring the netdev up explicitly; got:\n%s", joined)
+	}
+}

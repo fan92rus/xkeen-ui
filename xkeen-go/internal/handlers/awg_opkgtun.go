@@ -228,6 +228,13 @@ func startOpkgTunAttach(name, confPath string) error {
 		return errors.New("amneziawg-go control socket did not appear within 10s")
 	}
 
+	// amneziawg-go creates the tun netdev but Keenetic may leave it DOWN
+	// (NDMS reports "link pending" for a freshly created interface). Bring
+	// it up explicitly — without this, handshakes happen but no traffic flows.
+	if out, err := opkgExecFn("ip", "link", "set", name, "up"); err != nil {
+		return fmt.Errorf("ip link set %s up: %v\n%s", name, err, strings.TrimSpace(string(out)))
+	}
+
 	runtimeConf, err := runtimeConfForOpkgTun(name, confPath)
 	if err != nil {
 		return fmt.Errorf("preparing runtime config: %w", err)
