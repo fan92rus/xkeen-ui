@@ -28,9 +28,11 @@ var (
 // (each has its own Config instance; handler-level cfgMu is not enough).
 var cfgWriteMu sync.Mutex
 
-// LockConfigWrite/UnlockConfigWrite let other packages (e.g. server auth)
-// serialize writes to the shared *Config with the handlers' config saves.
-func LockConfigWrite()   { cfgWriteMu.Lock() }
+// LockConfigWrite serializes config.json writes with the handlers' config
+// saves. Other packages (e.g. server auth) must call it before SaveConfig.
+func LockConfigWrite() { cfgWriteMu.Lock() }
+
+// UnlockConfigWrite releases the config.json write lock acquired by LockConfigWrite.
 func UnlockConfigWrite() { cfgWriteMu.Unlock() }
 
 var zoneRe = regexp.MustCompile(`^[\w-]+(\.[\w-]+)*$`)
