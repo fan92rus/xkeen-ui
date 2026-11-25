@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+
+	"github.com/fan92rus/xkeen-ui/internal/handlers"
 )
 
 // API response types for auth handlers.
@@ -204,7 +206,10 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	s.cfg.Auth.ForcePasswordChange = false // Clear force password change flag
 
 	// Save config to file
-	if err := s.cfg.SaveConfig(s.configPath); err != nil {
+	handlers.LockConfigWrite()
+	saveErr := s.cfg.SaveConfig(s.configPath)
+	handlers.UnlockConfigWrite()
+	if saveErr != nil {
 		log.Printf("Failed to save config: %v", err)
 		writeJSON(w, http.StatusInternalServerError, &messageResponse{OK: false, Error: "Failed to save configuration"})
 		return

@@ -357,8 +357,11 @@ func (h *SettingsHandler) UpdateMetricsPort(w http.ResponseWriter, r *http.Reque
 	h.cfgMu.Lock()
 	h.cfg.MetricsPort = req.MetricsPort
 	h.cfgMu.Unlock()
-	if err := h.cfg.SaveConfig(h.configPath); err != nil {
-		respondJSON(w, http.StatusInternalServerError, MetricsPortResponse{Ok: false, Error: "save failed: " + err.Error()})
+	cfgWriteMu.Lock()
+	saveErr := h.cfg.SaveConfig(h.configPath)
+	cfgWriteMu.Unlock()
+	if saveErr != nil {
+		respondJSON(w, http.StatusInternalServerError, MetricsPortResponse{Ok: false, Error: "save failed: " + saveErr.Error()})
 		return
 	}
 
@@ -577,7 +580,10 @@ func (h *SettingsHandler) UpdateObservatoryConcurrency(w http.ResponseWriter, r 
 	h.cfgMu.Lock()
 	h.cfg.ObservatoryConcurrency = req.Enabled
 	h.cfgMu.Unlock()
-	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+	cfgWriteMu.Lock()
+	saveErr := h.cfg.SaveConfig(h.configPath)
+	cfgWriteMu.Unlock()
+	if saveErr != nil {
 		respondError(w, http.StatusInternalServerError, "failed to save config")
 		return
 	}
@@ -611,8 +617,11 @@ func (h *SettingsHandler) UpdateProxyEntware(w http.ResponseWriter, r *http.Requ
 	h.cfgMu.Lock()
 	h.cfg.ProxyEntware = req.Enabled
 	h.cfgMu.Unlock()
-	if err := h.cfg.SaveConfig(h.configPath); err != nil {
-		http.Error(w, "Failed to save config: "+err.Error(), http.StatusInternalServerError)
+	cfgWriteMu.Lock()
+	saveErr := h.cfg.SaveConfig(h.configPath)
+	cfgWriteMu.Unlock()
+	if saveErr != nil {
+		http.Error(w, "Failed to save config: "+saveErr.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -658,7 +667,10 @@ func (h *SettingsHandler) UpdateAutoUpdate(w http.ResponseWriter, r *http.Reques
 	h.cfgMu.Lock()
 	h.cfg.AutoUpdate = req.Enabled
 	h.cfgMu.Unlock()
-	if err := h.cfg.SaveConfig(h.configPath); err != nil {
+	cfgWriteMu.Lock()
+	saveErr := h.cfg.SaveConfig(h.configPath)
+	cfgWriteMu.Unlock()
+	if saveErr != nil {
 		respondError(w, http.StatusInternalServerError, "failed to save config")
 		return
 	}
