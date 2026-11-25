@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -128,5 +129,78 @@ func TestSyncDNSForward_UpstreamChanged(t *testing.T) {
 	}
 	if cfg.AWDNSManagedZoneIPs["local"] != "10.0.0.2" {
 		t.Fatalf("recorded IP not updated: %v", cfg.AWDNSManagedZoneIPs)
+	}
+}
+
+func TestSyncDNSForward_NoDuplicateOnRepeat(t *testing.T) {
+	origRun, origLook := dnsSyncNDMCFn, dnsSyncLookPathFn
+	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
+	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
+	var adds, removes int
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
+		cmd := strings.Join(args, " ")
+		if strings.HasPrefix(cmd, "-c ip name-server") {
+			adds++
+		}
+		if strings.HasPrefix(cmd, "-c no ip name-server") {
+			removes++
+		}
+		if strings.Contains(cmd, "show ip name-server") {
+			return []byte("address: 10.0.0.1\ndomain: \n"), nil
+		}
+		return nil, nil
+	}
+	cfg := &config.Config{AWDNSForward: true, AWDNSZones: []string{"local"},
+		AWDNSManagedZones: []string{"local"}, AWDNSManagedZoneIPs: map[string]string{"local": "10.0.0.1"}}
+	if _, err := SyncDNSForward(cfg, ""); err != nil {
+		t.Fatal(err)
+	}
+	// must remove the existing rule before re-adding, even when the IP is unchanged
+	if adds != 1 || removes < 2 {
+		t.Fatalf("expected 1 add and >=2 removes (recorded + current IP), got adds=%d removes=%d", adds, removes)
+	}
+}
+
+func TestSyncDNSForward_AllZonesSkipsZoneRules(t *testing.T) {
+	origRun, origLook := dnsSyncNDMCFn, dnsSyncLookPathFn
+	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
+	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
+	var cmds []string
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
+		cmd := strings.Join(args, " ")
+		cmds = append(cmds, cmd)
+		if strings.Contains(cmd, "show ip name-server") {
+			return []byte("address: 10.0.0.1\ndomain: \n"), nil
+		}
+		return nil, nil
+	}
+	cfg := &config.Config{AWDNSForward: true, AWDNSForwardAllZones: true, AWDNSZones: []string{"local"}}
+	if _, err := SyncDNSForward(cfg, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range cmds {
+		if strings.HasPrefix(line, "-c ip name-server") {
+			t.Fatalf("all-zones must not add zone rules: %v", cmds)
+		}
+	}
+}
+
+func TestSyncDNSForward_DiscoveryFailureKeepsOwnership(t *testing.T) {
+	origRun, origLook := dnsSyncNDMCFn, dnsSyncLookPathFn
+	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
+	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
+		if strings.Contains(strings.Join(args, " "), "show ip name-server") {
+			return nil, fmt.Errorf("ndmc failed")
+		}
+		return nil, nil
+	}
+	cfg := &config.Config{AWDNSForward: true, AWDNSZones: []string{"local"},
+		AWDNSManagedZones: []string{"local"}, AWDNSManagedZoneIPs: map[string]string{"local": "10.0.0.1"}}
+	if _, err := SyncDNSForward(cfg, ""); err == nil {
+		t.Fatal("expected discovery failure")
+	}
+	if len(cfg.AWDNSManagedZones) != 1 || cfg.AWDNSManagedZoneIPs["local"] != "10.0.0.1" {
+		t.Fatalf("ownership must survive discovery failure: %v %v", cfg.AWDNSManagedZones, cfg.AWDNSManagedZoneIPs)
 	}
 }

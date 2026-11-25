@@ -287,11 +287,19 @@ func stopOpkgTunAttach(name string) error {
 	if opkgProcessRunningFn(name) {
 		return fmt.Errorf("amneziawg-go %s did not stop within 5s", name)
 	}
+	// Clear the watchdog marker as soon as the daemon is dead — before the
+	// netdev operation, which may fail when Keenetic has not materialized the
+	// netdev (cold interface). A failed `ip link down` must not resurrect the
+	// server through the watchdog a minute later.
+	markServerEnabled(name, false)
 	if out, err := opkgExecFn("ip", "link", "set", name, "down"); err != nil {
-		return fmt.Errorf("ip link set %s down: %v\n%s", name, err, strings.TrimSpace(string(out)))
+		if opkgLinkExistsFn(name) {
+			return fmt.Errorf("ip link set %s down: %v\n%s", name, err, strings.TrimSpace(string(out)))
+		}
+		// Netdev absent (NDMS owns the interface, not up yet) — already down.
+		log.Printf("[awg] %s: netdev absent, already down", name)
 	}
 	log.Printf("[awg] OpkgTun attach: %s down", name)
-	markServerEnabled(name, false)
 	return nil
 }
 

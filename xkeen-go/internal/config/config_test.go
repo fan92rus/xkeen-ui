@@ -632,3 +632,13 @@ func TestConfig_ProxyEntwareRoundtrip(t *testing.T) {
 		t.Errorf("legacy config without proxy_entware should default to false, got %v", legacyCfg.ProxyEntware)
 	}
 }
+
+func TestDNSForwardIsOptIn(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AWDNSForward {
+		t.Fatal("DNS forwarding must be off by default (no surprise DNS changes on upgrade)")
+	}
+	if len(cfg.AWDNSZones) == 0 {
+		t.Fatal("default zones must be configured for when the user opts in")
+	}
+}

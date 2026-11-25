@@ -115,3 +115,29 @@ func TestCLIWatchdog_PIDCheckAndMarker(t *testing.T) {
 		t.Fatal("marker must be cleared on Down")
 	}
 }
+
+// Watchdog must restart a DEAD daemon (pid==0 with nil error) when the
+// server is marked as wanted-up. Mutation pid>0 -> pid>=0 is caught here.
+func TestCLIWatchdog_RestartsDeadDaemon(t *testing.T) {
+	h, _, awgDir := newTestAWGHandler(t)
+	origDir, origPID, origUp := serverEnabledDirFn, opkgDaemonPIDFn, awgQuickFn
+	defer func() { serverEnabledDirFn, opkgDaemonPIDFn, awgQuickFn = origDir, origPID, origUp }()
+	serverEnabledDirFn = func() string { return awgDir }
+	opkgDaemonPIDFn = func(string) (int, error) { return 0, nil } // dead
+	upCalls := 0
+	awgQuickFn = func(string, string) ([]byte, error) { upCalls++; return nil, nil }
+
+	os.WriteFile(filepath.Join(awgDir, "opkgtun8.conf"), []byte("[Interface]\nListenPort = 4488\nAddress=10.8.8.1/24\n"), 0o600)
+	if _, err := h.store.ScanAWGConfigs(awgDir); err != nil {
+		t.Fatal(err)
+	}
+	markServerEnabled("opkgtun8", true)
+
+	out, err := CLIWatchdog(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upCalls == 0 || !strings.Contains(out, "opkgtun8") {
+		t.Fatalf("dead daemon must be restarted; upCalls=%d out=%s", upCalls, out)
+	}
+}

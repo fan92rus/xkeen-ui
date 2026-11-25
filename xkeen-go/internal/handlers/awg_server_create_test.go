@@ -215,3 +215,17 @@ func TestCreateServer_LeadingZeroNameRejected(t *testing.T) {
 		t.Fatalf("leading-zero name must be rejected, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestSubnetNetworkPlusOne(t *testing.T) {
+	cases := map[string]string{
+		"10.8.0.0/24":   "10.8.0.1/24",
+		"10.8.0.128/25": "10.8.0.129/25",
+		"10.8.0.4/30":   "10.8.0.5/30",
+		"10.8.0.16/28":  "10.8.0.17/28",
+	}
+	for cidr, want := range cases {
+		if got := subnetNetworkPlusOne(cidr); got != want {
+			t.Errorf("%s -> %s, want %s", cidr, got, want)
+		}
+	}
+}

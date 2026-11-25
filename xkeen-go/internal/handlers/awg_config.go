@@ -72,6 +72,9 @@ func (h *AWGHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	// the attach-vs-quick dispatch; tolerant: the interface may already be
 	// down. In OpkgTun mode the netdev belongs to NDMS and is never deleted.
 	_ = h.teardown(name, confPath, role, trackedMark, true)
+	// Clear the watchdog marker regardless of teardown result — a deleted
+	// config must never be restarted by the watchdog.
+	markServerEnabled(name, false)
 	if isOpkgTunOwned(name) {
 		// Remove any leftover runtime conf files (current per-run pattern and
 		// the legacy fixed name from older versions).
@@ -232,6 +235,9 @@ func (h *AWGHandler) CreateServer(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusConflict, fmt.Sprintf("config %s already exists", req.Name))
 		return
 	}
+	// A stale marker from a previous config with the same name must not
+	// auto-start the new server before the operator presses Start.
+	markServerEnabled(req.Name, false)
 
 	// --- validate subnet -------------------------------------------------
 	subnet, err := parseServerSubnet(req.Subnet)
@@ -374,9 +380,12 @@ func applyNDMSInterface(name, subnet string) (applied bool, errMsg string) {
 	// but does NOT materialize the netdev until a full config rebuild/reboot.
 	// Verify the interface is present in the NDMS config (not the netdev) —
 	// this is the stable success signal across firmware versions.
-	if out, err := ndmcRunFn("-c", "show interface "+ndmsName); err == nil || strings.Contains(string(out), ndmsName) {
-		if strings.Contains(string(out), ndmsName) {
-			log.Printf("[awg] NDMS interface %s created in system config (netdev appears after reboot)", ndmsName)
+	if out, err := ndmcRunFn("-c", "show interface "+ndmsName); err == nil {
+		// Only accept a positive match when the command itself succeeded:
+		// Keenetic's error text also contains the requested name
+		// ("... OpkgTun1 ... does not exist"), which must not count as success.
+		if strings.Contains(string(out), ndmsName) && !strings.Contains(strings.ToLower(string(out)), "error") {
+			log.Printf("[awg] NDMS interface %s created in system config", ndmsName)
 			return true, ""
 		}
 	}
@@ -430,10 +439,16 @@ func subnetNetworkPlusOne(cidr string) string {
 	if err != nil {
 		return ""
 	}
-	// gateway is the network address plus one
+	// Gateway = network address + 1 (works for /16../30, where the network
+	// address may have a non-zero last octet, e.g. 10.8.0.128/25 -> .129).
 	gw := make(net.IP, len(ipnet.IP))
 	copy(gw, ipnet.IP)
-	gw[len(gw)-1] = 1
+	for i := len(gw) - 1; i >= 0; i-- {
+		gw[i]++
+		if gw[i] != 0 {
+			break // no overflow into the next octet
+		}
+	}
 	ones, _ := ipnet.Mask.Size()
 	return fmt.Sprintf("%s/%d", gw.String(), ones)
 }
@@ -452,10 +467,13 @@ func (h *AWGHandler) checkSubnetConflict(newSubnet, self string) error {
 		if addr == "" {
 			continue
 		}
-		// parse the existing subnet from the Address (assume /24-class)
+		// Parse the existing subnet. Addresses may be CIDR (10.8.0.1/24)
+		// or a bare IP (legacy uploads) — treat the latter as /24.
+		if !strings.Contains(addr, "/") {
+			addr += "/24"
+		}
 		_, existingNet, err := net.ParseCIDR(addr)
 		if err != nil {
-			// Address may be a single IP like 10.8.0.1/24 — try appending
 			continue
 		}
 		_, newNet, err := net.ParseCIDR(newSubnet)

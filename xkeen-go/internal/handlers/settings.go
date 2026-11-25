@@ -513,8 +513,11 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 	h.cfg.AWDNSForwardAllZones = req.DNSForwardAll
 	h.cfg.AWDNSZones = req.DNSZones
 	h.cfgMu.Unlock()
-	if err := h.cfg.SaveConfig(h.configPath); err != nil {
-		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + err.Error()})
+	cfgWriteMu.Lock()
+	saveErr := h.cfg.SaveConfig(h.configPath)
+	cfgWriteMu.Unlock()
+	if saveErr != nil {
+		respondJSON(w, http.StatusInternalServerError, AWGInterfaceResponse{Error: "save failed: " + saveErr.Error()})
 		return
 	}
 

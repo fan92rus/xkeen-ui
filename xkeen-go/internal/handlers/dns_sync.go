@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fan92rus/xkeen-ui/internal/config"
@@ -22,6 +23,10 @@ var (
 	dnsSyncLookPathFn = exec.LookPath
 	dnsSyncTimeout    = 8 * time.Second
 )
+
+// cfgWriteMu serializes config.json writes across HTTP handlers and CLI
+// (each has its own Config instance; handler-level cfgMu is not enough).
+var cfgWriteMu sync.Mutex
 
 var zoneRe = regexp.MustCompile(`^[\w-]+(\.[\w-]+)*$`)
 
@@ -120,6 +125,7 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 	for z := range want {
 		keys = append(keys, z)
 	}
+	cfgWriteMu.Lock()
 	cfg.AWDNSManagedZones = keys
 	if cfg.AWDNSManagedZoneIPs == nil {
 		cfg.AWDNSManagedZoneIPs = map[string]string{}
@@ -137,6 +143,7 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 			log.Printf("[awg] warning: could not persist DNS managed zones: %v", err)
 		}
 	}
+	cfgWriteMu.Unlock()
 	_, _ = ndmc("-c", "system configuration save")
 
 	msg := fmt.Sprintf("DNS zones forwarded to %s: %s", upstream, strings.Join(keys, ", "))
