@@ -529,18 +529,16 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 	// is unavailable and SyncDNSForward returns a no-op status (not an error).
 	// A real failure must be reported: otherwise the UI claims success while
 	// the router's DNS was not changed.
-	var dnsStatus string
-	if status, err := SyncDNSForward(h.cfg, h.configPath); err != nil {
+	status, err := SyncDNSForward(h.cfg, h.configPath)
+	if err != nil {
 		respondJSON(w, http.StatusOK, AWGInterfaceResponse{
 			Ok:    "partial",
 			Error: "settings saved, but DNS forwarding failed: " + err.Error(),
 		})
 		return
-	} else {
-		dnsStatus = status
 	}
-	if dnsStatus != "" {
-		log.Printf("[awg] %s", dnsStatus)
+	if status != "" {
+		log.Printf("[awg] %s", status)
 	}
 
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
@@ -551,7 +549,7 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		ClientDNS:     req.ClientDNS,
 		ClientMTU:     req.ClientMTU,
 		ClientAllowed: req.ClientAllowedIP,
-		Warning:       dnsStatus,
+		Warning:       status,
 	})
 }
 
