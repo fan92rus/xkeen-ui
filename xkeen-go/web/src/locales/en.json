@@ -143,8 +143,8 @@
     "server_create_legacy": "Additional (I)",
     "server_create_ndms_ok": "NDMS interface created automatically",
     "dns_forward_title": "DNS forwarding for VPN clients",
-    "dns_forward_desc": "Native Keenetic conditional forwarding (ip name-server <zone>): local zones resolve via the router without static records. Requires KeeneticOS.",
-    "dns_forward_all": "All zones",
+    "dns_forward_desc": "OFF by default. Enables persistent zone-forwarding rules on the router (ip name-server, saved to config). Clients must use the router as DNS — set it in Client DNS above.",
+    "dns_forward_all": "All zones (via default DNS)",
     "dns_forward_all_desc": "Use the default DNS server for all queries (zone rules removed). Off by default.",
     "dns_zones": "Zones",
     "dns_zones_desc": "Comma-separated. Default: local, home, lan, internal"

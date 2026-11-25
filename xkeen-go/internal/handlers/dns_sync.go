@@ -155,7 +155,15 @@ func SyncDNSForward(cfg *config.Config, configPath string) (string, error) {
 	}
 	_, _ = ndmc("-c", "system configuration save")
 
-	msg := fmt.Sprintf("DNS zones forwarded to %s: %s", upstream, strings.Join(keys, ", "))
+	var msg string
+	switch {
+	case !cfg.AWDNSForward:
+		msg = "DNS forwarding disabled; no zone rules applied (owned rules cleaned up)"
+	case cfg.AWDNSForwardAllZones:
+		msg = fmt.Sprintf("All zones use the default DNS server %s; no zone rules needed", upstream)
+	default:
+		msg = fmt.Sprintf("DNS zones forwarded to %s: %s", upstream, strings.Join(keys, ", "))
+	}
 	log.Printf("[awg] %s", msg)
 	return msg, nil
 }

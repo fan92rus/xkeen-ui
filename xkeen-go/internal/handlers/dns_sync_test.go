@@ -204,3 +204,31 @@ func TestSyncDNSForward_DiscoveryFailureKeepsOwnership(t *testing.T) {
 		t.Fatalf("ownership must survive discovery failure: %v %v", cfg.AWDNSManagedZones, cfg.AWDNSManagedZoneIPs)
 	}
 }
+
+// Config writes must be serialized: two concurrent SyncDNSForward calls
+// with the same *Config must not race on the ownership map.
+func TestSyncDNSForward_ConcurrentConfigWrites(t *testing.T) {
+	origRun, origLook := dnsSyncNDMCFn, dnsSyncLookPathFn
+	defer func() { dnsSyncNDMCFn, dnsSyncLookPathFn = origRun, origLook }()
+	dnsSyncLookPathFn = func(string) (string, error) { return "/bin/ndmc", nil }
+	dnsSyncNDMCFn = func(_ context.Context, args ...string) ([]byte, error) {
+		if strings.Contains(strings.Join(args, " "), "show ip name-server") {
+			return []byte("address: 10.0.0.1\ndomain: \n"), nil
+		}
+		return nil, nil
+	}
+	cfg := &config.Config{AWDNSForward: true, AWDNSZones: []string{"local", "home"}}
+	done := make(chan struct{}, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			_, _ = SyncDNSForward(cfg, "") // no config save — mutate shared map only
+			done <- struct{}{}
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		<-done
+	}
+	if len(cfg.AWDNSManagedZones) != 2 {
+		t.Fatalf("ownership corrupted by concurrent sync: %v", cfg.AWDNSManagedZones)
+	}
+}

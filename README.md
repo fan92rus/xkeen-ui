@@ -73,8 +73,9 @@ wget -qO- https://raw.githubusercontent.com/fan92rus/xkeen-ui/master/xkeen-go/sc
 - QR-код для мобильных клиентов (AmneziaWG)
 - Пресеты обфускации: Random, Full, Light, Minimal, Plain WG
 - Применение изменений пиров через `awg syncconf` без перезапуска интерфейса
-- Встроенный watchdog: cron-проверка каждую минуту, автоматическое восстановление iptables
+- Встроенный watchdog: cron-проверка каждую минуту (перезапуск мёртвых AWG-демонов); iptables восстанавливаются через NDM-хук `/opt/etc/ndm/netfilter.d/`
 - Постоянное хранение клиентских конфигураций в `/opt/etc/awg/clients/`
+- **DNS для VPN-клиентов (опционально)**: в «Настройки → AmneziaWG» можно включить нативное перенаправление зон (local/home/lan/internal) через `ip name-server`; для работы задайте Client DNS = адрес роутера. Применяется при старте и через `xkeen-ui dns-sync`. По умолчанию выключено.
 
 ### Подписки
 

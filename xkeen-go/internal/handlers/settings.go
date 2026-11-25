@@ -393,6 +393,7 @@ type AWGInterfaceResponse struct {
 	DNSForward    bool     `json:"dns_forward"`
 	DNSForwardAll bool     `json:"dns_forward_all_zones"`
 	DNSZones      []string `json:"dns_zones"`
+	Warning       string   `json:"warning,omitempty"`
 	Error         string   `json:"error,omitempty"`
 }
 
@@ -524,12 +525,22 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Apply native conditional DNS forwarding (best-effort: on non-Keenetic
-	// systems ndmc is unavailable and SyncDNSForward returns a no-op).
+	// Apply native conditional DNS forwarding. On non-Keenetic systems ndmc
+	// is unavailable and SyncDNSForward returns a no-op status (not an error).
+	// A real failure must be reported: otherwise the UI claims success while
+	// the router's DNS was not changed.
+	var dnsStatus string
 	if status, err := SyncDNSForward(h.cfg, h.configPath); err != nil {
-		log.Printf("[awg] DNS forward sync failed: %v", err)
-	} else if status != "" {
-		log.Printf("[awg] %s", status)
+		respondJSON(w, http.StatusOK, AWGInterfaceResponse{
+			Ok:    "partial",
+			Error: "settings saved, but DNS forwarding failed: " + err.Error(),
+		})
+		return
+	} else {
+		dnsStatus = status
+	}
+	if dnsStatus != "" {
+		log.Printf("[awg] %s", dnsStatus)
 	}
 
 	respondJSON(w, http.StatusOK, AWGInterfaceResponse{
@@ -540,6 +551,7 @@ func (h *SettingsHandler) UpdateAWGInterfaces(w http.ResponseWriter, r *http.Req
 		ClientDNS:     req.ClientDNS,
 		ClientMTU:     req.ClientMTU,
 		ClientAllowed: req.ClientAllowedIP,
+		Warning:       dnsStatus,
 	})
 }
 

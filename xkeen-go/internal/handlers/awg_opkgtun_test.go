@@ -698,3 +698,35 @@ func TestStartOpkgTunAttach_BringsNetdevUp(t *testing.T) {
 		t.Fatalf("must bring the netdev up explicitly; got:\n%s", joined)
 	}
 }
+
+// With a missing netdev, Down must still clear the watchdog marker:
+// otherwise the watchdog resurrects a server the user stopped.
+func TestStopOpkgTunAttach_MissingNetdevStillClearsMarker(t *testing.T) {
+	setupOpkgTest(t)
+	origDir := serverEnabledDirFn
+	t.Cleanup(func() { serverEnabledDirFn = origDir })
+	serverEnabledDirFn = func() string { return t.TempDir() }
+	markServerEnabled("opkgtun9", true)
+
+	procRunning := true
+	opkgProcessRunningFn = func(string) bool { return procRunning }
+	origPID := opkgDaemonPIDFn
+	t.Cleanup(func() { opkgDaemonPIDFn = origPID })
+	opkgDaemonPIDFn = func(string) (int, error) { return 4242, nil }
+	opkgLinkExistsFn = func(string) bool { return false } // netdev absent
+	opkgExecFn = func(name string, _ ...string) ([]byte, error) {
+		if name == "kill" {
+			procRunning = false
+		}
+		if name == "ip" {
+			return nil, errors.New("device does not exist") // ip link set down fails
+		}
+		return nil, nil
+	}
+	if err := stopOpkgTunAttach("opkgtun9"); err != nil {
+		t.Fatalf("missing netdev must be tolerated: %v", err)
+	}
+	if isServerEnabled("opkgtun9") {
+		t.Fatal("marker must be cleared even when the netdev is missing")
+	}
+}

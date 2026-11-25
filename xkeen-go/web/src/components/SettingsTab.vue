@@ -408,13 +408,17 @@ async function detectAWGIfaceSettings() {
 async function saveAWGIfaceSettings() {
   awgIfaceSaving.value = true;
   try {
-    await xkeen.updateAWGInterfaces(
+    const res = await xkeen.updateAWGInterfaces(
       awgIface.value.lan, awgIface.value.wan, awgIface.value.endpoint,
       awgIface.value.client_dns, awgIface.value.client_mtu, awgIface.value.client_allowed_ips,
       awgIface.value.dns_forward, awgIface.value.dns_forward_all_zones,
       (awgIface.value.dns_zones_text || '').split(',').map(x => x.trim().replace(/^\./, '')).filter(Boolean)
     );
-    app.showToast('AWG interface settings saved', 'success');
+    if (res && (res.error || res.warning)) {
+      app.showToast(res.error || res.warning, res.error ? 'error' : 'warning');
+    } else {
+      app.showToast('AWG interface settings saved', 'success');
+    }
   } catch (e) {
     app.showToast(e.message || 'Save failed', 'error');
   } finally {

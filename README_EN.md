@@ -73,8 +73,9 @@ Open the web interface: `http://<router-ip>:8089`
 - QR code for mobile client configs (AmneziaWG app)
 - Obfuscation presets: Random, Full, Light, Minimal, Plain WG
 - Peer changes applied live via `awg syncconf` — no service interruption
-- Built-in watchdog: cron health checks every minute, automatic iptables restoration
+- Built-in watchdog: per-minute cron restart of dead AWG daemons; iptables restored via the NDM hook `/opt/etc/ndm/netfilter.d/`
 - Persistent client config storage in `/opt/etc/awg/clients/`
+- **VPN client DNS (optional)**: Settings → AmneziaWG can enable native conditional zone forwarding (local/home/lan/internal) via `ip name-server`; set Client DNS to the router address for clients to use it. Applied at startup and via `xkeen-ui dns-sync`. Off by default.
 
 ### Subscriptions
 
